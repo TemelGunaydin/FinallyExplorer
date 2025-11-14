@@ -10,7 +10,7 @@ import SwiftUI
 @main
 struct FinallyExplorerApp: App {
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Finally Explorer") {
             ContentView()
         }
     }
