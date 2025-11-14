@@ -1,0 +1,23 @@
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+[FinallyExplorer] Compiling ContentView.swift
+[FinallyExplorer] Linking FinallyExplorer.debug.dylib
+[FinallyExplorer] Copy arm64-apple-macos.swiftmodule -> FinallyExplorer.swiftmodule
+[FinallyExplorer] Copy arm64-apple-macos.abi.json -> FinallyExplorer.abi.json
+[FinallyExplorer] Copy arm64-apple-macos.swiftsourceinfo -> FinallyExplorer.swiftsourceinfo
+note: Using stub executor library with Swift entry point. (in target 'FinallyExplorer' from project 'FinallyExplorer')
+[FinallyExplorer] Linking FinallyExplorer
+[FinallyExplorer] Extract App Intents Metadata
+[FinallyExplorer] Processing empty-FinallyExplorer.plist
+Signing FinallyExplorer.debug.dylib (in target 'FinallyExplorer' from project 'FinallyExplorer')
+Signing __preview.dylib (in target 'FinallyExplorer' from project 'FinallyExplorer')
+Signing FinallyExplorer.app (in target 'FinallyExplorer' from project 'FinallyExplorer')
+[FinallyExplorer] Validate FinallyExplorer.app
+Build Succeeded
+
+-----------------------------
+-- xcodebuild.nvim summary --
+-----------------------------
+
+  ✔ Build Succeeded
+
