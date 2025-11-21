@@ -38,13 +38,18 @@ private enum DirectoryAccessError: LocalizedError {
 private enum SidebarPlace: String, CaseIterable, Identifiable {
     case downloads
     case desktop
+    case documents
 
     var title: String {
         switch self {
         case .downloads:
             "Downloads"
+
         case .desktop:
             "Desktop"
+
+        case .documents:
+            "Documents"
         }
     }
 
@@ -52,7 +57,11 @@ private enum SidebarPlace: String, CaseIterable, Identifiable {
         switch self {
         case .downloads:
             "folder"
+
         case .desktop:
+            "folder"
+
+        case .documents:
             "folder"
         }
     }
@@ -64,6 +73,8 @@ private enum SidebarPlace: String, CaseIterable, Identifiable {
             return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         case .desktop:
             return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        case .documents:
+            return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         }
     }
 
@@ -119,7 +130,7 @@ private struct DestinationView: View {
                         ProgressView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if let errorMessage {
-                        VStack(spacing: 12) {
+                        VStack(spacing: 16) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.largeTitle)
                                 .foregroundStyle(.orange)
@@ -132,6 +143,14 @@ private struct DestinationView: View {
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
+                            
+                            if place == .desktop {
+                                Text("To grant access:\n1. Open System Settings\n2. Go to Privacy & Security\n3. Select Files and Folders\n4. Find FinallyExplorer\n5. Enable Desktop Folder access")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding()
