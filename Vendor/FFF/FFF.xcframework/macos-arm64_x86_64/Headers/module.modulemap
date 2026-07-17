@@ -1,0 +1,4 @@
+module CFFF {
+    umbrella header "fff.h"
+    export *
+}

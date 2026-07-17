@@ -13,5 +13,8 @@ struct FinallyExplorerApp: App {
         WindowGroup("Finally Explorer") {
             ContentView()
         }
+        .commands {
+            FileEditCommands()
+        }
     }
 }

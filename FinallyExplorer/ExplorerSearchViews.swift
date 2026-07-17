@@ -1,0 +1,280 @@
+//
+//  ExplorerSearchViews.swift
+//  FinallyExplorer
+//
+
+import SwiftUI
+
+struct ExplorerSearchControlBar: View {
+    @Binding var scope: ExplorerSearchScope
+    @Binding var contentMode: FFFContentSearchMode
+
+    let isSearching: Bool
+    let resultCount: Int
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            wideControls
+            compactControls
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var wideControls: some View {
+        HStack(spacing: 12) {
+            Picker("Search In", selection: $scope) {
+                ForEach(ExplorerSearchScope.allCases) { scope in
+                    Text(scope.title)
+                        .tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 190)
+
+            if scope == .contents {
+                Picker("Match Type", selection: $contentMode) {
+                    ForEach(FFFContentSearchMode.allCases) { mode in
+                        Text(mode.title)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 240)
+            }
+
+            Spacer()
+
+            searchStatus
+        }
+    }
+
+    private var compactControls: some View {
+        HStack(spacing: 8) {
+            Picker("Search In", selection: $scope) {
+                ForEach(ExplorerSearchScope.allCases) { scope in
+                    Text(scope.title)
+                        .tag(scope)
+                }
+            }
+            .pickerStyle(.menu)
+
+            if scope == .contents {
+                Picker("Match Type", selection: $contentMode) {
+                    ForEach(FFFContentSearchMode.allCases) { mode in
+                        Text(mode.title)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Spacer(minLength: 4)
+            searchStatus
+        }
+    }
+
+    @ViewBuilder
+    private var searchStatus: some View {
+        if isSearching {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Searching")
+        } else {
+            Text("\(resultCount) results")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct ExplorerSearchResultsView: View {
+    let paneID: UUID
+    let query: String
+    let results: [ExplorerSearchResult]
+    let isSearching: Bool
+    let errorMessage: String?
+
+    @Binding var selection: ExplorerSearchResult.ID?
+
+    let onSelect: (ExplorerSearchResult) -> Void
+    let onOpen: (ExplorerSearchResult) -> Void
+
+    var body: some View {
+        if isSearching, results.isEmpty {
+            ProgressView("Preparing search index…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let errorMessage {
+            ContentUnavailableView(
+                "Unable to Search",
+                systemImage: "exclamationmark.triangle.fill",
+                description: Text(errorMessage)
+            )
+        } else if results.isEmpty {
+            ContentUnavailableView.search(text: query)
+        } else {
+            List(results, selection: $selection) { result in
+                ExplorerSearchRowView(
+                    paneID: paneID,
+                    result: result,
+                    onSelect: { onSelect(result) },
+                    onOpen: { onOpen(result) }
+                )
+                .tag(result.id)
+            }
+            .listStyle(.plain)
+        }
+    }
+}
+
+private struct ExplorerSearchRowView: View {
+    let paneID: UUID
+    let result: ExplorerSearchResult
+    let onSelect: () -> Void
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(iconColor)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(result.item.name)
+                        .font(.body)
+
+                    if result.contentMatch?.isDefinition == true {
+                        Text("Definition")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.quaternary, in: .capsule)
+                    }
+                }
+
+                Text(result.relativePath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                if let match = result.contentMatch {
+                    Text("Line \(match.lineNumber), column \(match.column + 1)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    HighlightedSearchLine(
+                        text: match.lineContent,
+                        matchByteRanges: match.matchByteRanges
+                    )
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            FileSizeLabel(item: result.item)
+                .frame(minWidth: 72, alignment: .trailing)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture(count: 1)
+                .onEnded { onSelect() }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { onOpen() }
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(
+            result.item.isDirectory
+                ? "Double-click to open folder"
+                : "Double-click to open file"
+        )
+        .accessibilityAction(named: "Open", onOpen)
+        .internalFileInteraction(for: result.item, paneID: paneID)
+    }
+
+    private var systemImage: String {
+        if result.item.isDirectory {
+            "folder.fill"
+        } else if result.item.isImage {
+            "photo.fill"
+        } else if result.isContentMatch {
+            "doc.text.magnifyingglass"
+        } else {
+            "doc.fill"
+        }
+    }
+
+    private var iconColor: Color {
+        result.item.isDirectory ? .blue : .gray
+    }
+}
+
+private struct HighlightedSearchLine: View {
+    let text: String
+    let matchByteRanges: [Range<Int>]
+
+    var body: some View {
+        highlightedText
+    }
+
+    private var highlightedText: Text {
+        let ranges = matchByteRanges
+            .compactMap(stringRange)
+            .sorted { $0.lowerBound < $1.lowerBound }
+        var output = AttributedString()
+        var cursor = text.startIndex
+
+        for range in ranges where range.lowerBound >= cursor {
+            if cursor < range.lowerBound {
+                output.append(AttributedString(String(text[cursor..<range.lowerBound])))
+            }
+
+            var matchedText = AttributedString(String(text[range]))
+            matchedText.font = .system(.caption, design: .monospaced).bold()
+            matchedText.foregroundColor = .accentColor
+            output.append(matchedText)
+            cursor = range.upperBound
+        }
+
+        if cursor < text.endIndex {
+            output.append(AttributedString(String(text[cursor...])))
+        }
+
+        return Text(output)
+    }
+
+    private func stringRange(_ byteRange: Range<Int>) -> Range<String.Index>? {
+        guard byteRange.lowerBound >= 0,
+              byteRange.upperBound >= byteRange.lowerBound else {
+            return nil
+        }
+
+        let utf8 = text.utf8
+        guard let lowerUTF8 = utf8.index(
+            utf8.startIndex,
+            offsetBy: byteRange.lowerBound,
+            limitedBy: utf8.endIndex
+        ),
+            let upperUTF8 = utf8.index(
+                utf8.startIndex,
+                offsetBy: byteRange.upperBound,
+                limitedBy: utf8.endIndex
+            ),
+            let lower = String.Index(lowerUTF8, within: text),
+            let upper = String.Index(upperUTF8, within: text) else {
+            return nil
+        }
+
+        return lower..<upper
+    }
+}

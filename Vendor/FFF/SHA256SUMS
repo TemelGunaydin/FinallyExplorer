@@ -1,0 +1,6 @@
+debfa0fbfb574848fd062737f66351f024af2ff5ded002edc2ac958477c9eb50  ./FFF.xcframework/Info.plist
+1cfc3366e9750ff25782466bd0ed75f8d262e5ecb9ec24bb141eaf59d7912c54  ./FFF.xcframework/macos-arm64_x86_64/Headers/fff.h
+8c65689628807dce18c06801389149729965a0391b05d933423cb8afa902cddc  ./FFF.xcframework/macos-arm64_x86_64/Headers/module.modulemap
+63c2c11ba91f7b2855546e6b7cd081efb682b0751f5a8e94a55c1ce131a3131b  ./FFF.xcframework/macos-arm64_x86_64/libFFF.dylib
+f8264de82db188834a5711d7e348dc08c33db14f79bb587ccb42616fd694ee81  ./LICENSE
+f9cbb2406b40030f8c9a4e93e17fd46fcdd79a2093c0af2c770b957c51447c5a  ./README.md

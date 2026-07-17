@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "6F6E8364-2C90-451A-843B-8CCEFEE73845",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:FinallyExplorer.xcodeproj",
+        "identifier" : "ABD932822F19102C0052CD7E",
+        "name" : "FinallyExplorerTests"
+      }
+    }
+  ],
+  "version" : 1
+}

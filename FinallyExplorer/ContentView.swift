@@ -5,223 +5,767 @@
 //  Created by temel gunaydin on 14.11.2025.
 //
 
+import AppKit
 import Foundation
+import QuickLookUI
 import SwiftUI
 
-// Klasorlere erisim hatasi icin kullanmak icin enum yapisi kurduk.
-// LocalizedError protocolunu implement ediyoruz. Bu sayede errorDescription property'si olur ve error'u localize edebiliriz.
-private enum DirectoryAccessError: LocalizedError {
-    case invalidURL
-    case permissionDenied(path: String, folderTitle: String)
-    case notFound(path: String, folderTitle: String)
-    case corrupt(path: String)
-    case unknown(message: String, path: String, underlying: Error?)
-
-    // Ornek : DirectoryAccessError.invalidURL.errorDescription yazarsak "Invalid directory URL" döner.
-    // Ornek : DirectoryAccessError.permissionDenied(path: "~/Downloads", folderTitle: "Downloads").errorDescription yazarsak "Permission denied. Please check System Settings > Privacy & Security > Files and Folders to grant access to the Downloads folder.\n\nPath: ~/Downloads" döner.
-    var errorDescription: String? {
-        switch self {
-        case .invalidURL:
-            return "Invalid directory URL"
-        case let .permissionDenied(path, folderTitle):
-            return "Permission denied. Please check System Settings > Privacy & Security > Files and Folders to grant access to the \(folderTitle) folder.\n\nPath: \(path)"
-        case let .notFound(path, folderTitle):
-            return "The \(folderTitle) folder could not be found at this location.\n\nPath: \(path)"
-        case let .corrupt(path):
-            return "Unable to read the folder. It may be corrupted or inaccessible.\n\nPath: \(path)"
-        case let .unknown(message, path, _):
-            return "Unable to access folder: \(message)\n\nPath: \(path)"
-        }
-    }
-}
-
-private enum SidebarPlace: String, CaseIterable, Identifiable {
-    case downloads
-    case desktop
-    case documents
-
-    var title: String {
-        switch self {
-        case .downloads:
-            "Downloads"
-
-        case .desktop:
-            "Desktop"
-
-        case .documents:
-            "Documents"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .downloads:
-            "folder"
-
-        case .desktop:
-            "folder"
-
-        case .documents:
-            "folder"
-        }
-    }
-
-    // computed property olarak yarattik. SidebarPlace degerine gore url hesaplaniyor ve return ediliyor.
-    var url: URL? {
-        switch self {
-        case .downloads:
-            return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        case .desktop:
-            return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        case .documents:
-            return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        }
-    }
-
-    var id: Self {
-        self
-    }
-}
-
 struct ContentView: View {
-    @State private var selection: SidebarPlace? = .downloads
+    @Environment(\.scenePhase) private var scenePhase
+    @FocusedValue(\.explorerPaneID) private var focusedPaneID
+
+    @State private var workspace = WorkspaceModel()
+    @State private var fileOperations = FileOperationCoordinator()
+    @State private var terminalApplications = TerminalApplicationCoordinator()
+
+    init() {}
+
+    init(
+        workspace: WorkspaceModel,
+        fileOperations: FileOperationCoordinator,
+        terminalApplications: TerminalApplicationCoordinator
+    ) {
+        _workspace = State(initialValue: workspace)
+        _fileOperations = State(initialValue: fileOperations)
+        _terminalApplications = State(initialValue: terminalApplications)
+    }
+
+    private var sidebarSelection: Binding<SidebarPlace?> {
+        Binding(
+            get: { workspace.activePane?.place },
+            set: { newPlace in
+                guard let newPlace else { return }
+                workspace.select(newPlace, in: workspace.activePaneID)
+            }
+        )
+    }
+
+    private var fileCommandContext: FileCommandContext? {
+        guard let pane = workspace.activePane else { return nil }
+
+        return FileCommandContext(
+            selectedURLs: pane.selectedCommandURLs,
+            destinationDirectoryURL: pane.displayedDirectory,
+            coordinator: fileOperations
+        )
+    }
+
     var body: some View {
+        @Bindable var fileOperations = fileOperations
+        @Bindable var terminalApplications = terminalApplications
+
         NavigationSplitView {
-            List(SidebarPlace.allCases, selection: $selection) { place in
+            List(SidebarPlace.allCases, selection: sidebarSelection) { place in
                 Label(place.title, systemImage: place.systemImage)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                     .tag(place)
-            }.listStyle(.sidebar)
+                    .internalFolderDropTarget(
+                        destinationDirectoryURL: place.url,
+                        paneID: workspace.activePaneID,
+                        showsTerminalCommands: true
+                    )
+            }
+            .listStyle(.sidebar)
         } detail: {
-            if let selection {
-                // one way binding yapiyoruz. selection'in degeri degistiginde DestinationView'in place parametresi de degisir bu sebeple DestinationView'in task'i her seferinde calisir ve secili klasorun icerigi gosterilir.
-                DestinationView(place: selection)
+            HStack(spacing: 0) {
+                WorkspaceRootView(workspace: workspace)
+
+                if workspace.paneCount == 1 {
+                    Divider()
+
+                    inspectorContent
+                        .frame(width: 340)
+                        .frame(maxHeight: .infinity)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .accessibilityLabel("Preview")
+                }
+            }
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+        }
+        .environment(fileOperations)
+        .environment(terminalApplications)
+        .focusedSceneValue(\.fileCommandContext, fileCommandContext)
+        .onChange(of: scenePhase, initial: true) {
+            guard scenePhase == .active else { return }
+            terminalApplications.refresh()
+        }
+        .onChange(of: focusedPaneID) {
+            guard let focusedPaneID else { return }
+            workspace.activate(focusedPaneID)
+        }
+        .alert("File Operation Failed", isPresented: $fileOperations.isErrorPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(fileOperations.errorMessage)
+        }
+        .alert(
+            "Unable to Open Terminal",
+            isPresented: $terminalApplications.isErrorPresented
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(terminalApplications.errorMessage)
+        }
+    }
+
+    @ViewBuilder
+    private var inspectorContent: some View {
+        if let pane = workspace.activePane,
+           pane.isInspectorPresented,
+           let selectedItem = pane.selectedInspectorItem {
+            if selectedItem.isDirectory {
+                FolderContentsInspector(
+                    folder: selectedItem,
+                    paneID: pane.id,
+                    fileOperations: fileOperations,
+                    terminalApplications: terminalApplications
+                )
             } else {
-                Text("Select a folder")
-                    .foregroundStyle(.secondary)
+                ImagePreviewInspector(image: selectedItem)
+            }
+        } else {
+            ContentUnavailableView(
+                "Nothing to Preview",
+                systemImage: "eye.slash"
+            )
+        }
+    }
+}
+
+private struct WorkspaceRootView: View {
+    let workspace: WorkspaceModel
+
+    var body: some View {
+        WorkspaceNodeView(node: workspace.layoutRoot, workspace: workspace)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct WorkspaceNodeView: View {
+    let node: WorkspaceLayoutNode
+    let workspace: WorkspaceModel
+
+    @ViewBuilder
+    var body: some View {
+        switch node {
+        case let .pane(paneID):
+            if let pane = workspace.pane(paneID) {
+                DestinationView(pane: pane, workspace: workspace)
+                    .id(paneID)
+            }
+
+        case let .split(splitID, axis, first, second):
+            switch axis {
+            case .sideBySide:
+                HSplitView {
+                    WorkspaceNodeView(node: first, workspace: workspace)
+                    WorkspaceNodeView(node: second, workspace: workspace)
+                }
+                .id(splitID)
+
+            case .stacked:
+                VSplitView {
+                    WorkspaceNodeView(node: first, workspace: workspace)
+                    WorkspaceNodeView(node: second, workspace: workspace)
+                }
+                .id(splitID)
             }
         }
     }
 }
 
-@MainActor
+private nonisolated struct DirectoryLoadRequest: Hashable {
+    let directoryURL: URL?
+    let operationRevision: Int
+}
+
 private struct DestinationView: View {
-    let place: SidebarPlace
-    @State private var directoryContents: [URL] = []
+    @Environment(FileOperationCoordinator.self) private var fileOperations
+
+    let pane: WorkspacePaneState
+    let workspace: WorkspaceModel
+
+    private var directoryLoadRequest: DirectoryLoadRequest {
+        DirectoryLoadRequest(
+            directoryURL: pane.displayedDirectory,
+            operationRevision: fileOperations.completedOperationCount
+        )
+    }
+
+    private var fileCommandContext: FileCommandContext {
+        FileCommandContext(
+            selectedURLs: pane.selectedCommandURLs,
+            destinationDirectoryURL: pane.displayedDirectory,
+            coordinator: fileOperations
+        )
+    }
+
+    var body: some View {
+        @Bindable var pane = pane
+        @Bindable var searchModel = pane.searchModel
+
+        VStack(alignment: .leading, spacing: 8) {
+            paneToolbar
+
+            if let displayedDirectory = pane.displayedDirectory {
+                directoryPathHeader(displayedDirectory)
+
+                if pane.searchModel.isSearchActive {
+                    ExplorerSearchControlBar(
+                        scope: $searchModel.scope,
+                        contentMode: $searchModel.contentMode,
+                        isSearching: pane.searchModel.isSearching,
+                        resultCount: pane.searchModel.results.count
+                    )
+                }
+
+                Divider()
+                directoryBody
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .topLeading
+                    )
+                    .internalFolderDropTarget(
+                        destinationDirectoryURL: displayedDirectory,
+                        paneID: pane.id,
+                        showsNewFolderCommand: true
+                    )
+            } else {
+                ContentUnavailableView(
+                    "Folder Unavailable",
+                    systemImage: "folder.badge.questionmark"
+                )
+            }
+        }
+        .padding(10)
+        .frame(
+            minWidth: 280,
+            maxWidth: .infinity,
+            minHeight: 220,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
+        .background(
+            workspace.activePaneID == pane.id
+                ? Color.accentColor.opacity(0.035)
+                : Color.clear
+        )
+        .overlay {
+            Rectangle()
+                .stroke(
+                    workspace.activePaneID == pane.id ? Color.accentColor : .clear,
+                    lineWidth: 2
+                )
+                .allowsHitTesting(false)
+        }
+        .contentShape(Rectangle())
+        .focusedValue(\.explorerPaneID, pane.id)
+        .focusedValue(\.fileCommandContext, fileCommandContext)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                workspace.activate(pane.id)
+            }
+        )
+        .task(id: directoryLoadRequest) {
+            let request = directoryLoadRequest
+            await loadDirectoryContents(from: request.directoryURL)
+
+            if request.operationRevision > 0 {
+                await pane.searchModel.filesDidChange(in: request.directoryURL)
+            }
+        }
+        .task(id: pane.searchModel.request(in: pane.displayedDirectory)) {
+            await pane.searchModel.search(in: pane.displayedDirectory)
+        }
+        .onChange(of: pane.selectedURL) {
+            if pane.selectedURL != nil {
+                workspace.activate(pane.id)
+            }
+            updatePreviewPresentation()
+        }
+        .onChange(of: pane.selectedSearchResultID) {
+            guard pane.searchModel.isSearchActive else { return }
+
+            if pane.selectedSearchResultID != nil {
+                workspace.activate(pane.id)
+            }
+            pane.selectedURL = pane.searchModel.results
+                .first(where: { $0.id == pane.selectedSearchResultID })?
+                .item.url
+            updatePreviewPresentation()
+        }
+        .onChange(of: pane.searchModel.request(in: pane.displayedDirectory)) {
+            pane.selectedSearchResultID = nil
+            pane.selectedURL = nil
+        }
+        .onChange(of: fileOperations.completedOperationCount) {
+            pane.selectedSearchResultID = nil
+            pane.selectedURL = nil
+            pane.isInspectorPresented = false
+        }
+        .modifier(
+            WorkspacePaneAccessibilityModifier(
+                pane: pane,
+                workspace: workspace
+            )
+        )
+    }
+
+    private var paneToolbar: some View {
+        @Bindable var searchModel = pane.searchModel
+
+        return VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Menu {
+                    ForEach(SidebarPlace.allCases) { place in
+                        Button {
+                            workspace.select(place, in: pane.id)
+                        } label: {
+                            if pane.place == place {
+                                Label(place.title, systemImage: "checkmark")
+                            } else {
+                                Text(place.title)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(pane.place.title, systemImage: pane.place.systemImage)
+                        .font(.headline)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Choose the folder shown in this pane")
+
+                Spacer(minLength: 4)
+
+                Button("New Folder", systemImage: "folder.badge.plus") {
+                    workspace.activate(pane.id)
+                    fileOperations.createFolder(in: pane.displayedDirectory)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(
+                    pane.displayedDirectory == nil || fileOperations.isPerforming
+                )
+                .help("Create a new folder in this pane")
+
+                Button("Split Right", systemImage: "rectangle.split.2x1") {
+                    _ = workspace.split(paneID: pane.id, direction: .right)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(workspace.canSplit == false)
+                .help("Split this pane to the right")
+
+                Button("Split Below", systemImage: "rectangle.split.1x2") {
+                    _ = workspace.split(paneID: pane.id, direction: .below)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(workspace.canSplit == false)
+                .help("Split this pane below")
+
+                if workspace.paneCount > 1 {
+                    Button("Close Pane", systemImage: "xmark") {
+                        _ = workspace.close(pane.id)
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Close this pane")
+                }
+            }
+
+            TextField("Search this folder", text: $searchModel.query)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Search in \(pane.place.title)")
+                .help("Search file names or contents in this pane")
+        }
+    }
+
+    private func directoryPathHeader(_ url: URL) -> some View {
+        HStack {
+            if pane.navigation.canGoBack {
+                Button("Back", systemImage: "chevron.left") {
+                    workspace.activate(pane.id)
+                    pane.navigation.goBack()
+                    pane.selectedURL = nil
+                }
+                .buttonStyle(.borderless)
+                .help("Go to the previous folder")
+            }
+
+            Text(url.path(percentEncoded: false))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+
+            Spacer()
+
+            if fileOperations.isPerforming {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel(fileOperations.statusMessage ?? "Working")
+
+                if let statusMessage = fileOperations.statusMessage {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var directoryBody: some View {
+        @Bindable var pane = pane
+
+        if pane.searchModel.isSearchActive {
+            ExplorerSearchResultsView(
+                paneID: pane.id,
+                query: pane.searchModel.query,
+                results: pane.searchModel.results,
+                isSearching: pane.searchModel.isSearching,
+                errorMessage: pane.searchModel.errorMessage,
+                selection: $pane.selectedSearchResultID,
+                onSelect: selectSearchResult,
+                onOpen: openSearchResult
+            )
+        } else if pane.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let errorMessage = pane.errorMessage {
+            ContentUnavailableView(
+                "Unable to Access Folder",
+                systemImage: "exclamationmark.triangle.fill",
+                description: Text(errorMessage)
+            )
+        } else if pane.directoryContents.isEmpty {
+            ContentUnavailableView(
+                "Folder Is Empty",
+                systemImage: "folder"
+            )
+        } else {
+            List(pane.directoryContents, selection: $pane.selectedURL) { item in
+                FileRowView(
+                    item: item,
+                    onOpen: {
+                        open(item)
+                    }
+                )
+                .tag(item.url)
+                .internalFileInteraction(for: item, paneID: pane.id)
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    private func open(_ item: FileItem) {
+        workspace.activate(pane.id)
+
+        if item.isDirectory {
+            pane.navigation.open(item.url)
+            pane.selectedURL = nil
+            pane.isInspectorPresented = false
+        } else {
+            _ = NSWorkspace.shared.open(item.url)
+        }
+    }
+
+    private func selectSearchResult(_ result: ExplorerSearchResult) {
+        workspace.activate(pane.id)
+        pane.selectedSearchResultID = result.id
+        pane.selectedURL = result.item.url
+        updatePreviewPresentation()
+    }
+
+    private func updatePreviewPresentation() {
+        let shouldPresent = workspace.paneCount == 1
+            && pane.selectedInspectorItem != nil
+        guard pane.isInspectorPresented != shouldPresent else { return }
+
+        pane.isInspectorPresented = shouldPresent
+    }
+
+    private func openSearchResult(_ result: ExplorerSearchResult) {
+        workspace.activate(pane.id)
+
+        if result.item.isDirectory {
+            pane.searchModel.query = ""
+            pane.navigation.open(result.item.url)
+            pane.selectedSearchResultID = nil
+            pane.selectedURL = nil
+            pane.isInspectorPresented = false
+        } else {
+            _ = NSWorkspace.shared.open(result.item.url)
+        }
+    }
+
+    private func loadDirectoryContents(from requestedURL: URL?) async {
+        guard let requestedURL else {
+            pane.directoryContents = []
+            pane.errorMessage = DirectoryAccessError.invalidURL.localizedDescription
+            pane.isLoading = false
+            return
+        }
+
+        pane.isLoading = true
+        pane.errorMessage = nil
+
+        do {
+            let contents = try await FileSystemService().contents(
+                of: requestedURL,
+                folderTitle: pane.place.title
+            )
+            try Task.checkCancellation()
+            guard requestedURL == pane.displayedDirectory else { return }
+
+            pane.directoryContents = contents
+            pane.isLoading = false
+        } catch is CancellationError {
+            guard requestedURL == pane.displayedDirectory else { return }
+            pane.isLoading = false
+        } catch let error as DirectoryAccessError {
+            guard Task.isCancelled == false,
+                  requestedURL == pane.displayedDirectory else { return }
+            pane.directoryContents = []
+            pane.errorMessage = error.localizedDescription
+            pane.isLoading = false
+        } catch {
+            guard Task.isCancelled == false,
+                  requestedURL == pane.displayedDirectory else { return }
+            pane.directoryContents = []
+            pane.errorMessage = "An unexpected error occurred: \(error.localizedDescription)\n\nPath: \(requestedURL.path)"
+            pane.isLoading = false
+        }
+    }
+}
+
+private struct WorkspacePaneAccessibilityModifier: ViewModifier {
+    let pane: WorkspacePaneState
+    let workspace: WorkspaceModel
+
+    private var isActive: Bool {
+        workspace.activePaneID == pane.id
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("\(pane.place.title) file pane")
+            .accessibilityValue(isActive ? "Active pane" : "Inactive pane")
+            .accessibilityAddTraits(isActive ? .isSelected : [])
+            .accessibilityAction(named: "Activate Pane") {
+                workspace.activate(pane.id)
+            }
+    }
+}
+
+struct FolderContentsInspector: View {
+    let folder: FileItem
+    let paneID: UUID
+    let fileOperations: FileOperationCoordinator
+    let terminalApplications: TerminalApplicationCoordinator
+
+    @State private var directoryContents: [FileItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Simge ve klasor ismi gosteriliyor
-            Label(place.title, systemImage: place.systemImage)
-                .font(.title2.bold())
+        VStack(spacing: 0) {
+            InspectorHeader(item: folder, systemImage: "folder.fill")
 
-            // Dosya yolu gösteriliyor
-            if let url = place.url {
-                Text(url.path(percentEncoded: false))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Divider()
 
-                // Ustteki textin altinda bir adet cizgi ciziyoruz
-                Divider()
-
-                Group {
-                    if isLoading {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if let errorMessage {
-                        VStack(spacing: 16) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.largeTitle)
-                                .foregroundStyle(.orange)
-
-                            Text("Unable to Access Folder")
-                                .font(.headline)
-
-                            Text(errorMessage)
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                            
-                            if place == .desktop {
-                                Text("To grant access:\n1. Open System Settings\n2. Go to Privacy & Security\n3. Select Files and Folders\n4. Find FinallyExplorer\n5. Enable Desktop Folder access")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding()
-                    } else if directoryContents.isEmpty {
-                        Text("Folder is empty")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        List(directoryContents, id: \.self) { url in
-                            FileRowView(url: url)
-                        }
-                    }
-                }
-            } else {
-                Text("Folder unavailable")
-                    .foregroundStyle(.secondary)
-            }
+            inspectorBody
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+                .internalFolderDropTarget(
+                    destinationDirectoryURL: folder.url,
+                    paneID: paneID
+                )
         }
-        .padding()
-        .task(id: place.id) {
+        .task(
+            id: DirectoryLoadRequest(
+                directoryURL: folder.url,
+                operationRevision: fileOperations.completedOperationCount
+            )
+        ) {
             await loadDirectoryContents()
+        }
+        .environment(fileOperations)
+        .environment(terminalApplications)
+    }
+
+    @ViewBuilder
+    private var inspectorBody: some View {
+        if isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let errorMessage {
+            ContentUnavailableView(
+                "Unable to Preview Folder",
+                systemImage: "exclamationmark.triangle.fill",
+                description: Text(errorMessage)
+            )
+        } else if directoryContents.isEmpty {
+            ContentUnavailableView(
+                "Folder Is Empty",
+                systemImage: "folder"
+            )
+        } else {
+            List(directoryContents) { item in
+                FileRowContent(item: item)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .internalFileInteraction(for: item, paneID: paneID)
+            }
+            .listStyle(.plain)
         }
     }
 
-    // DestinationView'in task'i her seferinde çalışır. Yani secili klasorun icerigi gosteriyoruz. Async'dir. Bu sebeple yukleme yaparken once isLoading true olur ve en yukardaki isloading state oldugu icin progressView ekrana verilir.
     private func loadDirectoryContents() async {
-        // place.url eger bir degere sahip degil ise else kismi calisir ve errorMessage state'ine DirectoryAccessError.invalidURL.localizedDescription atanir ve return ederiz.
-        guard let url = place.url else {
-            errorMessage = DirectoryAccessError.invalidURL.localizedDescription
-            return
-        }
-
         isLoading = true
         errorMessage = nil
+        directoryContents = []
 
         do {
-            let contents = try await fetchDirectoryContents(from: url, folderTitle: place.title)
+            let contents = try await FileSystemService().contents(
+                of: folder.url,
+                folderTitle: folder.name
+            )
+            try Task.checkCancellation()
+
             directoryContents = contents
             isLoading = false
+        } catch is CancellationError {
+            return
         } catch let error as DirectoryAccessError {
+            guard Task.isCancelled == false else { return }
             errorMessage = error.localizedDescription
             isLoading = false
         } catch {
-            errorMessage = "An unexpected error occurred: \(error.localizedDescription)\n\nPath: \(url.path)"
+            guard Task.isCancelled == false else { return }
+            errorMessage = error.localizedDescription
             isLoading = false
         }
     }
 }
 
-@MainActor
-private struct FileRowView: View {
-    let url: URL
-    @State private var isDirectory: Bool = false
-    @State private var fileSize: Int64?
-    @State private var modificationDate: Date?
+private struct ImagePreviewInspector: View {
+    let image: FileItem
 
     var body: some View {
-        HStack {
-            Image(systemName: isDirectory ? "folder.fill" : "doc.fill")
-                .foregroundStyle(isDirectory ? .blue : .gray)
+        VStack(spacing: 0) {
+            InspectorHeader(item: image, systemImage: "photo.fill")
+
+            Divider()
+
+            QuickLookPreview(url: image.url)
+                .accessibilityLabel("Preview of \(image.name)")
+        }
+    }
+}
+
+private struct InspectorHeader: View {
+    let item: FileItem
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(item.name, systemImage: systemImage)
+                .font(.headline)
+
+            Text(item.url.path(percentEncoded: false))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+    }
+}
+
+private struct QuickLookPreview: NSViewRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> QLPreviewView {
+        let previewView = QLPreviewView(frame: .zero, style: .compact)!
+        previewView.autostarts = false
+        previewView.shouldCloseWithWindow = false
+        return previewView
+    }
+
+    func updateNSView(_ previewView: QLPreviewView, context: Context) {
+        guard context.coordinator.previewedURL != url else { return }
+
+        context.coordinator.previewedURL = url
+        previewView.previewItem = url as NSURL
+    }
+
+    static func dismantleNSView(_ previewView: QLPreviewView, coordinator: Coordinator) {
+        coordinator.previewedURL = nil
+        previewView.previewItem = nil
+    }
+
+    final class Coordinator {
+        var previewedURL: URL?
+    }
+}
+
+private struct FileRowView: View {
+    let item: FileItem
+    let onOpen: () -> Void
+
+    var body: some View {
+        FileRowContent(item: item)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture(count: 2)
+                    .onEnded { onOpen() }
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(item.isDirectory ? "Double-click to open folder" : "Double-click to open file")
+            .accessibilityAction(named: "Open", onOpen)
+    }
+}
+
+private struct FileRowContent: View {
+    let item: FileItem
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(
+                systemName: item.isDirectory
+                    ? "folder.fill"
+                    : (item.isImage ? "photo.fill" : "doc.fill")
+            )
+                .foregroundStyle(item.isDirectory ? .blue : .gray)
                 .frame(width: 24)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(url.lastPathComponent)
+                Text(item.name)
                     .font(.body)
 
-                if let fileSize = fileSize, !isDirectory {
-                    Text(ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if let modificationDate = modificationDate {
+                if let modificationDate = item.modificationDate {
                     Text(modificationDate.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -229,87 +773,57 @@ private struct FileRowView: View {
             }
 
             Spacer()
-        }
-        .task {
-            await loadFileAttributes()
-        }
-    }
 
-    private func loadFileAttributes() async {
-        do {
-            let resourceValues = try await fetchFileAttributes(for: url)
-
-            isDirectory = resourceValues.isDirectory ?? false
-            fileSize = resourceValues.fileSize.map { Int64($0) }
-            modificationDate = resourceValues.contentModificationDate
-        } catch {
-            // Handle error silently, use defaults
+            FileSizeLabel(item: item)
+                .frame(minWidth: 72, alignment: .trailing)
         }
     }
 }
 
-// Bunu async olmasinin sebebi Task.yield cagirmak icin yaptik yoksa fonksiyonun icinde olan ana islem senkron bir islemdir. Ama mainthread disinda yapmak istersek, cagrildigi yerde Task.detach icinde kullanmaliyiz.
-private func fetchFileAttributes(for url: URL) async throws -> URLResourceValues {
-    // Diger tasklar icin nefes alma imkani veriyoruz. Yani ui guncellemeleri yapilabilir demek. Kucuk bir hack gibi dusunuyorum.
-    // Mevcut taski gecici olarak durdurduk dedik bu task ise view icinde .task {} ile yaratilan task'tir.
-    await Task.yield()
+struct FileSizeLabel: View {
+    let item: FileItem
 
-    return try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey])
-}
+    @State private var folderSize: Int64?
+    @State private var isCalculatingFolderSize = false
 
-private func fetchDirectoryContents(from url: URL, folderTitle: String) async throws -> [URL] {
-    // Yield to allow other tasks to run before blocking file system operations
-    await Task.yield()
-
-    // Resolve the URL to ensure it's fully expanded
-    let resolvedURL = url.resolvingSymlinksInPath()
-
-    // Try to read the directory contents directly
-    // This will throw the actual error if there's a permission or access issue
-    let contents: [URL]
-    do {
-        contents = try FileManager.default.contentsOfDirectory(
-            at: resolvedURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        )
-    } catch let error as CocoaError {
-        // Map CocoaError to our custom error type
-        switch error.code {
-        case .fileReadNoPermission:
-            throw DirectoryAccessError.permissionDenied(path: resolvedURL.path, folderTitle: folderTitle)
-        case .fileReadNoSuchFile:
-            throw DirectoryAccessError.notFound(path: resolvedURL.path, folderTitle: folderTitle)
-        case .fileReadCorruptFile:
-            throw DirectoryAccessError.corrupt(path: resolvedURL.path)
-        default:
-            throw DirectoryAccessError.unknown(
-                message: error.localizedDescription,
-                path: resolvedURL.path,
-                underlying: error
-            )
-        }
-    } catch {
-        throw DirectoryAccessError.unknown(
-            message: error.localizedDescription,
-            path: resolvedURL.path,
-            underlying: error
-        )
+    private var displayedSize: Int64? {
+        item.isDirectory ? folderSize : item.fileSize
     }
 
-    // Sort: directories first, then by name
-    return try contents.sorted { url1, url2 in
-        let resourceValues1 = try url1.resourceValues(forKeys: [.isDirectoryKey])
-        let resourceValues2 = try url2.resourceValues(forKeys: [.isDirectoryKey])
-
-        let isDir1 = resourceValues1.isDirectory ?? false
-        let isDir2 = resourceValues2.isDirectory ?? false
-
-        if isDir1 != isDir2 {
-            return isDir1
+    var body: some View {
+        Group {
+            if let displayedSize {
+                Text(ByteCountFormatter.string(fromByteCount: displayedSize, countStyle: .file))
+                    .monospacedDigit()
+            } else if isCalculatingFolderSize {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Calculating folder size")
+            } else {
+                Text("—")
+            }
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .task(id: item.url) {
+            folderSize = nil
+            isCalculatingFolderSize = item.isDirectory
 
-        return url1.lastPathComponent.localizedCaseInsensitiveCompare(url2.lastPathComponent) == .orderedAscending
+            guard item.isDirectory else { return }
+
+            do {
+                let size = try await FileSystemService().size(of: item.url)
+                try Task.checkCancellation()
+
+                folderSize = size
+                isCalculatingFolderSize = false
+            } catch is CancellationError {
+                return
+            } catch {
+                guard Task.isCancelled == false else { return }
+                isCalculatingFolderSize = false
+            }
+        }
     }
 }
 
