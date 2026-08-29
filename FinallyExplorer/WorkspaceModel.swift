@@ -444,6 +444,15 @@ final class WorkspaceModel {
         return true
     }
 
+    @discardableResult
+    func resetView() -> Bool {
+        guard paneCount > 1, let activePane else { return false }
+
+        layoutRoot = .pane(id: activePaneID)
+        panes = [activePaneID: activePane]
+        return true
+    }
+
     private func makeUniqueID(excluding additionalIDs: Set<UUID> = []) -> UUID? {
         for _ in 0..<Self.maximumIDGenerationAttempts {
             let id = makeID()

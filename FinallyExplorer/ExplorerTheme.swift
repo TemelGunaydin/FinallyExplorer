@@ -175,6 +175,29 @@ struct ExplorerChromeButtonStyle: ButtonStyle {
     }
 }
 
+struct ExplorerChromeActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(ExplorerTheme.actionFont)
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(ExplorerTheme.chromeText)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(
+                configuration.isPressed
+                    ? ExplorerTheme.accent.opacity(0.34)
+                    : Color.white.opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.13), lineWidth: 0.75)
+            }
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 enum ExplorerActionButtonKind {
     case primary
     case secondary

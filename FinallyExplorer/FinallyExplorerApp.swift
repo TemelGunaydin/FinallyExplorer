@@ -45,7 +45,7 @@ struct FinallyExplorerApp: App {
                 sidebar: sidebar
             )
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
         .windowBackgroundDragBehavior(.enabled)
         .commands {
             FileEditCommands()

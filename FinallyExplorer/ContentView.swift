@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var terminalApplications = TerminalApplicationCoordinator()
     @State private var sidebar = SidebarModel()
     @State private var isSidebarFolderPickerPresented = false
+    @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init() {}
@@ -67,12 +68,16 @@ struct ContentView: View {
             ExplorerWindowHeader(
                 activeFolderTitle: workspace.activePane?.place.title ?? "Files",
                 paneCount: workspace.paneCount,
-                onToggleSidebar: toggleSidebar
+                isPreviewVisible: isPreviewVisible,
+                onToggleSidebar: toggleSidebar,
+                onTogglePreview: togglePreview,
+                onResetView: resetWorkspaceView
             )
 
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 explorerSidebar
                     .navigationSplitViewColumnWidth(min: 210, ideal: 232)
+                    .toolbar(removing: .sidebarToggle)
             } detail: {
                 HStack(spacing: 0) {
                     WorkspaceRootView(workspace: workspace, sidebar: sidebar)
@@ -80,11 +85,16 @@ struct ContentView: View {
                     if workspace.paneCount == 1 {
                         Divider()
                             .overlay(ExplorerTheme.divider)
+                            .frame(width: isPreviewVisible ? 1 : 0)
+                            .opacity(isPreviewVisible ? 1 : 0)
 
                         inspectorContent
-                            .frame(width: 340)
+                            .frame(width: isPreviewVisible ? 340 : 0)
                             .frame(maxHeight: .infinity)
                             .background(ExplorerTheme.inspector)
+                            .clipped()
+                            .opacity(isPreviewVisible ? 1 : 0)
+                            .allowsHitTesting(isPreviewVisible)
                     }
                 }
                 .background(ExplorerTheme.canvas)
@@ -94,7 +104,8 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
-        .toolbarVisibility(.hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbar(removing: .title)
         .tint(ExplorerTheme.accent)
         .foregroundStyle(ExplorerTheme.textPrimary)
         .background(ExplorerTheme.canvas)
@@ -126,6 +137,14 @@ struct ContentView: View {
 
     private func toggleSidebar() {
         columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+    }
+
+    private func togglePreview() {
+        isPreviewVisible.toggle()
+    }
+
+    private func resetWorkspaceView() {
+        _ = workspace.resetView()
     }
 
     private var explorerSidebar: some View {

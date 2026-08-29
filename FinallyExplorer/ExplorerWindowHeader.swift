@@ -22,7 +22,10 @@ import SwiftUI
 struct ExplorerWindowHeader: View {
     let activeFolderTitle: String
     let paneCount: Int
+    let isPreviewVisible: Bool
     let onToggleSidebar: () -> Void
+    let onTogglePreview: () -> Void
+    let onResetView: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -65,29 +68,53 @@ struct ExplorerWindowHeader: View {
             Spacer(minLength: 20)
 
             HStack(spacing: 8) {
-                Label(activeFolderTitle, systemImage: "folder.fill")
-                    .lineLimit(1)
-                    .frame(maxWidth: 240)
+                if paneCount == 1 {
+                    Button(
+                        isPreviewVisible ? "Hide Preview" : "Show Preview",
+                        systemImage: "sidebar.trailing",
+                        action: onTogglePreview
+                    )
+                    .buttonStyle(ExplorerChromeActionButtonStyle())
+                    .help(
+                        isPreviewVisible
+                            ? "Hide the preview area"
+                            : "Show the preview area"
+                    )
+                } else {
+                    Button(
+                        "Reset View",
+                        systemImage: "rectangle",
+                        action: onResetView
+                    )
+                    .buttonStyle(ExplorerChromeActionButtonStyle())
+                    .help("Keep the active pane and close the other panes")
+                }
 
-                Label(
-                    paneCount == 1 ? "1 pane" : "\(paneCount) panes",
-                    systemImage: paneCount == 1
-                        ? "rectangle"
-                        : "rectangle.split.2x1"
+                HStack(spacing: 8) {
+                    Label(activeFolderTitle, systemImage: "folder.fill")
+                        .lineLimit(1)
+                        .frame(maxWidth: 240)
+
+                    Label(
+                        paneCount == 1 ? "1 pane" : "\(paneCount) panes",
+                        systemImage: paneCount == 1
+                            ? "rectangle"
+                            : "rectangle.split.2x1"
+                    )
+                }
+                .font(.system(.callout, design: .rounded).bold())
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(ExplorerTheme.chromeText)
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .background(
+                    Color.white.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                 )
-            }
-            .font(.system(.callout, design: .rounded).bold())
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(ExplorerTheme.chromeText)
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(
-                Color.white.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 0.75)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.75)
+                }
             }
         }
         .padding(.leading, 82)

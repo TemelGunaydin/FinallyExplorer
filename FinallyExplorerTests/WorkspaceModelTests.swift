@@ -337,6 +337,50 @@ struct WorkspaceModelTests {
         #expect(model.paneCount == 1)
     }
 
+    @Test("Reset view keeps the active pane and discards every other pane")
+    func resetViewPreservesActivePaneState() throws {
+        let firstID = uuid(54)
+        let secondID = uuid(55)
+        let splitID = uuid(56)
+        let ids = DeterministicWorkspaceIDSequence([secondID, splitID])
+        let model = WorkspaceModel(
+            initialPlace: .downloads,
+            initialPaneID: firstID,
+            idGenerator: { ids.next() }
+        )
+        let firstPane = try #require(model.activePane)
+        _ = try #require(model.split(.right))
+        let activePane = try #require(model.activePane)
+        let retainedDirectory = URL(
+            filePath: "/tmp/retained-pane",
+            directoryHint: .isDirectory
+        )
+        let retainedSelection = retainedDirectory.appending(path: "selection.txt")
+
+        activePane.place = .desktop
+        activePane.navigation.open(retainedDirectory)
+        activePane.selectedURL = retainedSelection
+        activePane.searchModel.query = "keep this search"
+
+        #expect(model.resetView())
+        #expect(model.layoutRoot == .pane(id: secondID))
+        #expect(model.activePaneID == secondID)
+        #expect(model.activePane === activePane)
+        #expect(model.pane(firstID) == nil)
+        #expect(model.pane(secondID) === activePane)
+        #expect(model.paneCount == 1)
+        #expect(firstPane !== activePane)
+        #expect(activePane.place == .desktop)
+        #expect(activePane.navigation.currentDirectory == retainedDirectory)
+        #expect(activePane.selectedURL == retainedSelection)
+        #expect(activePane.searchModel.query == "keep this search")
+
+        let resetLayout = model.layout
+        #expect(model.resetView() == false)
+        #expect(model.layout == resetLayout)
+        #expect(model.activePane === activePane)
+    }
+
     @Test("Selecting a sidebar place resets only the active pane")
     func placeSelectionResetsOnlyActivePane() throws {
         let firstID = uuid(60)
