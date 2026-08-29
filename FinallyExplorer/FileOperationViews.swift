@@ -81,7 +81,11 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
                 .overlay {
                     if isDropTargeted {
                         RoundedRectangle(cornerRadius: 7)
-                            .stroke(Color.accentColor, lineWidth: 2)
+                            .fill(ExplorerTheme.accent.opacity(0.08))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 7)
+                                    .stroke(ExplorerTheme.accent, lineWidth: 2)
+                            }
                             .allowsHitTesting(false)
                     }
                 }
@@ -162,7 +166,11 @@ private struct InternalFolderDropModifier: ViewModifier {
             .overlay {
                 if isDropTargeted {
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.accentColor, lineWidth: 2)
+                        .fill(ExplorerTheme.accent.opacity(0.08))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(ExplorerTheme.accent, lineWidth: 2)
+                        }
                         .padding(2)
                         .allowsHitTesting(false)
                 }

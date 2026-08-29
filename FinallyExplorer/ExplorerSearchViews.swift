@@ -18,6 +18,16 @@ struct ExplorerSearchControlBar: View {
             compactControls
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            ExplorerTheme.elevatedPanel,
+            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+        }
     }
 
     private var wideControls: some View {
@@ -82,7 +92,7 @@ struct ExplorerSearchControlBar: View {
         } else {
             Text("\(resultCount) results")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ExplorerTheme.textSecondary)
         }
     }
 }
@@ -125,10 +135,15 @@ struct ExplorerSearchResultsView: View {
                         onOpen: { onOpen(result) }
                     )
                     .tag(result.id)
+                    .listRowBackground(ExplorerTheme.row)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(ExplorerTheme.panel)
+                .listRowSeparatorTint(ExplorerTheme.divider)
             }
         }
+        .background(ExplorerTheme.panel)
     }
 }
 
@@ -138,11 +153,17 @@ private struct ExplorerSearchMessageBanner: View {
     var body: some View {
         Label(message.text, systemImage: message.isError ? "exclamationmark.triangle.fill" : "info.circle.fill")
             .font(.caption)
-            .foregroundStyle(message.isError ? Color.red : Color.secondary)
+            .foregroundStyle(
+                message.isError ? Color.red : ExplorerTheme.supportAccent
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(message.isError ? Color.red.opacity(0.10) : Color.secondary.opacity(0.08))
+            .background(
+                message.isError
+                    ? Color.red.opacity(0.10)
+                    : ExplorerTheme.supportAccent.opacity(0.10)
+            )
     }
 }
 
@@ -163,27 +184,28 @@ private struct ExplorerSearchRowView: View {
                 HStack(spacing: 6) {
                     Text(result.item.name)
                         .font(.body)
+                        .foregroundStyle(ExplorerTheme.textPrimary)
 
                     if result.contentMatch?.isDefinition == true {
                         Text("Definition")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.quaternary, in: .capsule)
+                            .font(.caption)
+                            .foregroundStyle(ExplorerTheme.textPrimary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(ExplorerTheme.accentSoft, in: .capsule)
                     }
                 }
 
                 Text(result.relativePath)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ExplorerTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 if let match = result.contentMatch {
                     Text("Line \(match.lineNumber), column \(match.column + 1)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(.caption)
+                        .foregroundStyle(ExplorerTheme.textTertiary)
 
                     HighlightedSearchLine(
                         text: match.lineContent,
@@ -235,7 +257,13 @@ private struct ExplorerSearchRowView: View {
     }
 
     private var iconColor: Color {
-        result.item.isDirectory ? .blue : .gray
+        if result.item.isDirectory {
+            ExplorerTheme.folderIcon
+        } else if result.item.isImage {
+            ExplorerTheme.imageIcon
+        } else {
+            ExplorerTheme.documentIcon
+        }
     }
 }
 
@@ -261,7 +289,7 @@ private struct HighlightedSearchLine: View {
 
             var matchedText = AttributedString(String(text[range]))
             matchedText.font = .system(.caption, design: .monospaced).bold()
-            matchedText.foregroundColor = .accentColor
+            matchedText.foregroundColor = ExplorerTheme.accent
             output.append(matchedText)
             cursor = range.upperBound
         }

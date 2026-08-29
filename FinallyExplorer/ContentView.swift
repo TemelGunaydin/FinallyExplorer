@@ -71,18 +71,23 @@ struct ContentView: View {
 
                 if workspace.paneCount == 1 {
                     Divider()
+                        .overlay(ExplorerTheme.divider)
 
                     inspectorContent
                         .frame(width: 340)
                         .frame(maxHeight: .infinity)
-                        .background(Color(nsColor: .controlBackgroundColor))
+                        .background(ExplorerTheme.inspector)
                         .accessibilityLabel("Preview")
                 }
             }
+            .background(ExplorerTheme.canvas)
             .transaction { transaction in
                 transaction.animation = nil
             }
         }
+        .tint(ExplorerTheme.accent)
+        .foregroundStyle(ExplorerTheme.textPrimary)
+        .background(ExplorerTheme.canvas)
         .environment(fileOperations)
         .environment(terminalApplications)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
@@ -134,6 +139,9 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        .headerProminence(.increased)
+        .scrollContentBackground(.hidden)
+        .background(ExplorerTheme.sidebarBackground)
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Button {
@@ -141,14 +149,19 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(ExplorerToolbarButtonStyle())
                 .help("Add Folder to Sidebar")
 
                 Spacer()
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.bar)
+            .background(ExplorerTheme.elevatedPanel.opacity(0.82))
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(ExplorerTheme.divider)
+                    .frame(height: 0.75)
+            }
         }
         .fileImporter(
             isPresented: $isSidebarFolderPickerPresented,
@@ -168,6 +181,8 @@ struct ContentView: View {
     @ViewBuilder
     private func sidebarRow(_ place: SidebarPlace) -> some View {
         Label(place.title, systemImage: place.systemImage)
+            .font(ExplorerTheme.navigationFont)
+            .labelStyle(ExplorerSidebarLabelStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .tag(place)
@@ -220,6 +235,7 @@ private struct WorkspaceRootView: View {
             sidebar: sidebar
         )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(ExplorerTheme.canvas)
     }
 }
 
@@ -307,7 +323,7 @@ private struct DestinationView: View {
         @Bindable var pane = pane
         @Bindable var searchModel = pane.searchModel
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             paneToolbar
 
             if let displayedDirectory = pane.displayedDirectory {
@@ -323,8 +339,9 @@ private struct DestinationView: View {
                 }
 
                 Divider()
+                    .overlay(ExplorerTheme.divider)
                 ZStack(alignment: .topLeading) {
-                    Color.clear
+                    ExplorerTheme.panel
                     directoryBody
                 }
                     .frame(
@@ -344,7 +361,7 @@ private struct DestinationView: View {
                 )
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(
             minWidth: 280,
             maxWidth: .infinity,
@@ -353,18 +370,30 @@ private struct DestinationView: View {
             alignment: .topLeading
         )
         .background(
-            workspace.activePaneID == pane.id
-                ? Color.accentColor.opacity(0.035)
-                : Color.clear
+            ExplorerTheme.panel,
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
         .overlay {
-            Rectangle()
-                .stroke(
-                    workspace.activePaneID == pane.id ? Color.accentColor : .clear,
-                    lineWidth: 2
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    workspace.activePaneID == pane.id
+                        ? ExplorerTheme.accent.opacity(0.055)
+                        : Color.clear
                 )
                 .allowsHitTesting(false)
         }
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    workspace.activePaneID == pane.id
+                        ? ExplorerTheme.accent
+                        : ExplorerTheme.divider,
+                    lineWidth: workspace.activePaneID == pane.id ? 2 : 0.75
+                )
+                .allowsHitTesting(false)
+        }
+        .padding(6)
+        .background(ExplorerTheme.canvas)
         .contentShape(Rectangle())
         .focusedValue(\.explorerPaneID, pane.id)
         .focusedValue(\.fileCommandContext, fileCommandContext)
@@ -436,7 +465,7 @@ private struct DestinationView: View {
     private var paneToolbar: some View {
         @Bindable var searchModel = pane.searchModel
 
-        return VStack(spacing: 6) {
+        return VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Menu {
                     ForEach(sidebar.allPlaces) { place in
@@ -452,7 +481,14 @@ private struct DestinationView: View {
                     }
                 } label: {
                     Label(pane.place.title, systemImage: pane.place.systemImage)
-                        .font(.headline)
+                        .font(ExplorerTheme.paneTitleFont)
+                        .foregroundStyle(ExplorerTheme.textPrimary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(
+                            ExplorerTheme.accentSoft,
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        )
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -465,7 +501,7 @@ private struct DestinationView: View {
                     fileOperations.createFolder(in: pane.displayedDirectory)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(ExplorerToolbarButtonStyle())
                 .disabled(
                     pane.displayedDirectory == nil || fileOperations.isPerforming
                 )
@@ -476,7 +512,7 @@ private struct DestinationView: View {
                     isAssistantPresented = true
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(ExplorerToolbarButtonStyle())
                 .disabled(pane.displayedDirectory == nil)
                 .help("Ask on-device AI about this folder")
 
@@ -484,7 +520,7 @@ private struct DestinationView: View {
                     _ = workspace.split(paneID: pane.id, direction: .right)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(ExplorerToolbarButtonStyle())
                 .disabled(workspace.canSplit == false)
                 .help("Split this pane to the right")
 
@@ -492,7 +528,7 @@ private struct DestinationView: View {
                     _ = workspace.split(paneID: pane.id, direction: .below)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(ExplorerToolbarButtonStyle())
                 .disabled(workspace.canSplit == false)
                 .help("Split this pane below")
 
@@ -501,13 +537,32 @@ private struct DestinationView: View {
                         _ = workspace.close(pane.id)
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(ExplorerToolbarButtonStyle())
                     .help("Close this pane")
                 }
             }
+            .padding(6)
+            .background(
+                ExplorerTheme.elevatedPanel,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+            }
 
             TextField("Search this folder", text: $searchModel.query)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .background(
+                    ExplorerTheme.control,
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+                }
                 .accessibilityLabel("Search in \(pane.place.title)")
                 .help("Search file names or contents in this pane")
         }
@@ -522,12 +577,13 @@ private struct DestinationView: View {
                     pane.selectedURL = nil
                 }
                 .buttonStyle(.borderless)
+                .foregroundStyle(ExplorerTheme.accent)
                 .help("Go to the previous folder")
             }
 
             Text(url.path(percentEncoded: false))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ExplorerTheme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
@@ -542,7 +598,7 @@ private struct DestinationView: View {
                 if let statusMessage = fileOperations.statusMessage {
                     Text(statusMessage)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ExplorerTheme.textSecondary)
                 }
             }
         }
@@ -589,9 +645,13 @@ private struct DestinationView: View {
                     }
                 )
                 .tag(item.url)
+                .listRowBackground(ExplorerTheme.row)
                 .internalFileInteraction(for: item, paneID: pane.id)
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(ExplorerTheme.panel)
+            .listRowSeparatorTint(ExplorerTheme.divider)
         }
     }
 
@@ -721,6 +781,7 @@ struct FolderContentsInspector: View {
             InspectorHeader(item: folder, systemImage: "folder.fill")
 
             Divider()
+                .overlay(ExplorerTheme.divider)
 
             inspectorBody
                 .frame(
@@ -768,9 +829,13 @@ struct FolderContentsInspector: View {
                 FileRowContent(item: item)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    .listRowBackground(ExplorerTheme.row)
                     .internalFileInteraction(for: item, paneID: paneID)
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(ExplorerTheme.inspector)
+            .listRowSeparatorTint(ExplorerTheme.divider)
         }
     }
 
@@ -810,6 +875,7 @@ private struct ImagePreviewInspector: View {
             InspectorHeader(item: image, systemImage: "photo.fill")
 
             Divider()
+                .overlay(ExplorerTheme.divider)
 
             QuickLookPreview(url: image.url)
                 .accessibilityLabel("Preview of \(image.name)")
@@ -824,17 +890,20 @@ private struct InspectorHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Label(item.name, systemImage: systemImage)
-                .font(.headline)
+                .font(ExplorerTheme.paneTitleFont)
+                .foregroundStyle(ExplorerTheme.textPrimary)
 
             Text(item.url.path(percentEncoded: false))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ExplorerTheme.textSecondary)
                 .lineLimit(2)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(ExplorerTheme.elevatedPanel)
     }
 }
 
@@ -904,20 +973,22 @@ private struct FileRowContent: View {
                     ? "folder.fill"
                     : (item.isImage ? "photo.fill" : "doc.fill")
             )
-                .foregroundStyle(item.isDirectory ? .blue : .gray)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(iconColor)
                 .frame(width: 24)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.body)
+                    .foregroundStyle(ExplorerTheme.textPrimary)
 
                 if let modificationDate = item.modificationDate {
                     Text(
                         "Modified: \(modificationDate.formatted(date: .abbreviated, time: .shortened))"
-                    )
+                        )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ExplorerTheme.textSecondary)
                 }
             }
 
@@ -925,6 +996,16 @@ private struct FileRowContent: View {
 
             FileSizeLabel(item: item)
                 .frame(minWidth: 72, alignment: .trailing)
+        }
+    }
+
+    private var iconColor: Color {
+        if item.isDirectory {
+            ExplorerTheme.folderIcon
+        } else if item.isImage {
+            ExplorerTheme.imageIcon
+        } else {
+            ExplorerTheme.documentIcon
         }
     }
 }
@@ -962,7 +1043,7 @@ struct FileSizeLabel: View {
             }
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(ExplorerTheme.textSecondary)
         .task(id: folderSizeLoadRequest) {
             folderSize = nil
             isCalculatingFolderSize = item.isDirectory

@@ -34,14 +34,18 @@ struct ExplorerAssistantSheet: View {
                 }
                 .padding(20)
             }
+            .scrollContentBackground(.hidden)
+            .background(ExplorerTheme.canvas)
         }
         .frame(minWidth: 520, minHeight: 470)
+        .background(ExplorerTheme.canvas)
+        .tint(ExplorerTheme.accent)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Ask Explorer", systemImage: "sparkles")
-                .font(.title2.bold())
+                .font(ExplorerTheme.assistantTitleFont)
 
             Text("Private, on-device help for the folder in front of you.")
                 .font(.subheadline)
@@ -50,37 +54,44 @@ struct ExplorerAssistantSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .foregroundStyle(.white)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.15, green: 0.48, blue: 0.48),
-                    Color(red: 0.23, green: 0.13, blue: 0.38),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(ExplorerTheme.assistantHeader)
+        .overlay(alignment: .trailing) {
+            Circle()
+                .fill(ExplorerTheme.easyOnTheEyes.opacity(0.30))
+                .frame(width: 150, height: 150)
+                .blur(radius: 42)
+                .offset(x: 36, y: 20)
+                .allowsHitTesting(false)
+        }
+        .clipped()
     }
 
     private var folderSummary: some View {
         VStack(alignment: .leading, spacing: 5) {
             Label(folderURL.lastPathComponent, systemImage: "folder.fill")
                 .font(.headline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(ExplorerTheme.textPrimary)
 
             Text(folderURL.path(percentEncoded: false))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ExplorerTheme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
             Text("Uses metadata from \(items.count) visible items; file contents stay private.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ExplorerTheme.textSecondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary, in: .rect(cornerRadius: 14))
+        .background(
+            ExplorerTheme.elevatedPanel,
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+        }
     }
 
     private func promptEditor(question: Binding<String>) -> some View {
@@ -94,7 +105,17 @@ struct ExplorerAssistantSheet: View {
                 axis: .vertical
             )
             .lineLimit(3...6)
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                ExplorerTheme.control,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+            }
             .disabled(model.isResponding)
 
             HStack {
@@ -104,6 +125,7 @@ struct ExplorerAssistantSheet: View {
                     model.ask(about: folderURL, items: items)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(ExplorerTheme.accent)
                 .disabled(model.canAsk == false)
             }
         }
@@ -137,7 +159,7 @@ struct ExplorerAssistantSheet: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Thinking on this Mac…")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ExplorerTheme.textSecondary)
             }
             .padding(.top, 2)
         } else if let answer = model.answer {
@@ -150,7 +172,14 @@ struct ExplorerAssistantSheet: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary, in: .rect(cornerRadius: 14))
+            .background(
+                ExplorerTheme.elevatedPanel,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+            }
         } else if let errorMessage = model.errorMessage {
             ContentUnavailableView(
                 "Ask Explorer Couldn’t Respond",
@@ -165,6 +194,7 @@ struct ExplorerAssistantSheet: View {
             model.useSuggestion(suggestion, about: folderURL, items: items)
         }
         .buttonStyle(.bordered)
+        .tint(ExplorerTheme.accent)
         .disabled(model.isResponding)
     }
 }
