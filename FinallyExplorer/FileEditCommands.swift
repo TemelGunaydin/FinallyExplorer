@@ -13,7 +13,9 @@ struct FileEditCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .pasteboard) {
             Button("Cut") {
-                routeResponderCommand(#selector(NSText.cut(_:)))
+                if routeResponderCommand(#selector(NSText.cut(_:))) == false {
+                    fileCommandContext?.cutSelection()
+                }
             }
             .keyboardShortcut("x", modifiers: .command)
 

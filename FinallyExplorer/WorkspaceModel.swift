@@ -6,47 +6,6 @@
 import Foundation
 import Observation
 
-nonisolated enum SidebarPlace: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case downloads
-    case desktop
-    case documents
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .downloads:
-            "Downloads"
-        case .desktop:
-            "Desktop"
-        case .documents:
-            "Documents"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .downloads:
-            "arrow.down.circle"
-        case .desktop:
-            "desktopcomputer"
-        case .documents:
-            "doc"
-        }
-    }
-
-    var url: URL? {
-        switch self {
-        case .downloads:
-            FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-        case .desktop:
-            FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        case .documents:
-            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        }
-    }
-}
-
 nonisolated enum WorkspaceSplitDirection: Hashable, Sendable {
     case right
     case below

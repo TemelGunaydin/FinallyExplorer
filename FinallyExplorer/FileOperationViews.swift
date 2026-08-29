@@ -11,19 +11,8 @@ private struct InternalFileInteractionModifier: ViewModifier {
     let item: FileItem
     let paneID: UUID
 
-    @State private var isDropTargeted = false
-
     func body(content: Content) -> some View {
-        let acceptsDrop = item.isDirectory && fileOperations.isPerforming == false
-
         content
-            .overlay {
-                if isDropTargeted {
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(Color.accentColor, lineWidth: 2)
-                        .allowsHitTesting(false)
-                }
-            }
             .draggable(
                 InternalFileTransfer.self,
                 item: InternalFileTransfer(
@@ -45,23 +34,17 @@ private struct InternalFileInteractionModifier: ViewModifier {
                     )
                 )
             )
-            .dropDestination(
-                for: InternalFileTransfer.self,
-                isEnabled: acceptsDrop
-            ) { transfers, _ in
-                fileOperations.drop(
-                    transfers,
-                    into: item.url,
-                    destinationPaneID: paneID
+            .modifier(
+                InternalDirectoryRowDropModifier(
+                    destinationDirectoryURL: item.isDirectory ? item.url : nil,
+                    paneID: paneID
                 )
-            }
-            .dropConfiguration { session in
-                dropConfiguration(for: session, acceptsDrop: acceptsDrop)
-            }
-            .onDropSessionUpdated { session in
-                updateDropTarget(session, acceptsDrop: acceptsDrop)
-            }
+            )
             .contextMenu {
+                Button("Cut") {
+                    fileOperations.cut([item.url])
+                }
+
                 Button("Copy") {
                     fileOperations.copy([item.url])
                 }
@@ -78,6 +61,49 @@ private struct InternalFileInteractionModifier: ViewModifier {
             .accessibilityAction(named: "Copy") {
                 fileOperations.copy([item.url])
             }
+    }
+}
+
+private struct InternalDirectoryRowDropModifier: ViewModifier {
+    @Environment(FileOperationCoordinator.self) private var fileOperations
+
+    let destinationDirectoryURL: URL?
+    let paneID: UUID
+
+    @State private var isDropTargeted = false
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let destinationDirectoryURL {
+            let acceptsDrop = fileOperations.isPerforming == false
+
+            content
+                .overlay {
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(Color.accentColor, lineWidth: 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .dropDestination(
+                    for: InternalFileTransfer.self,
+                    isEnabled: acceptsDrop
+                ) { transfers, _ in
+                    fileOperations.drop(
+                        transfers,
+                        into: destinationDirectoryURL,
+                        destinationPaneID: paneID
+                    )
+                }
+                .dropConfiguration { session in
+                    dropConfiguration(for: session, acceptsDrop: acceptsDrop)
+                }
+                .onDropSessionUpdated { session in
+                    updateDropTarget(session, acceptsDrop: acceptsDrop)
+                }
+        } else {
+            content
+        }
     }
 
     private func dropConfiguration(

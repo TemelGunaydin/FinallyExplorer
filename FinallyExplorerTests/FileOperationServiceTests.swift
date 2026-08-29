@@ -3,6 +3,7 @@
 //  FinallyExplorerTests
 //
 
+import CoreTransferable
 import Foundation
 import Testing
 import UniformTypeIdentifiers
@@ -669,7 +670,7 @@ struct FileOperationServiceTests {
         #expect(FileManager.default.fileExists(atPath: sourceURL.path))
     }
 
-    @Test("The internal transfer payload uses only the app's custom type")
+    @Test("The internal transfer payload keeps its identity and custom type")
     func internalTransferPayloadRoundTrips() throws {
         let sourceURL = URL(filePath: "/tmp/internal-transfer.txt")
         let sourcePaneID = try #require(
@@ -693,6 +694,27 @@ struct FileOperationServiceTests {
                 == "com.temelgunaydin.finallyexplorer.internal-file-transfer"
         )
         #expect(UTType.finallyExplorerInternalFileTransfer != .fileURL)
+    }
+
+    @Test("The internal transfer payload round-trips through CoreTransferable")
+    func internalTransferPayloadLoadsFromItemProvider() async throws {
+        let payload = InternalFileTransfer(
+            sourceURL: URL(filePath: "/tmp/dragged-item.txt"),
+            sourcePaneID: try #require(
+                UUID(uuidString: "10000000-0000-0000-0000-000000000002")
+            )
+        )
+        let provider = NSItemProvider()
+        provider.register(payload)
+
+        let decoded: InternalFileTransfer = try await withCheckedThrowingContinuation {
+            continuation in
+            provider.loadTransferable(type: InternalFileTransfer.self) { result in
+                continuation.resume(with: result)
+            }
+        }
+
+        #expect(decoded == payload)
     }
 
     @Test("Drop action truth table prefers copying unless every source is local")

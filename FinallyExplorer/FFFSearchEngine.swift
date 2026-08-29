@@ -19,6 +19,124 @@ import Foundation
 import CFFF
 #endif
 
+/// Shares one FFF index per canonical root between explorer panes. A lease is
+/// held only while a model is using that root; when the last lease is released
+/// the native handle is torn down rather than leaving a watcher/index alive in
+/// the background.
+actor FFFSearchEnginePool {
+    static let shared = FFFSearchEnginePool()
+
+    private struct StartingEntry {
+        let token: UUID
+        let engine: FFFSearchEngine
+        let startTask: Task<FFFSearchEngine, Error>
+    }
+
+    private enum Entry {
+        case starting(StartingEntry)
+        case ready(engine: FFFSearchEngine, leaseCount: Int)
+    }
+
+    private var entries: [URL: Entry] = [:]
+
+    /// Returns a retained shared engine. Concurrent callers for an uncached
+    /// root await one start task, so a split created during warm-up cannot
+    /// create a second native index.
+    func acquire(rootURL: URL) async throws -> FFFSearchEngine {
+        let key = Self.canonicalRootURL(rootURL)
+
+        while true {
+            switch entries[key] {
+            case let .ready(engine, leaseCount):
+                if Task.isCancelled {
+                    // A completed start with no leases can only occur when
+                    // every caller was cancelled during initialization.
+                    if leaseCount == 0 {
+                        entries.removeValue(forKey: key)
+                        await engine.shutdown()
+                    }
+                    throw CancellationError()
+                }
+
+                entries[key] = .ready(engine: engine, leaseCount: leaseCount + 1)
+                return engine
+
+            case let .starting(starting):
+                do {
+                    _ = try await starting.startTask.value
+                } catch {
+                    if case let .starting(current)? = entries[key],
+                       current.token == starting.token {
+                        entries.removeValue(forKey: key)
+                        await starting.engine.shutdown()
+                    }
+                    throw error
+                }
+
+                // Exactly one waiter promotes the completed start. Any other
+                // waiter loops and acquires a normal lease from the ready
+                // entry, preserving a single ref-count source of truth.
+                if case let .starting(current)? = entries[key],
+                   current.token == starting.token {
+                    entries[key] = .ready(engine: starting.engine, leaseCount: 0)
+                }
+
+            case nil:
+                let engine = FFFSearchEngine(rootURL: rootURL)
+                let starting = StartingEntry(
+                    token: UUID(),
+                    engine: engine,
+                    startTask: Task {
+                        try await engine.start()
+                        return engine
+                    }
+                )
+                entries[key] = .starting(starting)
+            }
+        }
+    }
+
+    /// Releases one model's lease. A mismatched root/engine is ignored so a
+    /// stale task from a previous pane root can never shut down a newer index.
+    func release(_ engine: FFFSearchEngine, rootURL: URL) async {
+        let key = Self.canonicalRootURL(rootURL)
+        guard case let .ready(current, leaseCount)? = entries[key],
+              current === engine else {
+            return
+        }
+
+        if leaseCount > 1 {
+            entries[key] = .ready(engine: current, leaseCount: leaseCount - 1)
+        } else {
+            entries.removeValue(forKey: key)
+            await current.shutdown()
+        }
+    }
+
+    // Internal observability for deterministic lifecycle tests. It is also a
+    // useful diagnostic when investigating an unexpectedly retained index.
+    func activeIndexCount() -> Int {
+        entries.values.reduce(into: 0) { count, entry in
+            if case .ready = entry {
+                count += 1
+            }
+        }
+    }
+
+    func leaseCount(for rootURL: URL) -> Int {
+        switch entries[Self.canonicalRootURL(rootURL)] {
+        case let .ready(_, leaseCount):
+            leaseCount
+        case .starting, .none:
+            0
+        }
+    }
+
+    private nonisolated static func canonicalRootURL(_ rootURL: URL) -> URL {
+        rootURL.standardizedFileURL.resolvingSymlinksInPath()
+    }
+}
+
 nonisolated enum FFFContentSearchMode: UInt8, CaseIterable, Identifiable, Hashable, Sendable {
     case plain = 0
     case regex = 1
@@ -49,6 +167,18 @@ nonisolated struct FFFFileSearchHit: Identifiable, Hashable, Sendable {
     let score: Int
 
     var id: URL { url }
+}
+
+/// A page returned by FFF's file finder. Keeping the native totals prevents a
+/// capped UI list from being presented as a complete result set.
+nonisolated struct FFFFileSearchPage: Hashable, Sendable {
+    let hits: [FFFFileSearchHit]
+    let totalMatched: UInt32
+    let totalFiles: UInt32
+
+    var isTruncated: Bool {
+        UInt64(hits.count) < UInt64(totalMatched)
+    }
 }
 
 nonisolated struct FFFDirectorySearchHit: Identifiable, Hashable, Sendable {
@@ -83,6 +213,23 @@ nonisolated struct FFFContentSearchHit: Identifiable, Hashable, Sendable {
     }
 }
 
+/// A content-search page together with FFF's continuation and regex-fallback
+/// state. `nextFileOffset` being non-zero means more indexed files were not
+/// searched within the current page/time budget.
+nonisolated struct FFFContentSearchPage: Hashable, Sendable {
+    let hits: [FFFContentSearchHit]
+    let totalMatched: UInt32
+    let totalFilesSearched: UInt32
+    let totalFiles: UInt32
+    let filteredFileCount: UInt32
+    let nextFileOffset: UInt32
+    let regexFallbackError: String?
+
+    var isTruncated: Bool {
+        nextFileOffset != 0
+    }
+}
+
 nonisolated struct FFFScanProgress: Equatable, Sendable {
     let scannedFileCount: UInt64
     let isScanning: Bool
@@ -96,6 +243,7 @@ nonisolated enum FFFSearchError: LocalizedError, Equatable, Sendable {
     case notPrepared
     case invalidQuery(reason: String)
     case invalidLimit(Int)
+    case invalidPageIndex(Int)
     case invalidTimeBudget(Int)
     case operationFailed(operation: String, message: String)
     case invalidPayload(operation: String, field: String)
@@ -112,6 +260,8 @@ nonisolated enum FFFSearchError: LocalizedError, Equatable, Sendable {
             "Search query is invalid: \(reason)"
         case let .invalidLimit(limit):
             "Search result limit must be between 1 and \(FFFSearchInputValidator.maximumResultLimit) (received \(limit))."
+        case let .invalidPageIndex(index):
+            "Search page index must be between 0 and \(FFFSearchInputValidator.maximumPageIndex) (received \(index))."
         case let .invalidTimeBudget(milliseconds):
             "Search time budget must be between 0 and \(FFFSearchInputValidator.maximumTimeBudgetMilliseconds) ms (received \(milliseconds) ms)."
         case let .operationFailed(operation, message):
@@ -128,6 +278,7 @@ nonisolated enum FFFSearchError: LocalizedError, Equatable, Sendable {
 nonisolated enum FFFSearchInputValidator {
     static let maximumQueryUTF8ByteCount = 4_096
     static let maximumResultLimit = 10_000
+    static let maximumPageIndex = 10_000
     static let maximumTimeBudgetMilliseconds = 60_000
 
     static func validate(query: String) throws {
@@ -149,6 +300,13 @@ nonisolated enum FFFSearchInputValidator {
             throw FFFSearchError.invalidLimit(limit)
         }
         return UInt32(limit)
+    }
+
+    static func checkedPageIndex(_ index: Int) throws -> UInt32 {
+        guard (0...maximumPageIndex).contains(index) else {
+            throw FFFSearchError.invalidPageIndex(index)
+        }
+        return UInt32(index)
     }
 
     static func checkedTimeBudget(_ milliseconds: Int) throws -> UInt64 {
@@ -260,31 +418,52 @@ actor FFFSearchEngine {
         )
     }
 
-    /// Creates the FFF instance and waits for its automatically-started initial scan.
+    /// Creates FFF's native instance and starts its background scan without
+    /// waiting for the complete index. A search may therefore use the partial
+    /// index immediately while a separately owned warm-up task continues.
     /// Repeated calls are idempotent.
-    func prepare() async throws {
+    func start() throws {
         if handleOwner != nil { return }
 
         try Task.checkCancellation()
         try validateRootURL()
+        handleOwner = try createHandle()
+    }
 
-        let owner = try createHandle()
-        handleOwner = owner
+    /// Waits for the initial background scan to complete. The polling sleep
+    /// deliberately suspends this actor between quick native checks, letting
+    /// searches and progress reads interleave with warm-up.
+    func waitForInitialScan() async throws {
+        // Keep ownership alive across the actor suspension in the polling
+        // loop. `shutdown()` may otherwise clear `handleOwner` while this
+        // task is asleep and leave a raw pointer dangling on resume.
+        let owner = try preparedHandleOwner()
+        try await waitUntilScanFinishes(handle: owner.rawValue)
+        try requireCurrent(owner)
+    }
 
-        do {
-            try waitUntilScanFinishes(handle: owner.rawValue)
-            try Task.checkCancellation()
-        } catch {
-            // A cancelled or failed prepare is transactional: the partially
-            // prepared instance and its background scan are torn down.
-            handleOwner = nil
-            throw error
-        }
+    /// Compatibility entry point for clients that need a complete index before
+    /// issuing their first query. Cancelling one waiter deliberately leaves a
+    /// shared started engine alive for other callers.
+    func prepare() async throws {
+        try start()
+        try await waitForInitialScan()
+        try Task.checkCancellation()
     }
 
     func searchFiles(query: String, limit: Int = 100) async throws -> [FFFFileSearchHit] {
+        let page = try await searchFilesPage(query: query, limit: limit)
+        return page.hits
+    }
+
+    func searchFilesPage(
+        query: String,
+        limit: Int = 100,
+        pageIndex: Int = 0
+    ) async throws -> FFFFileSearchPage {
         try FFFSearchInputValidator.validate(query: query)
         let pageSize = try FFFSearchInputValidator.checkedLimit(limit)
+        let pageIndex = try FFFSearchInputValidator.checkedPageIndex(pageIndex)
         let handle = try preparedHandle()
         try Task.checkCancellation()
 
@@ -294,24 +473,28 @@ actor FFFSearchEngine {
                 queryPointer,
                 nil,
                 0,
-                0,
+                pageIndex,
                 pageSize,
                 0,
                 0
             )
         }
 
-        let hits = try consumePayload(
+        let page = try consumePayload(
             envelope,
             operation: "search files",
             as: FffSearchResult.self,
             freePayload: fff_free_search_result
         ) { result in
-            try copyFileHits(from: result)
+            FFFFileSearchPage(
+                hits: try copyFileHits(from: result),
+                totalMatched: fff_search_result_get_total_matched(result),
+                totalFiles: fff_search_result_get_total_files(result)
+            )
         }
 
         try Task.checkCancellation()
-        return hits
+        return page
     }
 
     /// Exposes FFF's directory index for callers that want it. FinallyExplorer's
@@ -356,8 +539,25 @@ actor FFFSearchEngine {
         limit: Int = 50,
         timeBudgetMilliseconds: Int = 150
     ) async throws -> [FFFContentSearchHit] {
+        let page = try await searchContentPage(
+            query: query,
+            mode: mode,
+            limit: limit,
+            timeBudgetMilliseconds: timeBudgetMilliseconds
+        )
+        return page.hits
+    }
+
+    func searchContentPage(
+        query: String,
+        mode: FFFContentSearchMode = .plain,
+        limit: Int = 50,
+        timeBudgetMilliseconds: Int = 150,
+        fileOffset: Int = 0
+    ) async throws -> FFFContentSearchPage {
         try FFFSearchInputValidator.validate(query: query)
         let pageSize = try FFFSearchInputValidator.checkedLimit(limit)
+        let fileOffset = try FFFSearchInputValidator.checkedPageIndex(fileOffset)
         let timeBudget = try FFFSearchInputValidator.checkedTimeBudget(
             timeBudgetMilliseconds
         )
@@ -372,7 +572,7 @@ actor FFFSearchEngine {
                 0,
                 0,
                 true,
-                0,
+                fileOffset,
                 pageSize,
                 timeBudget,
                 1,
@@ -381,17 +581,27 @@ actor FFFSearchEngine {
             )
         }
 
-        let hits = try consumePayload(
+        let page = try consumePayload(
             envelope,
             operation: "search file contents",
             as: FffGrepResult.self,
             freePayload: fff_free_grep_result
         ) { result in
-            try copyContentHits(from: result)
+            FFFContentSearchPage(
+                hits: try copyContentHits(from: result),
+                totalMatched: fff_grep_result_get_total_matched(result),
+                totalFilesSearched: fff_grep_result_get_total_files_searched(result),
+                totalFiles: fff_grep_result_get_total_files(result),
+                filteredFileCount: fff_grep_result_get_filtered_file_count(result),
+                nextFileOffset: fff_grep_result_get_next_file_offset(result),
+                regexFallbackError: copiedString(
+                    fff_grep_result_get_regex_fallback_error(result)
+                )
+            )
         }
 
         try Task.checkCancellation()
-        return hits
+        return page
     }
 
     func scanProgress() async throws -> FFFScanProgress {
@@ -415,14 +625,17 @@ actor FFFSearchEngine {
     }
 
     func rescan() async throws {
-        let handle = try preparedHandle()
+        // See `waitForInitialScan()`: retain the owner through the async wait.
+        let owner = try preparedHandleOwner()
+        let handle = owner.rawValue
         try Task.checkCancellation()
 
         try consumeEmptyResult(
             fff_scan_files(handle),
             operation: "start a rescan"
         )
-        try waitUntilScanFinishes(handle: handle)
+        try await waitUntilScanFinishes(handle: handle)
+        try requireCurrent(owner)
         try Task.checkCancellation()
     }
 
@@ -479,22 +692,36 @@ actor FFFSearchEngine {
     }
 
     private func preparedHandle() throws -> UnsafeMutableRawPointer {
+        try preparedHandleOwner().rawValue
+    }
+
+    private func preparedHandleOwner() throws -> FFFHandleOwner {
         guard let handleOwner else {
             throw FFFSearchError.notPrepared
         }
-        return handleOwner.rawValue
+        return handleOwner
     }
 
-    private func waitUntilScanFinishes(handle: UnsafeMutableRawPointer) throws {
+    private func requireCurrent(_ owner: FFFHandleOwner) throws {
+        guard let handleOwner, handleOwner === owner else {
+            throw FFFSearchError.notPrepared
+        }
+    }
+
+    private func waitUntilScanFinishes(handle: UnsafeMutableRawPointer) async throws {
         while true {
             try Task.checkCancellation()
 
             let completed = try consumeIntegerResult(
-                fff_wait_for_scan(handle, 100),
+                // Keep this native wait deliberately short. Some FFF builds
+                // treat a zero timeout as an unbounded wait; ten milliseconds
+                // still keeps the actor available to partial-index searches.
+                fff_wait_for_scan(handle, 10),
                 operation: "wait for the file index"
             ) != 0
 
             if completed { return }
+            try await Task.sleep(for: .milliseconds(100))
         }
     }
 
@@ -906,9 +1133,28 @@ actor FFFSearchEngine {
         throw FFFSearchError.libraryUnavailable
     }
 
+    func start() throws {
+        throw FFFSearchError.libraryUnavailable
+    }
+
+    func waitForInitialScan() async throws {
+        throw FFFSearchError.libraryUnavailable
+    }
+
     func searchFiles(query: String, limit: Int = 100) async throws -> [FFFFileSearchHit] {
         try FFFSearchInputValidator.validate(query: query)
         _ = try FFFSearchInputValidator.checkedLimit(limit)
+        throw FFFSearchError.libraryUnavailable
+    }
+
+    func searchFilesPage(
+        query: String,
+        limit: Int = 100,
+        pageIndex: Int = 0
+    ) async throws -> FFFFileSearchPage {
+        try FFFSearchInputValidator.validate(query: query)
+        _ = try FFFSearchInputValidator.checkedLimit(limit)
+        _ = try FFFSearchInputValidator.checkedPageIndex(pageIndex)
         throw FFFSearchError.libraryUnavailable
     }
 
@@ -930,6 +1176,20 @@ actor FFFSearchEngine {
         try FFFSearchInputValidator.validate(query: query)
         _ = try FFFSearchInputValidator.checkedLimit(limit)
         _ = try FFFSearchInputValidator.checkedTimeBudget(timeBudgetMilliseconds)
+        throw FFFSearchError.libraryUnavailable
+    }
+
+    func searchContentPage(
+        query: String,
+        mode _: FFFContentSearchMode = .plain,
+        limit: Int = 50,
+        timeBudgetMilliseconds: Int = 150,
+        fileOffset: Int = 0
+    ) async throws -> FFFContentSearchPage {
+        try FFFSearchInputValidator.validate(query: query)
+        _ = try FFFSearchInputValidator.checkedLimit(limit)
+        _ = try FFFSearchInputValidator.checkedTimeBudget(timeBudgetMilliseconds)
+        _ = try FFFSearchInputValidator.checkedPageIndex(fileOffset)
         throw FFFSearchError.libraryUnavailable
     }
 

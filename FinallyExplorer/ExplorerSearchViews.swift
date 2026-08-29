@@ -92,7 +92,7 @@ struct ExplorerSearchResultsView: View {
     let query: String
     let results: [ExplorerSearchResult]
     let isSearching: Bool
-    let errorMessage: String?
+    let errorMessage: ExplorerSearchMessage?
 
     @Binding var selection: ExplorerSearchResult.ID?
 
@@ -100,29 +100,49 @@ struct ExplorerSearchResultsView: View {
     let onOpen: (ExplorerSearchResult) -> Void
 
     var body: some View {
-        if isSearching, results.isEmpty {
-            ProgressView("Preparing search index…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let errorMessage {
-            ContentUnavailableView(
-                "Unable to Search",
-                systemImage: "exclamationmark.triangle.fill",
-                description: Text(errorMessage)
-            )
-        } else if results.isEmpty {
-            ContentUnavailableView.search(text: query)
-        } else {
-            List(results, selection: $selection) { result in
-                ExplorerSearchRowView(
-                    paneID: paneID,
-                    result: result,
-                    onSelect: { onSelect(result) },
-                    onOpen: { onOpen(result) }
-                )
-                .tag(result.id)
+        VStack(spacing: 0) {
+            if let errorMessage {
+                ExplorerSearchMessageBanner(message: errorMessage)
             }
-            .listStyle(.plain)
+
+            if isSearching, results.isEmpty {
+                ProgressView("Preparing search index…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorMessage, errorMessage.isError, results.isEmpty {
+                ContentUnavailableView(
+                    "Unable to Search",
+                    systemImage: "exclamationmark.triangle.fill",
+                    description: Text(errorMessage.text)
+                )
+            } else if results.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else {
+                List(results, selection: $selection) { result in
+                    ExplorerSearchRowView(
+                        paneID: paneID,
+                        result: result,
+                        onSelect: { onSelect(result) },
+                        onOpen: { onOpen(result) }
+                    )
+                    .tag(result.id)
+                }
+                .listStyle(.plain)
+            }
         }
+    }
+}
+
+private struct ExplorerSearchMessageBanner: View {
+    let message: ExplorerSearchMessage
+
+    var body: some View {
+        Label(message.text, systemImage: message.isError ? "exclamationmark.triangle.fill" : "info.circle.fill")
+            .font(.caption)
+            .foregroundStyle(message.isError ? Color.red : Color.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(message.isError ? Color.red.opacity(0.10) : Color.secondary.opacity(0.08))
     }
 }
 

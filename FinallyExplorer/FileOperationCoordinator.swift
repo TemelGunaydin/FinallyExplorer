@@ -7,40 +7,106 @@ import Foundation
 import Observation
 import SwiftUI
 
+/// Describes how the current in-app clipboard should be pasted.
+///
+/// A cut clipboard is intentionally kept separate from drag-and-drop moves:
+/// only a paste that originated from a cut is allowed to consume its sources.
+nonisolated enum FileClipboardOperation: Equatable, Sendable {
+    case copy
+    case cut
+}
+
+/// A scoped file-system change published after an operation completes.
+///
+/// Directory rows only need a reload when their direct children changed, while
+/// recursive folder-size and search indexes need to observe descendants too.
+private nonisolated struct FileSystemChange: Hashable, Sendable {
+    let revision: Int
+    let directlyAffectedDirectoryURLs: Set<URL>
+}
+
 @MainActor
 @Observable
 final class FileOperationCoordinator {
     private(set) var clipboardURLs: [URL] = []
+    private(set) var clipboardOperation: FileClipboardOperation?
     private(set) var isPerforming = false
     private(set) var statusMessage: String?
     private(set) var completedOperationCount = 0
+    private var latestFileSystemChange = FileSystemChange(
+        revision: 0,
+        directlyAffectedDirectoryURLs: []
+    )
 
     var isErrorPresented = false
     private(set) var errorMessage = ""
 
     @ObservationIgnored private var operationTask: Task<Void, Never>?
     @ObservationIgnored private let service: any FileOperationServicing
+    @ObservationIgnored private var clipboardRevision = UUID()
 
     init(service: any FileOperationServicing = FileOperationService()) {
         self.service = service
     }
 
     var canPaste: Bool {
-        clipboardURLs.isEmpty == false && isPerforming == false
+        clipboardURLs.isEmpty == false
+            && clipboardOperation != nil
+            && isPerforming == false
+    }
+
+    /// A revision for views showing this directory's *direct* children.
+    func directoryRefreshRevision(for directoryURL: URL?) -> Int {
+        guard let directoryURL else { return 0 }
+        let normalizedDirectoryURL = Self.standardizedURL(directoryURL)
+
+        return latestFileSystemChange.directlyAffectedDirectoryURLs.contains(
+            normalizedDirectoryURL
+        )
+            ? latestFileSystemChange.revision
+            : 0
+    }
+
+    /// A revision for data derived recursively from a folder, such as its
+    /// total size or its FFF search index.
+    func recursiveRefreshRevision(for directoryURL: URL?) -> Int {
+        guard let directoryURL else { return 0 }
+        let normalizedDirectoryURL = Self.standardizedURL(directoryURL)
+
+        return latestFileSystemChange.directlyAffectedDirectoryURLs.contains {
+            Self.isSameOrAncestor(normalizedDirectoryURL, of: $0)
+        } ? latestFileSystemChange.revision : 0
     }
 
     func copy(_ urls: [URL]) {
-        clipboardURLs = Self.uniqueStandardizedURLs(urls)
+        setClipboard(urls, operation: .copy)
+    }
+
+    func cut(_ urls: [URL]) {
+        setClipboard(urls, operation: .cut)
     }
 
     @discardableResult
     func paste(into destinationDirectoryURL: URL?) -> Bool {
-        guard let destinationDirectoryURL, canPaste else { return false }
+        guard let destinationDirectoryURL,
+              let clipboardOperation,
+              canPaste else {
+            return false
+        }
+
+        let clipboardSnapshot = ClipboardSnapshot(
+            urls: clipboardURLs,
+            operation: clipboardOperation,
+            revision: clipboardRevision
+        )
 
         return start(
-            operation: .copy,
-            sources: clipboardURLs,
-            destinationDirectoryURL: destinationDirectoryURL
+            operation: clipboardOperation == .cut ? .move : .copy,
+            sources: clipboardSnapshot.urls,
+            destinationDirectoryURL: destinationDirectoryURL,
+            cutClipboardSnapshot: clipboardOperation == .cut
+                ? clipboardSnapshot
+                : nil
         )
     }
 
@@ -54,7 +120,8 @@ final class FileOperationCoordinator {
         return start(
             operation: .move,
             sources: transfers.map(\.sourceURL),
-            destinationDirectoryURL: destinationDirectoryURL
+            destinationDirectoryURL: destinationDirectoryURL,
+            cutClipboardSnapshot: nil
         )
     }
 
@@ -76,7 +143,8 @@ final class FileOperationCoordinator {
         return start(
             operation: action == .move ? .move : .copy,
             sources: transfers.map(\.sourceURL),
-            destinationDirectoryURL: destinationDirectoryURL
+            destinationDirectoryURL: destinationDirectoryURL,
+            cutClipboardSnapshot: nil
         )
     }
 
@@ -87,7 +155,8 @@ final class FileOperationCoordinator {
         return start(
             operation: .createFolder,
             sources: [],
-            destinationDirectoryURL: destinationDirectoryURL
+            destinationDirectoryURL: destinationDirectoryURL,
+            cutClipboardSnapshot: nil
         )
     }
 
@@ -110,7 +179,8 @@ final class FileOperationCoordinator {
     private func start(
         operation: Operation,
         sources: [URL],
-        destinationDirectoryURL: URL
+        destinationDirectoryURL: URL,
+        cutClipboardSnapshot: ClipboardSnapshot?
     ) -> Bool {
         let sources = Self.uniqueStandardizedURLs(sources)
 
@@ -129,7 +199,8 @@ final class FileOperationCoordinator {
             await perform(
                 operation: operation,
                 sources: sources,
-                destinationDirectoryURL: destinationDirectoryURL
+                destinationDirectoryURL: destinationDirectoryURL,
+                cutClipboardSnapshot: cutClipboardSnapshot
             )
         }
 
@@ -139,13 +210,19 @@ final class FileOperationCoordinator {
     private func perform(
         operation: Operation,
         sources: [URL],
-        destinationDirectoryURL: URL
+        destinationDirectoryURL: URL,
+        cutClipboardSnapshot: ClipboardSnapshot?
     ) async {
         var didChange = false
+        var successfullyMovedCutSources: Set<URL> = []
+        var directlyAffectedDirectoryURLs: Set<URL> = []
 
         defer {
-            if didChange {
-                completedOperationCount += 1
+            if let cutClipboardSnapshot {
+                consumeSuccessfullyMovedCutSources(
+                    successfullyMovedCutSources,
+                    matching: cutClipboardSnapshot
+                )
             }
 
             isPerforming = false
@@ -160,6 +237,12 @@ final class FileOperationCoordinator {
                     in: destinationDirectoryURL
                 )
                 didChange = outcome.didChange
+
+                if outcome.didChange {
+                    directlyAffectedDirectoryURLs.insert(
+                        Self.standardizedURL(destinationDirectoryURL)
+                    )
+                }
             case .copy, .move:
                 var failureMessages: [String] = []
 
@@ -184,6 +267,26 @@ final class FileOperationCoordinator {
                         }
 
                         didChange = didChange || outcome.didChange
+
+                        if outcome.didChange {
+                            directlyAffectedDirectoryURLs.insert(
+                                Self.standardizedURL(destinationDirectoryURL)
+                            )
+
+                            if operation == .move {
+                                directlyAffectedDirectoryURLs.insert(
+                                    Self.standardizedURL(
+                                        sourceURL.deletingLastPathComponent()
+                                    )
+                                )
+                            }
+                        }
+
+                        if operation == .move,
+                           cutClipboardSnapshot != nil,
+                           outcome.didChange {
+                            successfullyMovedCutSources.insert(sourceURL)
+                        }
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch {
@@ -199,10 +302,17 @@ final class FileOperationCoordinator {
 
             try Task.checkCancellation()
         } catch is CancellationError {
-            return
+            // A partially completed batch still changed the file system and
+            // must invalidate only the folders it actually touched.
         } catch {
             errorMessage = error.localizedDescription
             isErrorPresented = true
+        }
+
+        if didChange {
+            await publishFileSystemChange(
+                directlyAffecting: directlyAffectedDirectoryURLs
+            )
         }
     }
 
@@ -210,9 +320,81 @@ final class FileOperationCoordinator {
         var seen: Set<URL> = []
 
         return urls.compactMap { url in
-            let standardizedURL = url.standardizedFileURL
+            let standardizedURL = Self.standardizedURL(url)
             return seen.insert(standardizedURL).inserted ? standardizedURL : nil
         }
+    }
+
+    private func publishFileSystemChange(
+        directlyAffecting directoryURLs: Set<URL>
+    ) async {
+        await FolderSizeCache.shared.invalidateRecursively(
+            affectedBy: directoryURLs
+        )
+        completedOperationCount += 1
+        latestFileSystemChange = FileSystemChange(
+            revision: completedOperationCount,
+            directlyAffectedDirectoryURLs: directoryURLs
+        )
+    }
+
+    private static func standardizedURL(_ url: URL) -> URL {
+        url.resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    private static func isSameOrAncestor(_ ancestor: URL, of descendant: URL) -> Bool {
+        let ancestorPath = normalizedPath(of: ancestor)
+        let descendantPath = normalizedPath(of: descendant)
+
+        if ancestorPath == "/" {
+            return descendantPath.hasPrefix("/")
+        }
+
+        return descendantPath == ancestorPath
+            || descendantPath.hasPrefix(ancestorPath + "/")
+    }
+
+    private static func normalizedPath(of url: URL) -> String {
+        var path = url.path(percentEncoded: false)
+
+        while path.count > 1, path.hasSuffix("/") {
+            path.removeLast()
+        }
+
+        return path
+    }
+
+    private func setClipboard(
+        _ urls: [URL],
+        operation: FileClipboardOperation
+    ) {
+        let urls = Self.uniqueStandardizedURLs(urls)
+        clipboardURLs = urls
+        clipboardOperation = urls.isEmpty ? nil : operation
+        clipboardRevision = UUID()
+    }
+
+    /// Removes only the sources that were actually moved by the matching cut
+    /// request. If the user copied or cut something else while the move was in
+    /// flight, that newer clipboard remains completely untouched.
+    private func consumeSuccessfullyMovedCutSources(
+        _ successfullyMovedSources: Set<URL>,
+        matching snapshot: ClipboardSnapshot
+    ) {
+        guard successfullyMovedSources.isEmpty == false,
+              snapshot.operation == .cut,
+              clipboardOperation == .cut,
+              clipboardRevision == snapshot.revision else {
+            return
+        }
+
+        clipboardURLs.removeAll { successfullyMovedSources.contains($0) }
+
+        if clipboardURLs.isEmpty {
+            clipboardOperation = nil
+        }
+
+        clipboardRevision = UUID()
     }
 
     private static func errorMessage(for failureMessages: [String]) -> String {
@@ -271,6 +453,12 @@ final class FileOperationCoordinator {
             }
         }
     }
+
+    private struct ClipboardSnapshot: Sendable {
+        let urls: [URL]
+        let operation: FileClipboardOperation
+        let revision: UUID
+    }
 }
 
 @MainActor
@@ -283,6 +471,10 @@ struct FileCommandContext {
         selectedURLs.isEmpty == false
     }
 
+    var canCut: Bool {
+        selectedURLs.isEmpty == false
+    }
+
     var canPaste: Bool {
         destinationDirectoryURL != nil && coordinator.canPaste
     }
@@ -290,6 +482,11 @@ struct FileCommandContext {
     func copySelection() {
         guard canCopy else { return }
         coordinator.copy(selectedURLs)
+    }
+
+    func cutSelection() {
+        guard canCut else { return }
+        coordinator.cut(selectedURLs)
     }
 
     func paste() {

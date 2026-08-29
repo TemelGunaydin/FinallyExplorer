@@ -310,6 +310,120 @@ struct FFFSearchEngineTests {
         }
     }
 
+    @Test("File-result pages preserve total-match metadata when the UI cap is reached")
+    func fileSearchPageExposesTruncation() async throws {
+        let root = try makeFFFTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        for index in 0..<4 {
+            try Data("marker".utf8).write(
+                to: root.appending(path: "PagedNeedle-\(index).txt")
+            )
+        }
+
+        let engine = FFFSearchEngine(rootURL: root)
+        do {
+            try await engine.prepare()
+            let page = try await engine.searchFilesPage(
+                query: "PagedNeedle",
+                limit: 2
+            )
+
+            #expect(page.hits.count == 2)
+            #expect(page.totalMatched == 4)
+            #expect(page.isTruncated)
+
+            await engine.shutdown()
+        } catch {
+            await engine.shutdown()
+            throw error
+        }
+    }
+
+    @Test("A per-root pool shares one index until its final lease is released")
+    func sharedEnginePoolReferenceCountsLeases() async throws {
+        let root = try makeFFFTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appending(path: "SharedIndexMarker.txt")
+        try Data("shared index marker".utf8).write(to: sourceURL)
+
+        let pool = FFFSearchEnginePool()
+        let first = try await pool.acquire(rootURL: root)
+        let second = try await pool.acquire(rootURL: root.standardizedFileURL)
+
+        do {
+            #expect(first === second)
+            let initialIndexCount = await pool.activeIndexCount()
+            let initialLeaseCount = await pool.leaseCount(for: root)
+            #expect(initialIndexCount == 1)
+            #expect(initialLeaseCount == 2)
+
+            await pool.release(first, rootURL: root)
+            let remainingLeaseCount = await pool.leaseCount(for: root)
+            #expect(remainingLeaseCount == 1)
+
+            try await second.waitForInitialScan()
+            let hits = try await second.searchFiles(query: "SharedIndexMarker")
+            #expect(hits.contains { $0.url == sourceURL })
+
+            await pool.release(second, rootURL: root)
+            let finalIndexCount = await pool.activeIndexCount()
+            #expect(finalIndexCount == 0)
+
+            do {
+                _ = try await second.searchFiles(query: "SharedIndexMarker")
+                Issue.record("Expected final lease release to invalidate the native handle.")
+            } catch let error as FFFSearchError {
+                #expect(error == .notPrepared)
+            }
+        } catch {
+            await pool.release(first, rootURL: root)
+            await pool.release(second, rootURL: root)
+            throw error
+        }
+    }
+
+    @Test(
+        "Page offsets reject negative and resource-exhausting values",
+        arguments: [-1, FFFSearchInputValidator.maximumPageIndex + 1, Int.max]
+    )
+    func rejectsInvalidPageOffsets(offset: Int) {
+        do {
+            _ = try FFFSearchInputValidator.checkedPageIndex(offset)
+            Issue.record("Expected page offset \(offset) to be rejected.")
+        } catch let error as FFFSearchError {
+            #expect(error == .invalidPageIndex(offset))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("Content continuation metadata distinguishes a complete and capped page")
+    func contentPageContinuationStateIsExplicit() {
+        let complete = FFFContentSearchPage(
+            hits: [],
+            totalMatched: 0,
+            totalFilesSearched: 12,
+            totalFiles: 12,
+            filteredFileCount: 10,
+            nextFileOffset: 0,
+            regexFallbackError: nil
+        )
+        let capped = FFFContentSearchPage(
+            hits: [],
+            totalMatched: 0,
+            totalFilesSearched: 3,
+            totalFiles: 12,
+            filteredFileCount: 10,
+            nextFileOffset: 3,
+            regexFallbackError: nil
+        )
+
+        #expect(complete.isTruncated == false)
+        #expect(capped.isTruncated)
+    }
+
     @Test("Prepare rejects remote URLs, remote file hosts, and regular files")
     func rejectsInvalidRoots() async throws {
         let temporaryRoot = try makeFFFTemporaryDirectory()

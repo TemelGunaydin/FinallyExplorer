@@ -32,7 +32,12 @@ struct ExplorerSearchModelTests {
 
         model.query = "Empty Reports"
         await model.search(in: root)
-        #expect(model.errorMessage == nil)
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                normalizedTestPath($0.item.url) == expectedFolderPath && $0.item.isDirectory
+            }
+        }
+        #expect(model.errorMessage?.isError != true)
         #expect(
             model.results.contains {
                 normalizedTestPath($0.item.url) == expectedFolderPath && $0.item.isDirectory
@@ -41,6 +46,11 @@ struct ExplorerSearchModelTests {
 
         model.query = "AnnualSummary"
         await model.search(in: root)
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                normalizedTestPath($0.item.url) == expectedReportPath && !$0.item.isDirectory
+            }
+        }
         #expect(
             model.results.contains {
                 normalizedTestPath($0.item.url) == expectedReportPath && !$0.item.isDirectory
@@ -51,6 +61,12 @@ struct ExplorerSearchModelTests {
         model.contentMode = .plain
         model.query = "revenueSearchMarker"
         await model.search(in: root)
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                normalizedTestPath($0.item.url) == expectedReportPath
+                    && $0.contentMatch?.lineNumber == 1
+            }
+        }
         #expect(
             model.results.contains {
                 normalizedTestPath($0.item.url) == expectedReportPath
@@ -87,6 +103,11 @@ struct ExplorerSearchModelTests {
 
         await gate.resumeRequest(at: 1)
         await newRequest.value
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                normalizedTestPath($0.item.url) == normalizedTestPath(newURL)
+            } && !$0.isSearching
+        }
         #expect(model.results.contains { normalizedTestPath($0.item.url) == normalizedTestPath(newURL) })
         let completedNewResults = model.results
 
@@ -154,13 +175,19 @@ struct ExplorerSearchModelTests {
 
         #expect(model.results.isEmpty)
         #expect(model.isSearching == false)
-        #expect(model.errorMessage == DirectoryAccessError.invalidURL.localizedDescription)
+        #expect(
+            model.errorMessage
+                == .error(DirectoryAccessError.invalidURL.localizedDescription)
+        )
 
         await gate.resumeRequest(at: 0)
         await pendingSearch.value
         #expect(model.results.isEmpty)
         #expect(model.isSearching == false)
-        #expect(model.errorMessage == DirectoryAccessError.invalidURL.localizedDescription)
+        #expect(
+            model.errorMessage
+                == .error(DirectoryAccessError.invalidURL.localizedDescription)
+        )
 
         await model.shutdown()
     }
@@ -178,6 +205,11 @@ struct ExplorerSearchModelTests {
 
         model.query = "InitialIndexedFile"
         await model.search(in: root)
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                normalizedTestPath($0.item.url) == normalizedTestPath(initialURL)
+            }
+        }
         try #require(
             model.results.contains {
                 normalizedTestPath($0.item.url) == normalizedTestPath(initialURL)
@@ -187,6 +219,11 @@ struct ExplorerSearchModelTests {
         try Data("added".utf8).write(to: addedURL)
         model.query = "AddedAfterInitialScan"
         await model.filesDidChange(in: root)
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                normalizedTestPath($0.item.url) == normalizedTestPath(addedURL)
+            } && !$0.isSearching
+        }
 
         #expect(
             model.results.contains {
@@ -234,10 +271,55 @@ struct ExplorerSearchModelTests {
         #expect(model.isSearching == false)
         #expect(
             model.errorMessage
-                == FFFSearchError.invalidRootURL(remoteAlias).localizedDescription
+                == .error(FFFSearchError.invalidRootURL(remoteAlias).localizedDescription)
         )
 
         await model.shutdown()
+    }
+
+    @MainActor
+    @Test("Two explorer panes lease one FFF index for the same folder")
+    func panesShareOneRootIndexUntilBothClose() async throws {
+        let root = try makeExplorerSearchTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appending(path: "SharedPaneSearch.txt")
+        try Data("shared pane search".utf8).write(to: sourceURL)
+
+        let pool = FFFSearchEnginePool()
+        let first = ExplorerSearchModel(debounce: {}, enginePool: pool)
+        let second = ExplorerSearchModel(debounce: {}, enginePool: pool)
+
+        first.query = "SharedPaneSearch"
+        second.query = "SharedPaneSearch"
+        await first.search(in: root)
+        await second.search(in: root)
+
+        try await waitUntilExplorerSearchResult(in: first) {
+            $0.results.contains { normalizedTestPath($0.item.url) == normalizedTestPath(sourceURL) }
+        }
+        try await waitUntilExplorerSearchResult(in: second) {
+            $0.results.contains { normalizedTestPath($0.item.url) == normalizedTestPath(sourceURL) }
+        }
+
+        let activeIndexCount = await pool.activeIndexCount()
+        let initialLeaseCount = await pool.leaseCount(for: root)
+        #expect(activeIndexCount == 1)
+        #expect(initialLeaseCount == 2)
+
+        await first.shutdown()
+        let remainingLeaseCount = await pool.leaseCount(for: root)
+        #expect(remainingLeaseCount == 1)
+
+        second.query = "SharedPaneSearch"
+        await second.search(in: root)
+        try await waitUntilExplorerSearchResult(in: second) {
+            $0.results.contains { normalizedTestPath($0.item.url) == normalizedTestPath(sourceURL) }
+        }
+
+        await second.shutdown()
+        let finalIndexCount = await pool.activeIndexCount()
+        #expect(finalIndexCount == 0)
     }
 }
 
@@ -298,4 +380,25 @@ private func makeExplorerSearchTemporaryDirectory() throws -> URL {
 private func normalizedTestPath(_ url: URL) -> String {
     let path = url.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
     return path.hasSuffix("/") ? String(path.dropLast()) : path
+}
+
+private enum ExplorerSearchTestError: Error {
+    case timedOut
+}
+
+@MainActor
+private func waitUntilExplorerSearchResult(
+    in model: ExplorerSearchModel,
+    timeout: Duration = .seconds(5),
+    condition: @escaping (ExplorerSearchModel) -> Bool
+) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+
+    while condition(model) == false {
+        guard clock.now < deadline else {
+            throw ExplorerSearchTestError.timedOut
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
 }

@@ -38,6 +38,176 @@ struct FileOperationCoordinatorTests {
         #expect(await service.operationCount() == 0)
     }
 
+    @Test("A file-command cut pastes as a move and consumes the completed cut")
+    func fileCommandCutMovesAndConsumesCompletedClipboard() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let source = URL(filePath: "/tmp/source.txt")
+        let destination = URL(
+            filePath: "/tmp/destination",
+            directoryHint: .isDirectory
+        )
+        let context = FileCommandContext(
+            selectedURLs: [source],
+            destinationDirectoryURL: destination,
+            coordinator: coordinator
+        )
+
+        context.cutSelection()
+
+        #expect(coordinator.clipboardOperation == .cut)
+        #expect(coordinator.clipboardURLs == [source])
+        #expect(context.canPaste)
+        #expect(coordinator.paste(into: destination))
+        #expect(coordinator.statusMessage == "Moving item…")
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.movedSources() == [source])
+        #expect(await service.copiedSources().isEmpty)
+        #expect(coordinator.clipboardURLs.isEmpty)
+        #expect(coordinator.clipboardOperation == nil)
+        #expect(coordinator.canPaste == false)
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: source.deletingLastPathComponent()
+            ) == 1
+        )
+        #expect(coordinator.directoryRefreshRevision(for: destination) == 1)
+    }
+
+    @Test("Copy paste retains the copy clipboard for another destination")
+    func copyPasteRetainsClipboard() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let source = URL(filePath: "/tmp/source.txt")
+        let destination = URL(
+            filePath: "/tmp/destination",
+            directoryHint: .isDirectory
+        )
+
+        coordinator.copy([source])
+
+        #expect(coordinator.clipboardOperation == .copy)
+        #expect(coordinator.paste(into: destination))
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.copiedSources() == [source])
+        #expect(await service.movedSources().isEmpty)
+        #expect(coordinator.clipboardURLs == [source])
+        #expect(coordinator.clipboardOperation == .copy)
+        #expect(coordinator.canPaste)
+    }
+
+    @Test("File changes refresh only affected directory rows and recursive ancestors")
+    func fileChangeRefreshScopeIsTargeted() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let source = URL(filePath: "/tmp/source/Report.txt")
+        let destination = URL(
+            filePath: "/tmp/destination/nested",
+            directoryHint: .isDirectory
+        )
+        let destinationParent = destination.deletingLastPathComponent()
+        let unrelatedDirectory = URL(
+            filePath: "/tmp/unrelated",
+            directoryHint: .isDirectory
+        )
+
+        coordinator.copy([source])
+        #expect(coordinator.paste(into: destination))
+        await coordinator.waitForCurrentOperation()
+
+        #expect(coordinator.directoryRefreshRevision(for: destination) == 1)
+        #expect(coordinator.directoryRefreshRevision(for: destinationParent) == 0)
+        #expect(coordinator.directoryRefreshRevision(for: unrelatedDirectory) == 0)
+        #expect(coordinator.recursiveRefreshRevision(for: destination) == 1)
+        #expect(coordinator.recursiveRefreshRevision(for: destinationParent) == 1)
+        #expect(coordinator.recursiveRefreshRevision(for: unrelatedDirectory) == 0)
+    }
+
+    @Test("A cut paste retains sources whose moves fail")
+    func partialCutPasteKeepsOnlyFailedSources() async {
+        let firstSource = URL(filePath: "/tmp/first.txt")
+        let secondSource = URL(filePath: "/tmp/second.txt")
+        let destination = URL(
+            filePath: "/tmp/destination",
+            directoryHint: .isDirectory
+        )
+        let service = ScriptedFileOperationService(moveResults: [
+            .success(
+                FileOperationOutcome(
+                    destinationURL: destination.appending(path: "first.txt"),
+                    didChange: true
+                )
+            ),
+            .failure(.rejected("second item could not be moved")),
+        ])
+        let coordinator = FileOperationCoordinator(service: service)
+
+        coordinator.cut([firstSource, secondSource])
+        #expect(coordinator.paste(into: destination))
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.movedSources() == [firstSource, secondSource])
+        #expect(coordinator.clipboardURLs == [secondSource])
+        #expect(coordinator.clipboardOperation == .cut)
+        #expect(coordinator.canPaste)
+        #expect(coordinator.isErrorPresented)
+        #expect(coordinator.errorMessage == "second item could not be moved")
+    }
+
+    @Test("A no-op move does not consume a cut source")
+    func noOpCutPasteRetainsSource() async {
+        let source = URL(filePath: "/tmp/source.txt")
+        let destination = URL(
+            filePath: "/tmp/destination",
+            directoryHint: .isDirectory
+        )
+        let service = ScriptedFileOperationService(moveResults: [
+            .success(
+                FileOperationOutcome(
+                    destinationURL: source,
+                    didChange: false
+                )
+            ),
+        ])
+        let coordinator = FileOperationCoordinator(service: service)
+
+        coordinator.cut([source])
+        #expect(coordinator.paste(into: destination))
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.movedSources() == [source])
+        #expect(coordinator.clipboardURLs == [source])
+        #expect(coordinator.clipboardOperation == .cut)
+        #expect(coordinator.isErrorPresented == false)
+    }
+
+    @Test("An in-flight cut cannot consume a newer clipboard")
+    func cutPasteLeavesNewerClipboardUntouched() async {
+        let service = BlockingFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let movedSource = URL(filePath: "/tmp/moved.txt")
+        let replacementSource = URL(filePath: "/tmp/replacement.txt")
+        let destination = URL(
+            filePath: "/tmp/destination",
+            directoryHint: .isDirectory
+        )
+
+        coordinator.cut([movedSource])
+        #expect(coordinator.paste(into: destination))
+        await service.waitUntilMoveStarted()
+
+        coordinator.copy([replacementSource])
+        await service.releaseMove()
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.movedSources() == [movedSource])
+        #expect(coordinator.clipboardURLs == [replacementSource])
+        #expect(coordinator.clipboardOperation == .copy)
+        #expect(coordinator.canPaste)
+    }
+
     @Test("Create-folder completion and failure leave coherent coordinator state")
     func createFolderRoutesOutcomeAndError() async {
         let destination = URL(
@@ -270,6 +440,7 @@ private enum ScriptedFileOperationError: LocalizedError, Sendable {
 
 private actor ScriptedFileOperationService: FileOperationServicing {
     private var copyResults: [Result<FileOperationOutcome, ScriptedFileOperationError>]
+    private var moveResults: [Result<FileOperationOutcome, ScriptedFileOperationError>]
     private var createFolderResult: Result<
         FileOperationOutcome,
         ScriptedFileOperationError
@@ -280,12 +451,14 @@ private actor ScriptedFileOperationService: FileOperationServicing {
 
     init(
         copyResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
+        moveResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
         createFolderResult: Result<
             FileOperationOutcome,
             ScriptedFileOperationError
         >? = nil
     ) {
         self.copyResults = copyResults
+        self.moveResults = moveResults
         self.createFolderResult = createFolderResult
     }
 
@@ -327,6 +500,11 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         to destinationDirectoryURL: URL
     ) async throws -> FileOperationOutcome {
         moveSourceURLs.append(sourceURL)
+
+        if moveResults.isEmpty == false {
+            return try moveResults.removeFirst().get()
+        }
+
         return FileOperationOutcome(
             destinationURL: destinationDirectoryURL.appending(
                 path: sourceURL.lastPathComponent
@@ -351,6 +529,8 @@ private actor ScriptedFileOperationService: FileOperationServicing {
 private actor BlockingFileOperationService: FileOperationServicing {
     private var copySourceURLs: [URL] = []
     private var copyContinuation: CheckedContinuation<Void, Never>?
+    private var moveSourceURLs: [URL] = []
+    private var moveContinuation: CheckedContinuation<Void, Never>?
 
     func createFolder(
         in destinationDirectoryURL: URL
@@ -382,7 +562,12 @@ private actor BlockingFileOperationService: FileOperationServicing {
         at sourceURL: URL,
         to destinationDirectoryURL: URL
     ) async throws -> FileOperationOutcome {
-        FileOperationOutcome(
+        moveSourceURLs.append(sourceURL)
+        await withCheckedContinuation { continuation in
+            moveContinuation = continuation
+        }
+        try Task.checkCancellation()
+        return FileOperationOutcome(
             destinationURL: destinationDirectoryURL.appending(
                 path: sourceURL.lastPathComponent
             ),
@@ -401,7 +586,22 @@ private actor BlockingFileOperationService: FileOperationServicing {
         copyContinuation = nil
     }
 
+    func waitUntilMoveStarted() async {
+        while moveContinuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func releaseMove() {
+        moveContinuation?.resume()
+        moveContinuation = nil
+    }
+
     func copiedSources() -> [URL] {
         copySourceURLs
+    }
+
+    func movedSources() -> [URL] {
+        moveSourceURLs
     }
 }

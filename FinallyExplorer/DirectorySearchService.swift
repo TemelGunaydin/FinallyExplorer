@@ -14,6 +14,17 @@ nonisolated struct DirectorySearchResult: Identifiable, Hashable, Sendable {
     var name: String { url.lastPathComponent }
 }
 
+/// Metadata retained alongside a directory page so callers can distinguish a
+/// complete zero-result search from a deliberately capped result list.
+nonisolated struct DirectorySearchPage: Equatable, Sendable {
+    let results: [DirectorySearchResult]
+    let totalMatched: Int
+
+    var isTruncated: Bool {
+        results.count < totalMatched
+    }
+}
+
 nonisolated enum DirectorySearchError: LocalizedError, Equatable, Sendable {
     case rootIsNotDirectory(path: String)
     case unableToEnumerate(path: String)
@@ -28,33 +39,265 @@ nonisolated enum DirectorySearchError: LocalizedError, Equatable, Sendable {
     }
 }
 
-/// Complements FFF's file index with an exhaustive list of accessible folders.
+/// Maintains one cancellable, immutable directory catalog per active root.
 ///
-/// FileManager discovers empty folders and folders that only contain other
-/// folders. Hidden entries are skipped with the same option used by the main
-/// directory listing service.
-nonisolated struct DirectorySearchService: Sendable {
+/// FFF does not return empty or ancestor-only folders, so the catalog remains
+/// the small filesystem-backed supplement to its file index. Building it is
+/// intentionally independent of an individual search request: typing another
+/// character must not restart a recursive filesystem walk.
+actor DirectorySearchService {
     private static let resourceKeys: Set<URLResourceKey> = [
         .isDirectoryKey,
         .isSymbolicLinkKey,
     ]
 
-    /// Searches every visible folder below `root`.
+    private struct CatalogEntry: Hashable, Sendable {
+        let url: URL
+        let relativePath: String
+        let normalizedName: String
+        let normalizedRelativePath: String
+    }
+
+    private struct Catalog: Sendable {
+        let rootURL: URL
+        let entries: [CatalogEntry]
+    }
+
+    private let onCatalogBuild: @Sendable () async -> Void
+
+    private var catalog: Catalog?
+    private var catalogRootURL: URL?
+    private var catalogGeneration = 0
+    private var catalogBuildTask: Task<Catalog, Error>?
+
+    init(
+        onCatalogBuild: @escaping @Sendable () async -> Void = {}
+    ) {
+        self.onCatalogBuild = onCatalogBuild
+    }
+
+    deinit {
+        catalogBuildTask?.cancel()
+    }
+
+    /// Searches the cached visible-folder catalog below `root`.
     ///
-    /// An empty query returns every folder. A non-empty query is matched against
-    /// both the folder name and its relative path. Lower `matchScore` values are
-    /// better. The root itself is not included in the results.
-    @concurrent
+    /// The first request for a root starts exactly one catalog build. Later
+    /// requests await the same owned task rather than recursively enumerating
+    /// the tree again. The build continues if an individual caller is
+    /// cancelled, allowing the next keystroke to reuse it.
+    func searchPage(
+        in root: URL,
+        matching query: String,
+        limit: Int? = nil
+    ) async throws -> DirectorySearchPage {
+        try Task.checkCancellation()
+
+        guard limit.map({ $0 > 0 }) ?? true else {
+            return DirectorySearchPage(results: [], totalMatched: 0)
+        }
+
+        let resolvedRoot = try Self.validatedRootURL(root)
+        let catalog = try await catalog(for: resolvedRoot)
+        try Task.checkCancellation()
+
+        let normalizedQuery = Self.normalized(
+            query.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        return Self.makePage(
+            from: catalog.entries,
+            matching: normalizedQuery,
+            limit: limit
+        )
+    }
+
+    /// Compatibility convenience for call sites that only need the rows.
     func search(
         in root: URL,
         matching query: String,
         limit: Int? = nil
     ) async throws -> [DirectorySearchResult] {
+        try await searchPage(in: root, matching: query, limit: limit).results
+    }
+
+    /// Invalidates a root after an operation known to alter its folder tree.
+    /// A pending build for that root is cancelled; a later query recreates it.
+    func invalidate(root: URL?) {
+        guard let root,
+              Self.isLocalFileURL(root) else {
+            return
+        }
+
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        guard catalogRootURL == resolvedRoot else { return }
+
+        catalogGeneration += 1
+        catalog = nil
+        catalogRootURL = nil
+        catalogBuildTask?.cancel()
+        catalogBuildTask = nil
+    }
+
+    func shutdown() {
+        catalogGeneration += 1
+        catalog = nil
+        catalogRootURL = nil
+        catalogBuildTask?.cancel()
+        catalogBuildTask = nil
+    }
+
+    private func catalog(for rootURL: URL) async throws -> Catalog {
+        while true {
+            if let catalog, catalog.rootURL == rootURL {
+                return catalog
+            }
+
+            let generation: Int
+            let task: Task<Catalog, Error>
+
+            if catalogRootURL == rootURL, let catalogBuildTask {
+                generation = catalogGeneration
+                task = catalogBuildTask
+            } else {
+                catalogBuildTask?.cancel()
+                catalog = nil
+                catalogRootURL = rootURL
+                catalogGeneration += 1
+                generation = catalogGeneration
+
+                let onCatalogBuild = onCatalogBuild
+                task = Task(priority: .userInitiated) {
+                    await onCatalogBuild()
+                    return try await Self.buildCatalog(at: rootURL)
+                }
+                catalogBuildTask = task
+            }
+
+            do {
+                let builtCatalog = try await task.value
+
+                guard catalogRootURL == rootURL,
+                      catalogGeneration == generation else {
+                    // A newer root has superseded this model's only active
+                    // catalog. Do not let the old caller restart its scan and
+                    // cancel the newer one in a root-switch ping-pong.
+                    throw CancellationError()
+                }
+
+                // Publish the immutable catalog before honoring this
+                // particular caller's cancellation. The owned build may have
+                // completed successfully while a stale keystroke was being
+                // cancelled; the next query should still reuse its work.
+                catalog = builtCatalog
+                catalogBuildTask = nil
+                try Task.checkCancellation()
+                return builtCatalog
+            } catch is CancellationError {
+                guard catalogRootURL == rootURL,
+                      catalogGeneration == generation else {
+                    throw CancellationError()
+                }
+
+                catalogBuildTask = nil
+                throw CancellationError()
+            } catch {
+                guard catalogRootURL == rootURL,
+                      catalogGeneration == generation else {
+                    throw CancellationError()
+                }
+
+                catalogBuildTask = nil
+                throw error
+            }
+        }
+    }
+
+    @concurrent
+    private static func buildCatalog(at rootURL: URL) async throws -> Catalog {
+        let rootURL = try validatedRootURL(rootURL)
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, _ in true }
+        ) else {
+            throw DirectorySearchError.unableToEnumerate(path: rootURL.path)
+        }
+
+        var entries: [CatalogEntry] = []
+
+        while let childURL = enumerator.nextObject() as? URL {
+            try Task.checkCancellation()
+
+            guard let values = try? childURL.resourceValues(forKeys: resourceKeys),
+                  values.isDirectory == true else {
+                continue
+            }
+
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+            }
+
+            let relativePath = relativePath(of: childURL, below: rootURL)
+            entries.append(
+                CatalogEntry(
+                    url: childURL,
+                    relativePath: relativePath,
+                    normalizedName: normalized(childURL.lastPathComponent),
+                    normalizedRelativePath: normalized(relativePath)
+                )
+            )
+        }
+
         try Task.checkCancellation()
+        return Catalog(rootURL: rootURL, entries: entries)
+    }
 
-        guard limit.map({ $0 > 0 }) ?? true else { return [] }
+    private static func makePage(
+        from entries: [CatalogEntry],
+        matching query: String,
+        limit: Int?
+    ) -> DirectorySearchPage {
+        let maximumResults = limit ?? .max
+        var results: [DirectorySearchResult] = []
+        var totalMatched = 0
 
-        guard Self.isLocalFileURL(root) else {
+        for entry in entries {
+            guard let matchScore = matchScore(
+                query: query,
+                normalizedName: entry.normalizedName,
+                normalizedRelativePath: entry.normalizedRelativePath
+            ) else {
+                continue
+            }
+
+            totalMatched += 1
+            let result = DirectorySearchResult(
+                url: entry.url,
+                relativePath: entry.relativePath,
+                matchScore: matchScore
+            )
+
+            guard results.count >= maximumResults else {
+                results.append(result)
+                continue
+            }
+
+            guard let worstIndex = results.indices.max(by: {
+                displayOrder(results[$0], results[$1])
+            }), displayOrder(result, results[worstIndex]) else {
+                continue
+            }
+
+            results[worstIndex] = result
+        }
+
+        results.sort(by: displayOrder)
+        return DirectorySearchPage(results: results, totalMatched: totalMatched)
+    }
+
+    private static func validatedRootURL(_ root: URL) throws -> URL {
+        guard isLocalFileURL(root) else {
             throw DirectorySearchError.rootIsNotDirectory(path: root.absoluteString)
         }
 
@@ -72,58 +315,7 @@ nonisolated struct DirectorySearchService: Sendable {
             throw DirectorySearchError.rootIsNotDirectory(path: resolvedRoot.path)
         }
 
-        guard let enumerator = FileManager.default.enumerator(
-            at: resolvedRoot,
-            includingPropertiesForKeys: Array(Self.resourceKeys),
-            options: [.skipsHiddenFiles],
-            errorHandler: { _, _ in true }
-        ) else {
-            throw DirectorySearchError.unableToEnumerate(path: resolvedRoot.path)
-        }
-
-        let normalizedQuery = Self.normalized(
-            query.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        var results: [DirectorySearchResult] = []
-
-        while let childURL = enumerator.nextObject() as? URL {
-            try Task.checkCancellation()
-
-            guard let values = try? childURL.resourceValues(forKeys: Self.resourceKeys),
-                  values.isDirectory == true else {
-                continue
-            }
-
-            if values.isSymbolicLink == true {
-                enumerator.skipDescendants()
-            }
-
-            let relativePath = Self.relativePath(of: childURL, below: resolvedRoot)
-            guard let matchScore = Self.matchScore(
-                query: normalizedQuery,
-                name: childURL.lastPathComponent,
-                relativePath: relativePath
-            ) else {
-                continue
-            }
-
-            results.append(
-                DirectorySearchResult(
-                    url: childURL,
-                    relativePath: relativePath,
-                    matchScore: matchScore
-                )
-            )
-        }
-
-        try Task.checkCancellation()
-        results.sort(by: Self.displayOrder)
-
-        if let limit, results.count > limit {
-            return Array(results.prefix(limit))
-        }
-
-        return results
+        return resolvedRoot
     }
 
     private static func isLocalFileURL(_ url: URL) -> Bool {
@@ -145,25 +337,26 @@ nonisolated struct DirectorySearchService: Sendable {
 
     private static func matchScore(
         query: String,
-        name: String,
-        relativePath: String
+        normalizedName: String,
+        normalizedRelativePath: String
     ) -> Int? {
         guard query.isEmpty == false else { return 0 }
 
-        let normalizedName = normalized(name)
-        let normalizedPath = normalized(relativePath)
         let nameScore = fuzzyScore(query: query, candidate: normalizedName)
-        let pathScore = fuzzyScore(query: query, candidate: normalizedPath).map { $0 + 80 }
+        let pathScore = fuzzyScore(
+            query: query,
+            candidate: normalizedRelativePath
+        ).map { $0 + 80 }
 
-        switch (nameScore, pathScore) {
+        return switch (nameScore, pathScore) {
         case let (nameScore?, pathScore?):
-            return min(nameScore, pathScore)
+            min(nameScore, pathScore)
         case let (nameScore?, nil):
-            return nameScore
+            nameScore
         case let (nil, pathScore?):
-            return pathScore
+            pathScore
         case (nil, nil):
-            return nil
+            nil
         }
     }
 

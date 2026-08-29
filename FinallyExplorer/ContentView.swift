@@ -9,6 +9,7 @@ import AppKit
 import Foundation
 import QuickLookUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -17,17 +18,24 @@ struct ContentView: View {
     @State private var workspace = WorkspaceModel()
     @State private var fileOperations = FileOperationCoordinator()
     @State private var terminalApplications = TerminalApplicationCoordinator()
+    @State private var sidebar = SidebarModel()
+    @State private var isSidebarFolderPickerPresented = false
 
     init() {}
 
     init(
         workspace: WorkspaceModel,
         fileOperations: FileOperationCoordinator,
-        terminalApplications: TerminalApplicationCoordinator
+        terminalApplications: TerminalApplicationCoordinator,
+        sidebar: SidebarModel? = nil
     ) {
         _workspace = State(initialValue: workspace)
         _fileOperations = State(initialValue: fileOperations)
         _terminalApplications = State(initialValue: terminalApplications)
+
+        if let sidebar {
+            _sidebar = State(initialValue: sidebar)
+        }
     }
 
     private var sidebarSelection: Binding<SidebarPlace?> {
@@ -55,21 +63,11 @@ struct ContentView: View {
         @Bindable var terminalApplications = terminalApplications
 
         NavigationSplitView {
-            List(SidebarPlace.allCases, selection: sidebarSelection) { place in
-                Label(place.title, systemImage: place.systemImage)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .tag(place)
-                    .internalFolderDropTarget(
-                        destinationDirectoryURL: place.url,
-                        paneID: workspace.activePaneID,
-                        showsTerminalCommands: true
-                    )
-            }
-            .listStyle(.sidebar)
+            explorerSidebar
+                .navigationSplitViewColumnWidth(min: 200, ideal: 224)
         } detail: {
             HStack(spacing: 0) {
-                WorkspaceRootView(workspace: workspace)
+                WorkspaceRootView(workspace: workspace, sidebar: sidebar)
 
                 if workspace.paneCount == 1 {
                     Divider()
@@ -111,6 +109,82 @@ struct ContentView: View {
         }
     }
 
+    private var explorerSidebar: some View {
+        List(selection: sidebarSelection) {
+            Section("Favorites") {
+                ForEach(SidebarBuiltInPlace.primaryPlaces) { place in
+                    sidebarRow(.builtIn(place))
+                }
+
+                ForEach(sidebar.favorites) { favorite in
+                    sidebarRow(.favorite(favorite))
+                }
+            }
+
+            Section("Media") {
+                ForEach(SidebarBuiltInPlace.mediaPlaces) { place in
+                    sidebarRow(.builtIn(place))
+                }
+            }
+
+            Section("Locations") {
+                ForEach(SidebarBuiltInPlace.locationPlaces) { place in
+                    sidebarRow(.builtIn(place))
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Button {
+                    isSidebarFolderPickerPresented = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .help("Add Folder to Sidebar")
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+        }
+        .fileImporter(
+            isPresented: $isSidebarFolderPickerPresented,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case let .success(directoryURLs) = result,
+                  let directoryURL = directoryURLs.first,
+                  let favorite = sidebar.add(directoryURL: directoryURL) else {
+                return
+            }
+
+            workspace.select(.favorite(favorite), in: workspace.activePaneID)
+        }
+    }
+
+    @ViewBuilder
+    private func sidebarRow(_ place: SidebarPlace) -> some View {
+        Label(place.title, systemImage: place.systemImage)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .tag(place)
+            .internalFolderDropTarget(
+                destinationDirectoryURL: place.url,
+                paneID: workspace.activePaneID,
+                showsTerminalCommands: true
+            )
+            .contextMenu {
+                if let favorite = place.favorite {
+                    Button("Remove from Sidebar", role: .destructive) {
+                        sidebar.remove(favorite)
+                    }
+                }
+            }
+    }
+
     @ViewBuilder
     private var inspectorContent: some View {
         if let pane = workspace.activePane,
@@ -137,9 +211,14 @@ struct ContentView: View {
 
 private struct WorkspaceRootView: View {
     let workspace: WorkspaceModel
+    let sidebar: SidebarModel
 
     var body: some View {
-        WorkspaceNodeView(node: workspace.layoutRoot, workspace: workspace)
+        WorkspaceNodeView(
+            node: workspace.layoutRoot,
+            workspace: workspace,
+            sidebar: sidebar
+        )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -147,13 +226,14 @@ private struct WorkspaceRootView: View {
 private struct WorkspaceNodeView: View {
     let node: WorkspaceLayoutNode
     let workspace: WorkspaceModel
+    let sidebar: SidebarModel
 
     @ViewBuilder
     var body: some View {
         switch node {
         case let .pane(paneID):
             if let pane = workspace.pane(paneID) {
-                DestinationView(pane: pane, workspace: workspace)
+                DestinationView(pane: pane, workspace: workspace, sidebar: sidebar)
                     .id(paneID)
             }
 
@@ -161,15 +241,15 @@ private struct WorkspaceNodeView: View {
             switch axis {
             case .sideBySide:
                 HSplitView {
-                    WorkspaceNodeView(node: first, workspace: workspace)
-                    WorkspaceNodeView(node: second, workspace: workspace)
+                    WorkspaceNodeView(node: first, workspace: workspace, sidebar: sidebar)
+                    WorkspaceNodeView(node: second, workspace: workspace, sidebar: sidebar)
                 }
                 .id(splitID)
 
             case .stacked:
                 VSplitView {
-                    WorkspaceNodeView(node: first, workspace: workspace)
-                    WorkspaceNodeView(node: second, workspace: workspace)
+                    WorkspaceNodeView(node: first, workspace: workspace, sidebar: sidebar)
+                    WorkspaceNodeView(node: second, workspace: workspace, sidebar: sidebar)
                 }
                 .id(splitID)
             }
@@ -182,16 +262,36 @@ private nonisolated struct DirectoryLoadRequest: Hashable {
     let operationRevision: Int
 }
 
+private nonisolated struct SearchLoadRequest: Hashable {
+    let request: ExplorerSearchRequest
+    let operationRevision: Int
+}
+
 private struct DestinationView: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
 
     let pane: WorkspacePaneState
     let workspace: WorkspaceModel
+    let sidebar: SidebarModel
+
+    @State private var assistantModel = ExplorerAssistantModel()
+    @State private var isAssistantPresented = false
 
     private var directoryLoadRequest: DirectoryLoadRequest {
         DirectoryLoadRequest(
             directoryURL: pane.displayedDirectory,
-            operationRevision: fileOperations.completedOperationCount
+            operationRevision: fileOperations.directoryRefreshRevision(
+                for: pane.displayedDirectory
+            )
+        )
+    }
+
+    private var searchLoadRequest: SearchLoadRequest {
+        SearchLoadRequest(
+            request: pane.searchModel.request(in: pane.displayedDirectory),
+            operationRevision: fileOperations.recursiveRefreshRevision(
+                for: pane.displayedDirectory
+            )
         )
     }
 
@@ -223,7 +323,10 @@ private struct DestinationView: View {
                 }
 
                 Divider()
-                directoryBody
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                    directoryBody
+                }
                     .frame(
                         maxWidth: .infinity,
                         maxHeight: .infinity,
@@ -273,13 +376,15 @@ private struct DestinationView: View {
         .task(id: directoryLoadRequest) {
             let request = directoryLoadRequest
             await loadDirectoryContents(from: request.directoryURL)
+        }
+        .task(id: searchLoadRequest) {
+            let request = searchLoadRequest
 
             if request.operationRevision > 0 {
-                await pane.searchModel.filesDidChange(in: request.directoryURL)
+                await pane.searchModel.filesDidChange(in: request.request.rootURL)
+            } else {
+                await pane.searchModel.search(in: request.request.rootURL)
             }
-        }
-        .task(id: pane.searchModel.request(in: pane.displayedDirectory)) {
-            await pane.searchModel.search(in: pane.displayedDirectory)
         }
         .onChange(of: pane.selectedURL) {
             if pane.selectedURL != nil {
@@ -302,7 +407,11 @@ private struct DestinationView: View {
             pane.selectedSearchResultID = nil
             pane.selectedURL = nil
         }
-        .onChange(of: fileOperations.completedOperationCount) {
+        .onChange(of: pane.displayedDirectory) {
+            assistantModel.reset()
+        }
+        .onChange(of: directoryLoadRequest.operationRevision) {
+            guard directoryLoadRequest.operationRevision > 0 else { return }
             pane.selectedSearchResultID = nil
             pane.selectedURL = nil
             pane.isInspectorPresented = false
@@ -313,6 +422,15 @@ private struct DestinationView: View {
                 workspace: workspace
             )
         )
+        .sheet(isPresented: $isAssistantPresented) {
+            if let displayedDirectory = pane.displayedDirectory {
+                ExplorerAssistantSheet(
+                    folderURL: displayedDirectory,
+                    items: pane.directoryContents,
+                    model: assistantModel
+                )
+            }
+        }
     }
 
     private var paneToolbar: some View {
@@ -321,7 +439,7 @@ private struct DestinationView: View {
         return VStack(spacing: 6) {
             HStack(spacing: 8) {
                 Menu {
-                    ForEach(SidebarPlace.allCases) { place in
+                    ForEach(sidebar.allPlaces) { place in
                         Button {
                             workspace.select(place, in: pane.id)
                         } label: {
@@ -352,6 +470,15 @@ private struct DestinationView: View {
                     pane.displayedDirectory == nil || fileOperations.isPerforming
                 )
                 .help("Create a new folder in this pane")
+
+                Button("Ask Explorer", systemImage: "sparkles") {
+                    workspace.activate(pane.id)
+                    isAssistantPresented = true
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(pane.displayedDirectory == nil)
+                .help("Ask on-device AI about this folder")
 
                 Button("Split Right", systemImage: "rectangle.split.2x1") {
                     _ = workspace.split(paneID: pane.id, direction: .right)
@@ -454,6 +581,9 @@ private struct DestinationView: View {
             List(pane.directoryContents, selection: $pane.selectedURL) { item in
                 FileRowView(
                     item: item,
+                    onSelect: {
+                        select(item)
+                    },
                     onOpen: {
                         open(item)
                     }
@@ -462,6 +592,16 @@ private struct DestinationView: View {
                 .internalFileInteraction(for: item, paneID: pane.id)
             }
             .listStyle(.plain)
+        }
+    }
+
+    private func select(_ item: FileItem) {
+        workspace.activate(pane.id)
+
+        if pane.selectedURL != item.url {
+            pane.selectedURL = item.url
+        } else {
+            updatePreviewPresentation()
         }
     }
 
@@ -596,7 +736,9 @@ struct FolderContentsInspector: View {
         .task(
             id: DirectoryLoadRequest(
                 directoryURL: folder.url,
-                operationRevision: fileOperations.completedOperationCount
+                operationRevision: fileOperations.directoryRefreshRevision(
+                    for: folder.url
+                )
             )
         ) {
             await loadDirectoryContents()
@@ -729,6 +871,7 @@ private struct QuickLookPreview: NSViewRepresentable {
 
 private struct FileRowView: View {
     let item: FileItem
+    let onSelect: () -> Void
     let onOpen: () -> Void
 
     var body: some View {
@@ -737,6 +880,10 @@ private struct FileRowView: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture(count: 1)
+                    .onEnded { onSelect() }
+            )
             .simultaneousGesture(
                 TapGesture(count: 2)
                     .onEnded { onOpen() }
@@ -766,7 +913,9 @@ private struct FileRowContent: View {
                     .font(.body)
 
                 if let modificationDate = item.modificationDate {
-                    Text(modificationDate.formatted(date: .abbreviated, time: .shortened))
+                    Text(
+                        "Modified: \(modificationDate.formatted(date: .abbreviated, time: .shortened))"
+                    )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -781,6 +930,8 @@ private struct FileRowContent: View {
 }
 
 struct FileSizeLabel: View {
+    @Environment(FileOperationCoordinator.self) private var fileOperations
+
     let item: FileItem
 
     @State private var folderSize: Int64?
@@ -788,6 +939,13 @@ struct FileSizeLabel: View {
 
     private var displayedSize: Int64? {
         item.isDirectory ? folderSize : item.fileSize
+    }
+
+    private var folderSizeLoadRequest: FolderSizeLoadRequest {
+        FolderSizeLoadRequest(
+            directoryURL: item.url,
+            operationRevision: fileOperations.recursiveRefreshRevision(for: item.url)
+        )
     }
 
     var body: some View {
@@ -805,14 +963,14 @@ struct FileSizeLabel: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .task(id: item.url) {
+        .task(id: folderSizeLoadRequest) {
             folderSize = nil
             isCalculatingFolderSize = item.isDirectory
 
             guard item.isDirectory else { return }
 
             do {
-                let size = try await FileSystemService().size(of: item.url)
+                let size = try await FolderSizeCache.shared.size(of: item.url)
                 try Task.checkCancellation()
 
                 folderSize = size
@@ -825,6 +983,11 @@ struct FileSizeLabel: View {
             }
         }
     }
+}
+
+private nonisolated struct FolderSizeLoadRequest: Hashable {
+    let directoryURL: URL
+    let operationRevision: Int
 }
 
 #Preview {

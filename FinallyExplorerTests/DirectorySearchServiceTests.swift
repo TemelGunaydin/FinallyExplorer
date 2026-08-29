@@ -209,6 +209,126 @@ struct DirectorySearchServiceTests {
             try await task.value
         }
     }
+
+    @Test("A root catalog is reused across queries and rebuilt only after invalidation")
+    func cachesCatalogUntilExplicitInvalidation() async throws {
+        let root = try makeDirectorySearchTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "Initial Folder", directoryHint: .isDirectory),
+            withIntermediateDirectories: false
+        )
+
+        let recorder = DirectoryCatalogBuildRecorder()
+        let service = DirectorySearchService(onCatalogBuild: {
+            await recorder.recordBuild()
+        })
+
+        _ = try await service.search(in: root, matching: "Initial")
+        _ = try await service.search(in: root, matching: "Folder")
+        let initialBuildCount = await recorder.buildCount()
+        #expect(initialBuildCount == 1)
+
+        let laterFolder = root.appending(path: "Later Folder", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: laterFolder,
+            withIntermediateDirectories: false
+        )
+        let cachedResults = try await service.search(in: root, matching: "Later")
+        #expect(cachedResults.isEmpty)
+
+        await service.invalidate(root: root)
+        let refreshedResults = try await service.search(in: root, matching: "Later")
+        #expect(refreshedResults.map(\.relativePath) == ["Later Folder"])
+        let rebuiltCount = await recorder.buildCount()
+        #expect(rebuiltCount == 2)
+
+        await service.shutdown()
+    }
+
+    @Test("Cancelling one query does not abandon the shared catalog build")
+    func cancellationDoesNotDiscardSharedCatalogBuild() async throws {
+        let root = try makeDirectorySearchTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "Shared Folder", directoryHint: .isDirectory),
+            withIntermediateDirectories: false
+        )
+
+        let gate = DirectoryCatalogBuildGate()
+        let recorder = DirectoryCatalogBuildRecorder()
+        let service = DirectorySearchService(onCatalogBuild: {
+            await recorder.recordBuild()
+            await gate.wait()
+        })
+
+        let cancelledQuery = Task {
+            try await service.search(in: root, matching: "Shared")
+        }
+        await gate.waitUntilBlocked()
+        cancelledQuery.cancel()
+        await gate.open()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await cancelledQuery.value
+        }
+
+        let survivingQuery = try await service.search(in: root, matching: "Shared")
+        #expect(survivingQuery.map(\.name) == ["Shared Folder"])
+        let buildCount = await recorder.buildCount()
+        #expect(buildCount == 1)
+
+        await service.shutdown()
+    }
+
+    @Test("Switching roots cancels the superseded request without restarting its scan")
+    func rootSwitchDoesNotPingPongCatalogBuilds() async throws {
+        let firstRoot = try makeDirectorySearchTemporaryDirectory()
+        let secondRoot = try makeDirectorySearchTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: firstRoot)
+            try? FileManager.default.removeItem(at: secondRoot)
+        }
+
+        try FileManager.default.createDirectory(
+            at: firstRoot.appending(path: "First Root Folder", directoryHint: .isDirectory),
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createDirectory(
+            at: secondRoot.appending(path: "Second Root Folder", directoryHint: .isDirectory),
+            withIntermediateDirectories: false
+        )
+
+        let gate = DirectoryCatalogBuildGate()
+        let recorder = DirectoryCatalogBuildRecorder()
+        let service = DirectorySearchService(onCatalogBuild: {
+            await recorder.recordBuild()
+            await gate.wait()
+        })
+
+        let supersededRequest = Task {
+            try await service.search(in: firstRoot, matching: "First")
+        }
+        await gate.waitUntilBlocked(count: 1)
+
+        let currentRequest = Task {
+            try await service.search(in: secondRoot, matching: "Second")
+        }
+        await gate.waitUntilBlocked(count: 2)
+        await gate.openAll()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await supersededRequest.value
+        }
+
+        let currentResults = try await currentRequest.value
+        #expect(currentResults.map(\.name) == ["Second Root Folder"])
+        #expect(await recorder.buildCount() == 2)
+
+        await service.shutdown()
+    }
 }
 
 enum InvalidDirectorySearchRoot: CaseIterable, Sendable {
@@ -236,6 +356,45 @@ private actor DirectorySearchStartGate {
     func open() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private actor DirectoryCatalogBuildRecorder {
+    private var count = 0
+
+    func recordBuild() {
+        count += 1
+    }
+
+    func buildCount() -> Int {
+        count
+    }
+}
+
+private actor DirectoryCatalogBuildGate {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func waitUntilBlocked(count: Int = 1) async {
+        while continuations.count < count {
+            await Task.yield()
+        }
+    }
+
+    func open() {
+        guard continuations.isEmpty == false else { return }
+        continuations.removeFirst().resume()
+    }
+
+    func openAll() {
+        let pendingContinuations = continuations
+        continuations.removeAll()
+        pendingContinuations.forEach { $0.resume() }
     }
 }
 
