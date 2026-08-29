@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var terminalApplications = TerminalApplicationCoordinator()
     @State private var sidebar = SidebarModel()
     @State private var isSidebarFolderPickerPresented = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     init() {}
 
@@ -62,29 +63,38 @@ struct ContentView: View {
         @Bindable var fileOperations = fileOperations
         @Bindable var terminalApplications = terminalApplications
 
-        NavigationSplitView {
-            explorerSidebar
-                .navigationSplitViewColumnWidth(min: 200, ideal: 224)
-        } detail: {
-            HStack(spacing: 0) {
-                WorkspaceRootView(workspace: workspace, sidebar: sidebar)
+        VStack(spacing: 0) {
+            ExplorerWindowHeader(
+                activeFolderTitle: workspace.activePane?.place.title ?? "Files",
+                paneCount: workspace.paneCount,
+                onToggleSidebar: toggleSidebar
+            )
 
-                if workspace.paneCount == 1 {
-                    Divider()
-                        .overlay(ExplorerTheme.divider)
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                explorerSidebar
+                    .navigationSplitViewColumnWidth(min: 210, ideal: 232)
+            } detail: {
+                HStack(spacing: 0) {
+                    WorkspaceRootView(workspace: workspace, sidebar: sidebar)
 
-                    inspectorContent
-                        .frame(width: 340)
-                        .frame(maxHeight: .infinity)
-                        .background(ExplorerTheme.inspector)
-                        .accessibilityLabel("Preview")
+                    if workspace.paneCount == 1 {
+                        Divider()
+                            .overlay(ExplorerTheme.divider)
+
+                        inspectorContent
+                            .frame(width: 340)
+                            .frame(maxHeight: .infinity)
+                            .background(ExplorerTheme.inspector)
+                    }
+                }
+                .background(ExplorerTheme.canvas)
+                .transaction { transaction in
+                    transaction.animation = nil
                 }
             }
-            .background(ExplorerTheme.canvas)
-            .transaction { transaction in
-                transaction.animation = nil
-            }
         }
+        .ignoresSafeArea(.container, edges: .top)
+        .toolbarVisibility(.hidden, for: .windowToolbar)
         .tint(ExplorerTheme.accent)
         .foregroundStyle(ExplorerTheme.textPrimary)
         .background(ExplorerTheme.canvas)
@@ -114,9 +124,13 @@ struct ContentView: View {
         }
     }
 
+    private func toggleSidebar() {
+        columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+    }
+
     private var explorerSidebar: some View {
         List(selection: sidebarSelection) {
-            Section("Favorites") {
+            Section {
                 ForEach(SidebarBuiltInPlace.primaryPlaces) { place in
                     sidebarRow(.builtIn(place))
                 }
@@ -124,18 +138,24 @@ struct ContentView: View {
                 ForEach(sidebar.favorites) { favorite in
                     sidebarRow(.favorite(favorite))
                 }
+            } header: {
+                sidebarSectionHeader("Favorites")
             }
 
-            Section("Media") {
+            Section {
                 ForEach(SidebarBuiltInPlace.mediaPlaces) { place in
                     sidebarRow(.builtIn(place))
                 }
+            } header: {
+                sidebarSectionHeader("Media")
             }
 
-            Section("Locations") {
+            Section {
                 ForEach(SidebarBuiltInPlace.locationPlaces) { place in
                     sidebarRow(.builtIn(place))
                 }
+            } header: {
+                sidebarSectionHeader("Locations")
             }
         }
         .listStyle(.sidebar)
@@ -143,23 +163,19 @@ struct ContentView: View {
         .scrollContentBackground(.hidden)
         .background(ExplorerTheme.sidebarBackground)
         .safeAreaInset(edge: .bottom) {
-            HStack {
-                Button {
-                    isSidebarFolderPickerPresented = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(ExplorerToolbarButtonStyle())
-                .help("Add Folder to Sidebar")
-
-                Spacer()
+            Button {
+                isSidebarFolderPickerPresented = true
+            } label: {
+                Label("Add Folder", systemImage: "plus.circle.fill")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(ExplorerTheme.elevatedPanel.opacity(0.82))
+            .buttonStyle(ExplorerSidebarActionButtonStyle())
+            .help("Add Folder to Sidebar")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(ExplorerTheme.sidebarFooter)
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(ExplorerTheme.divider)
+                    .fill(ExplorerTheme.chromeDivider)
                     .frame(height: 0.75)
             }
         }
@@ -184,6 +200,7 @@ struct ContentView: View {
             .font(ExplorerTheme.navigationFont)
             .labelStyle(ExplorerSidebarLabelStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
             .tag(place)
             .internalFolderDropTarget(
@@ -198,6 +215,14 @@ struct ContentView: View {
                     }
                 }
             }
+    }
+
+    private func sidebarSectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(.caption, design: .rounded).bold())
+            .tracking(0.7)
+            .foregroundStyle(ExplorerTheme.chromeSecondaryText)
+            .padding(.top, 4)
     }
 
     @ViewBuilder
@@ -216,10 +241,7 @@ struct ContentView: View {
                 ImagePreviewInspector(image: selectedItem)
             }
         } else {
-            ContentUnavailableView(
-                "Nothing to Preview",
-                systemImage: "eye.slash"
-            )
+            EmptyPreviewInspector()
         }
     }
 }
@@ -371,24 +393,25 @@ private struct DestinationView: View {
         )
         .background(
             ExplorerTheme.panel,
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
-                    workspace.activePaneID == pane.id
+                    workspace.paneCount > 1 && workspace.activePaneID == pane.id
                         ? ExplorerTheme.accent.opacity(0.055)
                         : Color.clear
                 )
                 .allowsHitTesting(false)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
-                    workspace.activePaneID == pane.id
+                    workspace.paneCount > 1 && workspace.activePaneID == pane.id
                         ? ExplorerTheme.accent
                         : ExplorerTheme.divider,
-                    lineWidth: workspace.activePaneID == pane.id ? 2 : 0.75
+                    lineWidth: workspace.paneCount > 1
+                        && workspace.activePaneID == pane.id ? 1.5 : 0.75
                 )
                 .allowsHitTesting(false)
         }
@@ -483,38 +506,69 @@ private struct DestinationView: View {
                     Label(pane.place.title, systemImage: pane.place.systemImage)
                         .font(ExplorerTheme.paneTitleFont)
                         .foregroundStyle(ExplorerTheme.textPrimary)
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: workspace.paneCount == 1 ? 280 : 132)
+                        .frame(height: 36)
                         .background(
                             ExplorerTheme.accentSoft,
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                         )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .stroke(
+                                    ExplorerTheme.accent.opacity(0.22),
+                                    lineWidth: 0.75
+                                )
+                        }
                 }
                 .menuStyle(.borderlessButton)
-                .fixedSize()
                 .help("Choose the folder shown in this pane")
 
                 Spacer(minLength: 4)
 
-                Button("New Folder", systemImage: "folder.badge.plus") {
-                    workspace.activate(pane.id)
-                    fileOperations.createFolder(in: pane.displayedDirectory)
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
-                .disabled(
-                    pane.displayedDirectory == nil || fileOperations.isPerforming
-                )
-                .help("Create a new folder in this pane")
+                if workspace.paneCount == 1 {
+                    Button("New Folder", systemImage: "folder.badge.plus") {
+                        createFolder()
+                    }
+                    .buttonStyle(
+                        ExplorerActionButtonStyle(kind: .secondary)
+                    )
+                    .disabled(
+                        pane.displayedDirectory == nil
+                            || fileOperations.isPerforming
+                    )
+                    .help("Create a new folder in this pane")
 
-                Button("Ask Explorer", systemImage: "sparkles") {
-                    workspace.activate(pane.id)
-                    isAssistantPresented = true
+                    Button("Ask Explorer", systemImage: "sparkles") {
+                        presentAssistant()
+                    }
+                    .buttonStyle(
+                        ExplorerActionButtonStyle(kind: .primary)
+                    )
+                    .disabled(pane.displayedDirectory == nil)
+                    .help("Ask on-device AI about this folder")
+                } else {
+                    Button("New Folder", systemImage: "folder.badge.plus") {
+                        createFolder()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .disabled(
+                        pane.displayedDirectory == nil
+                            || fileOperations.isPerforming
+                    )
+                    .help("Create a new folder in this pane")
+
+                    Button("Ask Explorer", systemImage: "sparkles") {
+                        presentAssistant()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .disabled(pane.displayedDirectory == nil)
+                    .help("Ask on-device AI about this folder")
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
-                .disabled(pane.displayedDirectory == nil)
-                .help("Ask on-device AI about this folder")
 
                 Button("Split Right", systemImage: "rectangle.split.2x1") {
                     _ = workspace.split(paneID: pane.id, direction: .right)
@@ -541,31 +595,53 @@ private struct DestinationView: View {
                     .help("Close this pane")
                 }
             }
-            .padding(6)
+            .padding(7)
             .background(
                 ExplorerTheme.elevatedPanel,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(ExplorerTheme.divider, lineWidth: 0.75)
             }
+            .shadow(
+                color: ExplorerTheme.imperialPrimer.opacity(0.06),
+                radius: 5,
+                x: 0,
+                y: 2
+            )
 
-            TextField("Search this folder", text: $searchModel.query)
-                .textFieldStyle(.plain)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(ExplorerTheme.textSecondary)
+
+                TextField("Search this folder", text: $searchModel.query)
+                    .textFieldStyle(.plain)
+            }
                 .padding(.horizontal, 12)
-                .frame(height: 34)
+                .frame(height: 38)
                 .background(
                     ExplorerTheme.control,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .stroke(ExplorerTheme.divider, lineWidth: 0.75)
                 }
                 .accessibilityLabel("Search in \(pane.place.title)")
                 .help("Search file names or contents in this pane")
         }
+    }
+
+    private func createFolder() {
+        workspace.activate(pane.id)
+        fileOperations.createFolder(in: pane.displayedDirectory)
+    }
+
+    private func presentAssistant() {
+        workspace.activate(pane.id)
+        isAssistantPresented = true
     }
 
     private func directoryPathHeader(_ url: URL) -> some View {
@@ -980,14 +1056,14 @@ private struct FileRowContent: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
-                    .font(.body)
+                    .font(ExplorerTheme.fileNameFont)
                     .foregroundStyle(ExplorerTheme.textPrimary)
 
                 if let modificationDate = item.modificationDate {
                     Text(
                         "Modified: \(modificationDate.formatted(date: .abbreviated, time: .shortened))"
                         )
-                        .font(.caption)
+                        .font(.system(.caption, design: .rounded))
                         .foregroundStyle(ExplorerTheme.textSecondary)
                 }
             }
@@ -1042,7 +1118,7 @@ struct FileSizeLabel: View {
                 Text("—")
             }
         }
-        .font(.caption)
+        .font(.system(.caption, design: .rounded))
         .foregroundStyle(ExplorerTheme.textSecondary)
         .task(id: folderSizeLoadRequest) {
             folderSize = nil
