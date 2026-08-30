@@ -225,6 +225,7 @@ private struct InternalFileInteractionModifier: ViewModifier {
 
 private struct InternalDirectoryRowDropModifier: ViewModifier {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(\.explorerTheme) private var theme
 
     let destinationDirectoryURL: URL?
     let paneID: UUID
@@ -240,10 +241,10 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
                 .overlay {
                     if isDropTargeted {
                         RoundedRectangle(cornerRadius: 7)
-                            .fill(ExplorerTheme.accent.opacity(0.08))
+                            .fill(theme.accent.opacity(0.08))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 7)
-                                    .stroke(ExplorerTheme.accent, lineWidth: 2)
+                                    .stroke(theme.accent, lineWidth: 2)
                             }
                             .allowsHitTesting(false)
                     }
@@ -294,6 +295,7 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
 
 private struct InternalFolderDropModifier: ViewModifier {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(\.explorerTheme) private var theme
 
     let destinationDirectoryURL: URL?
     let paneID: UUID
@@ -312,10 +314,10 @@ private struct InternalFolderDropModifier: ViewModifier {
             .overlay {
                 if isDropTargeted {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(ExplorerTheme.accent.opacity(0.08))
+                        .fill(theme.accent.opacity(0.08))
                         .overlay {
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(ExplorerTheme.accent, lineWidth: 2)
+                                .stroke(theme.accent, lineWidth: 2)
                         }
                         .padding(2)
                         .allowsHitTesting(false)

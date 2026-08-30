@@ -19,76 +19,43 @@ import SwiftUI
 // - Typography: SF Rounded for navigation/headings; SF Pro for dense file data.
 // - Shape rhythm: 11pt controls, 16pt panels, continuous corners.
 // - Motion: only 120ms press feedback on compact toolbar controls.
-enum ExplorerTheme {
-    // Supplied palette anchors.
-    static let classicChalk = Color(hex: 0xF4F4F0)
-    static let chinaSilk = Color(hex: 0xE3D1CC)
-    static let mesaSunrise = Color(hex: 0xEA8160)
-    static let imperialPrimer = Color(hex: 0x21303E)
-    static let glenwoodGreen = Color(hex: 0xA7D3B7)
-    static let shadedIvy = Color(hex: 0x254332)
-
-    static let accent = mesaSunrise
-    static let canvas = Color.adaptive(light: 0xF4F4F0, dark: 0x17242F)
-    static let panel = Color.adaptive(light: 0xFCFBF7, dark: 0x21303E)
-    static let elevatedPanel = Color.adaptive(light: 0xFFFFFF, dark: 0x293A47)
-    static let control = Color.adaptive(light: 0xEEEAE4, dark: 0x30414C)
-    static let row = Color.adaptive(light: 0xFCFBF7, dark: 0x21303E)
-    static let selectedRow = Color.adaptive(light: 0xF8E4DC, dark: 0x4B3639)
-    static let inspector = Color.adaptive(light: 0xFCFBF7, dark: 0x21303E)
-
-    static let textPrimary = Color.adaptive(light: 0x21303E, dark: 0xF4F4F0)
-    static let textSecondary = Color.adaptive(light: 0x65717A, dark: 0xC1C6BF)
-    static let textTertiary = Color.adaptive(light: 0x8B8581, dark: 0x909B99)
-    static let divider = Color.adaptive(light: 0xDDD4CD, dark: 0x3B4A56)
-
-    static let accentSoft = Color.adaptive(light: 0xF8D8CD, dark: 0x593B3A)
-    static let warmHighlight = Color.adaptive(light: 0xD7A838, dark: 0xF9ECB6)
-    static let supportAccent = Color.adaptive(light: 0x3F8064, dark: 0xA7D3B7)
-    static let folderIcon = Color.adaptive(light: 0xD65F42, dark: 0xFF9B7B)
-    static let imageIcon = Color.adaptive(light: 0x3F8064, dark: 0xA7D3B7)
-    static let pdfIcon = Color.adaptive(light: 0xC64F52, dark: 0xFF8F91)
-    static let videoIcon = Color.adaptive(light: 0x7659A6, dark: 0xC4A7F2)
-    static let audioIcon = Color.adaptive(light: 0xA9587E, dark: 0xEFA2C5)
-    static let codeIcon = Color.adaptive(light: 0x3975A5, dark: 0x7CC4F5)
-    static let archiveIcon = Color.adaptive(light: 0xA97825, dark: 0xF2C76B)
-    static let spreadsheetIcon = Color.adaptive(light: 0x3E7B57, dark: 0x89D5A5)
-    static let presentationIcon = Color.adaptive(light: 0xB7653D, dark: 0xF2A17B)
-    static let documentIcon = Color.adaptive(light: 0x68757E, dark: 0xC1C6BF)
-
-    // The reference app treats the titlebar and navigation as one uninterrupted
-    // product surface. These colors remain saturated in both appearances so the
-    // shell never falls back to a disconnected system-white strip.
-    static let chromeText = classicChalk
-    static let chromeSecondaryText = chinaSilk.opacity(0.82)
-    static let chromeDivider = Color.white.opacity(0.12)
-    static let sidebarIconSurface = Color.white.opacity(0.09)
-
-    static let windowChrome = LinearGradient(
-        colors: [
-            imperialPrimer,
-            Color(hex: 0x342D43),
-            Color(hex: 0x684047),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
-
-    static let sidebarBackground = LinearGradient(
-        colors: [
-            imperialPrimer,
-            Color(hex: 0x293442),
-            Color(hex: 0x352D42),
-        ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    static let sidebarFooter = LinearGradient(
-        colors: [Color(hex: 0x293442), Color(hex: 0x352D42)],
-        startPoint: .leading,
-        endPoint: .trailing
-    )
+struct ExplorerTheme {
+    let choice: ExplorerThemeChoice
+    let classicChalk: Color
+    let chinaSilk: Color
+    let imperialPrimer: Color
+    let accent: Color
+    let canvas: Color
+    let panel: Color
+    let elevatedPanel: Color
+    let control: Color
+    let row: Color
+    let selectedRow: Color
+    let inspector: Color
+    let textPrimary: Color
+    let textSecondary: Color
+    let textTertiary: Color
+    let divider: Color
+    let accentSoft: Color
+    let warmHighlight: Color
+    let supportAccent: Color
+    let folderIcon: Color
+    let imageIcon: Color
+    let pdfIcon: Color
+    let videoIcon: Color
+    let audioIcon: Color
+    let codeIcon: Color
+    let archiveIcon: Color
+    let spreadsheetIcon: Color
+    let presentationIcon: Color
+    let documentIcon: Color
+    let chromeText: Color
+    let chromeSecondaryText: Color
+    let chromeDivider: Color
+    let sidebarIconSurface: Color
+    let windowChrome: LinearGradient
+    let sidebarBackground: LinearGradient
+    let sidebarFooter: LinearGradient
 
     static let paneTitleFont = Font.system(.title3, design: .rounded).bold()
     static let navigationFont = Font.system(.body, design: .rounded).bold()
@@ -98,48 +65,264 @@ enum ExplorerTheme {
     static let folderRowIconSize: CGFloat = 27
     static let fileRowIconSize: CGFloat = 21
     static let rowIconFrameSize: CGFloat = 34
+
+    static func palette(for choice: ExplorerThemeChoice) -> Self {
+        switch choice {
+        case .mesa:
+            make(
+                choice: choice,
+                accent: 0xEA8160,
+                support: 0x3F8064,
+                warm: 0xD7A838,
+                canvas: (0xF4F4F0, 0x17242F),
+                panel: (0xFCFBF7, 0x21303E),
+                elevated: (0xFFFFFF, 0x293A47),
+                control: (0xEEEAE4, 0x30414C),
+                selected: (0xF8E4DC, 0x4B3639),
+                primaryText: (0x21303E, 0xF4F4F0),
+                secondaryText: (0x65717A, 0xC1C6BF),
+                tertiaryText: (0x8B8581, 0x909B99),
+                divider: (0xDDD4CD, 0x3B4A56),
+                accentSoft: (0xF8D8CD, 0x593B3A),
+                shell: (0x21303E, 0x342D43, 0x684047)
+            )
+        case .midnight:
+            make(
+                choice: choice,
+                accent: 0x9A8CFF,
+                support: 0x4DD7D1,
+                warm: 0xF2BE5C,
+                canvas: (0xF2F3FA, 0x111421),
+                panel: (0xFBFBFF, 0x191D2C),
+                elevated: (0xFFFFFF, 0x23283A),
+                control: (0xE9EAF4, 0x2B3145),
+                selected: (0xE9E5FF, 0x393458),
+                primaryText: (0x20243A, 0xF5F4FF),
+                secondaryText: (0x626880, 0xC3C6D8),
+                tertiaryText: (0x898DA0, 0x8D93A8),
+                divider: (0xD8DAE7, 0x383E53),
+                accentSoft: (0xE3DEFF, 0x3E385F),
+                shell: (0x171B2C, 0x25243B, 0x47304B)
+            )
+        case .ocean:
+            make(
+                choice: choice,
+                accent: 0x2E9CCA,
+                support: 0x36B890,
+                warm: 0xF2B84B,
+                canvas: (0xEFF7F9, 0x10232B),
+                panel: (0xFAFEFF, 0x18313A),
+                elevated: (0xFFFFFF, 0x21404A),
+                control: (0xE3F0F3, 0x294C56),
+                selected: (0xD9F1F8, 0x244B5A),
+                primaryText: (0x18343F, 0xF2FBFD),
+                secondaryText: (0x58727B, 0xB8CDD2),
+                tertiaryText: (0x80959B, 0x86A2A9),
+                divider: (0xCFE0E4, 0x345761),
+                accentSoft: (0xCFEDF6, 0x245566),
+                shell: (0x12303B, 0x164657, 0x245A68)
+            )
+        case .forest:
+            make(
+                choice: choice,
+                accent: 0x49A36D,
+                support: 0x5A8FD8,
+                warm: 0xD7A63E,
+                canvas: (0xF1F6F0, 0x15241C),
+                panel: (0xFBFEFA, 0x1D3025),
+                elevated: (0xFFFFFF, 0x274034),
+                control: (0xE5EEE4, 0x304C3D),
+                selected: (0xDDF0E2, 0x2E523E),
+                primaryText: (0x20362A, 0xF2FAF4),
+                secondaryText: (0x617568, 0xBDD0C2),
+                tertiaryText: (0x86958A, 0x8EA598),
+                divider: (0xD2DED4, 0x395846),
+                accentSoft: (0xD4EBD9, 0x31583F),
+                shell: (0x193326, 0x264338, 0x3D4A3B)
+            )
+        case .graphite:
+            make(
+                choice: choice,
+                accent: 0xE06C9F,
+                support: 0x6A9FE6,
+                warm: 0xD8A84F,
+                canvas: (0xF4F3F5, 0x18191D),
+                panel: (0xFCFBFD, 0x23242A),
+                elevated: (0xFFFFFF, 0x2D2E35),
+                control: (0xECE9EE, 0x383941),
+                selected: (0xF5DFE9, 0x513543),
+                primaryText: (0x29272D, 0xF7F4F7),
+                secondaryText: (0x6E6972, 0xC8C3CA),
+                tertiaryText: (0x918B94, 0x97929B),
+                divider: (0xDED9E0, 0x484850),
+                accentSoft: (0xF2D6E3, 0x5A3547),
+                shell: (0x25262C, 0x39313F, 0x5A3547)
+            )
+        }
+    }
+
+    private static func make(
+        choice: ExplorerThemeChoice,
+        accent accentHex: UInt32,
+        support supportHex: UInt32,
+        warm warmHex: UInt32,
+        canvas: (light: UInt32, dark: UInt32),
+        panel: (light: UInt32, dark: UInt32),
+        elevated: (light: UInt32, dark: UInt32),
+        control: (light: UInt32, dark: UInt32),
+        selected: (light: UInt32, dark: UInt32),
+        primaryText: (light: UInt32, dark: UInt32),
+        secondaryText: (light: UInt32, dark: UInt32),
+        tertiaryText: (light: UInt32, dark: UInt32),
+        divider: (light: UInt32, dark: UInt32),
+        accentSoft: (light: UInt32, dark: UInt32),
+        shell: (start: UInt32, middle: UInt32, end: UInt32)
+    ) -> Self {
+        let accent = Color(hex: accentHex)
+        let support = Color(hex: supportHex)
+        let warm = Color(hex: warmHex)
+        let shellStart = Color(hex: shell.start)
+        let shellMiddle = Color(hex: shell.middle)
+        let shellEnd = Color(hex: shell.end)
+        let classicChalk = Color(hex: 0xF4F4F0)
+        let chinaSilk = Color(hex: 0xE3D1CC)
+        let panelColor = Color.adaptive(light: panel.light, dark: panel.dark)
+
+        return Self(
+            choice: choice,
+            classicChalk: classicChalk,
+            chinaSilk: chinaSilk,
+            imperialPrimer: shellStart,
+            accent: accent,
+            canvas: .adaptive(light: canvas.light, dark: canvas.dark),
+            panel: panelColor,
+            elevatedPanel: .adaptive(light: elevated.light, dark: elevated.dark),
+            control: .adaptive(light: control.light, dark: control.dark),
+            row: panelColor,
+            selectedRow: .adaptive(light: selected.light, dark: selected.dark),
+            inspector: panelColor,
+            textPrimary: .adaptive(
+                light: primaryText.light,
+                dark: primaryText.dark
+            ),
+            textSecondary: .adaptive(
+                light: secondaryText.light,
+                dark: secondaryText.dark
+            ),
+            textTertiary: .adaptive(
+                light: tertiaryText.light,
+                dark: tertiaryText.dark
+            ),
+            divider: .adaptive(light: divider.light, dark: divider.dark),
+            accentSoft: .adaptive(
+                light: accentSoft.light,
+                dark: accentSoft.dark
+            ),
+            warmHighlight: warm,
+            supportAccent: support,
+            folderIcon: accent,
+            imageIcon: support,
+            pdfIcon: accent,
+            videoIcon: support,
+            audioIcon: warm,
+            codeIcon: support,
+            archiveIcon: warm,
+            spreadsheetIcon: support,
+            presentationIcon: accent,
+            documentIcon: .adaptive(
+                light: secondaryText.light,
+                dark: secondaryText.dark
+            ),
+            chromeText: classicChalk,
+            chromeSecondaryText: chinaSilk.opacity(0.82),
+            chromeDivider: Color.white.opacity(0.12),
+            sidebarIconSurface: Color.white.opacity(0.09),
+            windowChrome: LinearGradient(
+                colors: [shellStart, shellMiddle, shellEnd],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            sidebarBackground: LinearGradient(
+                colors: [shellStart, shellMiddle, shellEnd],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            sidebarFooter: LinearGradient(
+                colors: [shellMiddle, shellEnd],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+    }
+}
+
+nonisolated enum ExplorerThemeChoice: String, CaseIterable, Identifiable, Codable, Sendable {
+    case mesa
+    case midnight
+    case ocean
+    case forest
+    case graphite
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .mesa: "Mesa"
+        case .midnight: "Midnight"
+        case .ocean: "Ocean"
+        case .forest: "Forest"
+        case .graphite: "Graphite"
+        }
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var explorerTheme = ExplorerTheme.palette(for: .mesa)
 }
 
 struct ExplorerSidebarLabelStyle: LabelStyle {
+    @Environment(\.explorerTheme) private var theme
+
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 11) {
             configuration.icon
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(ExplorerTheme.accent)
+                .foregroundStyle(theme.accent)
                 .frame(width: 28, height: 28)
                 .background(
-                    ExplorerTheme.sidebarIconSurface,
+                    theme.sidebarIconSurface,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
 
             configuration.title
-                .foregroundStyle(ExplorerTheme.chromeText)
+                .foregroundStyle(theme.chromeText)
         }
     }
 }
 
 struct ExplorerToolbarButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.explorerTheme) private var theme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(
-                isEnabled ? ExplorerTheme.textPrimary : ExplorerTheme.textTertiary
+                isEnabled ? theme.textPrimary : theme.textTertiary
             )
             .frame(width: 34, height: 34)
             .background(
                 configuration.isPressed
-                    ? ExplorerTheme.accentSoft
-                    : ExplorerTheme.elevatedPanel,
+                    ? theme.accentSoft
+                    : theme.elevatedPanel,
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(ExplorerTheme.divider.opacity(0.72), lineWidth: 0.75)
+                    .stroke(theme.divider.opacity(0.72), lineWidth: 0.75)
             }
             .shadow(
-                color: ExplorerTheme.imperialPrimer.opacity(0.08),
+                color: theme.imperialPrimer.opacity(0.08),
                 radius: 3,
                 x: 0,
                 y: 1
@@ -150,11 +333,36 @@ struct ExplorerToolbarButtonStyle: ButtonStyle {
     }
 }
 
-struct ExplorerChromeIconButtonStyle: ButtonStyle {
+struct ExplorerBackButtonStyle: ButtonStyle {
+    @Environment(\.explorerTheme) private var theme
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(ExplorerTheme.chromeText)
+            .foregroundStyle(
+                configuration.isPressed ? theme.chromeText : theme.accent
+            )
+            .frame(width: 34, height: 34)
+            .background(
+                configuration.isPressed ? theme.accent : theme.accentSoft,
+                in: .rect(cornerRadius: 11)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 11)
+                    .stroke(theme.accent.opacity(0.42), lineWidth: 0.9)
+            }
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+struct ExplorerChromeIconButtonStyle: ButtonStyle {
+    @Environment(\.explorerTheme) private var theme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(theme.chromeText)
             .frame(width: 34, height: 32)
             .background(
                 configuration.isPressed
@@ -171,26 +379,27 @@ struct ExplorerChromeIconButtonStyle: ButtonStyle {
 
 struct ExplorerActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.explorerTheme) private var theme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(ExplorerTheme.actionFont)
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(ExplorerTheme.textPrimary)
+            .foregroundStyle(theme.textPrimary)
             .padding(.horizontal, 13)
             .frame(height: 36)
             .background(
                 configuration.isPressed
-                    ? ExplorerTheme.accentSoft
-                    : ExplorerTheme.elevatedPanel,
+                    ? theme.accentSoft
+                    : theme.elevatedPanel,
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(ExplorerTheme.divider.opacity(0.82), lineWidth: 0.75)
+                    .stroke(theme.divider.opacity(0.82), lineWidth: 0.75)
             }
             .shadow(
-                color: ExplorerTheme.imperialPrimer.opacity(0.08),
+                color: theme.imperialPrimer.opacity(0.08),
                 radius: configuration.isPressed ? 2 : 5,
                 x: 0,
                 y: configuration.isPressed ? 1 : 2
@@ -202,16 +411,18 @@ struct ExplorerActionButtonStyle: ButtonStyle {
 }
 
 struct ExplorerSidebarActionButtonStyle: ButtonStyle {
+    @Environment(\.explorerTheme) private var theme
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(ExplorerTheme.actionFont)
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(ExplorerTheme.chromeText)
+            .foregroundStyle(theme.chromeText)
             .frame(maxWidth: .infinity)
             .frame(height: 38)
             .background(
                 configuration.isPressed
-                    ? ExplorerTheme.accent.opacity(0.34)
+                    ? theme.accent.opacity(0.34)
                     : Color.white.opacity(0.09),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
             )

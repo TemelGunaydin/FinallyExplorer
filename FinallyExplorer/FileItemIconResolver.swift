@@ -156,6 +156,8 @@ nonisolated enum FileItemIconResolver {
 }
 
 struct FileItemIconView: View {
+    @Environment(\.explorerTheme) private var theme
+
     let item: FileItem
 
     private var kind: FileItemIconKind {
@@ -198,25 +200,25 @@ struct FileItemIconView: View {
     private var iconColor: Color {
         switch kind {
         case .folder:
-            ExplorerTheme.folderIcon
+            theme.folderIcon
         case .image:
-            ExplorerTheme.imageIcon
+            theme.imageIcon
         case .pdf:
-            ExplorerTheme.pdfIcon
+            theme.pdfIcon
         case .video:
-            ExplorerTheme.videoIcon
+            theme.videoIcon
         case .audio:
-            ExplorerTheme.audioIcon
+            theme.audioIcon
         case .sourceCode:
-            ExplorerTheme.codeIcon
+            theme.codeIcon
         case .archive, .diskImage:
-            ExplorerTheme.archiveIcon
+            theme.archiveIcon
         case .spreadsheet:
-            ExplorerTheme.spreadsheetIcon
+            theme.spreadsheetIcon
         case .presentation:
-            ExplorerTheme.presentationIcon
+            theme.presentationIcon
         case .richTextDocument, .book, .font, .database, .text, .generic:
-            ExplorerTheme.documentIcon
+            theme.documentIcon
         }
     }
 }

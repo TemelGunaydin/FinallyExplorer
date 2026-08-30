@@ -19,24 +19,44 @@ struct ContentView: View {
     @State private var fileOperations = FileOperationCoordinator()
     @State private var terminalApplications = TerminalApplicationCoordinator()
     @State private var sidebar = SidebarModel()
+    @State private var themeController = ExplorerThemeController()
+    @State private var globalSearch = GlobalSearchModel()
     @State private var isSidebarFolderPickerPresented = false
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
-    init() {}
+    private let globalSearchRootURL: URL
+
+    init() {
+        globalSearchRootURL = SidebarPlace.systemDrive.url
+            ?? URL(filePath: "/", directoryHint: .isDirectory)
+    }
 
     init(
         workspace: WorkspaceModel,
         fileOperations: FileOperationCoordinator,
         terminalApplications: TerminalApplicationCoordinator,
-        sidebar: SidebarModel? = nil
+        sidebar: SidebarModel? = nil,
+        themeController: ExplorerThemeController? = nil,
+        globalSearch: GlobalSearchModel? = nil,
+        globalSearchRootURL: URL = URL(
+            filePath: "/",
+            directoryHint: .isDirectory
+        )
     ) {
+        self.globalSearchRootURL = globalSearchRootURL
         _workspace = State(initialValue: workspace)
         _fileOperations = State(initialValue: fileOperations)
         _terminalApplications = State(initialValue: terminalApplications)
 
         if let sidebar {
             _sidebar = State(initialValue: sidebar)
+        }
+        if let themeController {
+            _themeController = State(initialValue: themeController)
+        }
+        if let globalSearch {
+            _globalSearch = State(initialValue: globalSearch)
         }
     }
 
@@ -70,6 +90,7 @@ struct ContentView: View {
     var body: some View {
         @Bindable var fileOperations = fileOperations
         @Bindable var terminalApplications = terminalApplications
+        let theme = themeController.activeTheme
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
             explorerSidebar
@@ -87,23 +108,23 @@ struct ContentView: View {
 
                 if workspace.paneCount == 1 {
                     Divider()
-                        .overlay(ExplorerTheme.divider)
+                        .overlay(theme.divider)
                         .frame(width: isPreviewVisible ? 1 : 0)
                         .opacity(isPreviewVisible ? 1 : 0)
 
                     inspectorContent
                         .frame(width: isPreviewVisible ? 340 : 0)
                         .frame(maxHeight: .infinity)
-                        .background(ExplorerTheme.inspector)
+                        .background(theme.inspector)
                         .clipped()
                         .opacity(isPreviewVisible ? 1 : 0)
                         .allowsHitTesting(isPreviewVisible)
                 }
             }
-            .background(ExplorerTheme.canvas)
+            .background(theme.canvas)
             .overlay(alignment: .topLeading) {
                 TopLeadingCornerCutout(radius: 18)
-                    .fill(ExplorerTheme.sidebarBackground)
+                    .fill(theme.sidebarBackground)
                     .frame(width: 18, height: 18)
                     .allowsHitTesting(false)
             }
@@ -111,7 +132,7 @@ struct ContentView: View {
                 transaction.animation = nil
             }
         }
-        .background(ExplorerTheme.sidebarBackground)
+        .background(theme.sidebarBackground)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(
@@ -124,13 +145,26 @@ struct ContentView: View {
                 .help("Show or hide the sidebar")
                 .accessibilityIdentifier("window-sidebar-toggle")
             }
+
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 8) {
+                    GlobalSearchToolbar(
+                        model: globalSearch,
+                        rootURL: globalSearchRootURL,
+                        onReveal: revealGlobalSearchResult
+                    )
+
+                    ExplorerThemePicker(controller: themeController)
+                }
+            }
         }
-        .toolbarBackground(ExplorerTheme.windowChrome, for: .windowToolbar)
+        .toolbarBackground(theme.windowChrome, for: .windowToolbar)
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .toolbar(removing: .title)
-        .tint(ExplorerTheme.accent)
-        .foregroundStyle(ExplorerTheme.textPrimary)
-        .background(ExplorerTheme.canvas)
+        .tint(theme.accent)
+        .foregroundStyle(theme.textPrimary)
+        .background(theme.canvas)
+        .environment(\.explorerTheme, theme)
         .environment(fileOperations)
         .environment(terminalApplications)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
@@ -169,6 +203,10 @@ struct ContentView: View {
         _ = workspace.resetView()
     }
 
+    private func revealGlobalSearchResult(_ result: ExplorerSearchResult) {
+        workspace.reveal(result.item)
+    }
+
     private var explorerSidebar: some View {
         List(selection: sidebarSelection) {
             Section {
@@ -202,7 +240,7 @@ struct ContentView: View {
         .listStyle(.sidebar)
         .headerProminence(.increased)
         .scrollContentBackground(.hidden)
-        .background(ExplorerTheme.sidebarBackground)
+        .background(themeController.activeTheme.sidebarBackground)
         .safeAreaInset(edge: .bottom) {
             Button {
                 isSidebarFolderPickerPresented = true
@@ -213,10 +251,10 @@ struct ContentView: View {
             .help("Add Folder to Sidebar")
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(ExplorerTheme.sidebarFooter)
+            .background(themeController.activeTheme.sidebarFooter)
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(ExplorerTheme.chromeDivider)
+                    .fill(themeController.activeTheme.chromeDivider)
                     .frame(height: 0.75)
             }
         }
@@ -271,7 +309,7 @@ struct ContentView: View {
         Text(title.uppercased())
             .font(.system(.caption, design: .rounded).bold())
             .tracking(0.7)
-            .foregroundStyle(ExplorerTheme.chromeSecondaryText)
+            .foregroundStyle(themeController.activeTheme.chromeSecondaryText)
             .padding(.top, 4)
     }
 
@@ -324,6 +362,8 @@ private struct TopLeadingCornerCutout: Shape {
 }
 
 private struct WorkspaceRootView: View {
+    @Environment(\.explorerTheme) private var theme
+
     let workspace: WorkspaceModel
     let sidebar: SidebarModel
     let isPreviewVisible: Bool
@@ -340,7 +380,7 @@ private struct WorkspaceRootView: View {
             onResetView: onResetView
         )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(ExplorerTheme.canvas)
+            .background(theme.canvas)
     }
 }
 
@@ -412,6 +452,7 @@ private nonisolated struct SearchLoadRequest: Hashable {
 
 private struct DestinationView: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(\.explorerTheme) private var theme
 
     let pane: WorkspacePaneState
     let workspace: WorkspaceModel
@@ -467,9 +508,9 @@ private struct DestinationView: View {
                 }
 
                 Divider()
-                    .overlay(ExplorerTheme.divider)
+                    .overlay(theme.divider)
                 ZStack(alignment: .topLeading) {
-                    ExplorerTheme.panel
+                    theme.panel
                     directoryBody
                 }
                     .frame(
@@ -498,14 +539,14 @@ private struct DestinationView: View {
             alignment: .topLeading
         )
         .background(
-            ExplorerTheme.panel,
+            theme.panel,
             in: RoundedRectangle(cornerRadius: 16, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     workspace.paneCount > 1 && workspace.activePaneID == pane.id
-                        ? ExplorerTheme.accent.opacity(0.055)
+                        ? theme.accent.opacity(0.055)
                         : Color.clear
                 )
                 .allowsHitTesting(false)
@@ -514,15 +555,15 @@ private struct DestinationView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
                     workspace.paneCount > 1 && workspace.activePaneID == pane.id
-                        ? ExplorerTheme.accent
-                        : ExplorerTheme.divider,
+                        ? theme.accent
+                        : theme.divider,
                     lineWidth: workspace.paneCount > 1
                         && workspace.activePaneID == pane.id ? 1.5 : 0.75
                 )
                 .allowsHitTesting(false)
         }
         .padding(6)
-        .background(ExplorerTheme.canvas)
+        .background(theme.canvas)
         .contentShape(Rectangle())
         .focusedValue(\.explorerPaneID, pane.id)
         .focusedValue(\.fileCommandContext, fileCommandContext)
@@ -562,6 +603,12 @@ private struct DestinationView: View {
             updatePreviewPresentation()
         }
         .onChange(of: pane.searchModel.request(in: pane.displayedDirectory)) {
+            oldRequest,
+            newRequest in
+            // Folder navigation owns its selection reset. Clearing here as well
+            // races a global-search reveal: the directory load selects the hit,
+            // then this observer can erase that selection a frame later.
+            guard oldRequest.rootURL == newRequest.rootURL else { return }
             pane.selectedSearchResultID = nil
             pane.selectedURL = nil
         }
@@ -589,9 +636,10 @@ private struct DestinationView: View {
                         workspace.activate(pane.id)
                         pane.navigation.goBack()
                         pane.selectedURL = nil
+                        pane.selectedSearchResultID = nil
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .buttonStyle(ExplorerBackButtonStyle())
                     .help("Go to the previous folder")
                 }
 
@@ -641,6 +689,8 @@ private struct DestinationView: View {
                     .help("Create a new folder in this pane")
 
                 }
+
+                TerminalToolbarButton(directoryURL: pane.displayedDirectory)
 
                 Button("Split Right", systemImage: "rectangle.split.2x1") {
                     _ = workspace.split(paneID: pane.id, direction: .right)
@@ -709,15 +759,15 @@ private struct DestinationView: View {
             }
             .padding(7)
             .background(
-                ExplorerTheme.elevatedPanel,
+                theme.elevatedPanel,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+                    .stroke(theme.divider, lineWidth: 0.75)
             }
             .shadow(
-                color: ExplorerTheme.imperialPrimer.opacity(0.06),
+                color: theme.imperialPrimer.opacity(0.06),
                 radius: 5,
                 x: 0,
                 y: 2
@@ -726,7 +776,7 @@ private struct DestinationView: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(ExplorerTheme.textSecondary)
+                    .foregroundStyle(theme.textSecondary)
 
                 TextField("Search this folder", text: $searchModel.query)
                     .textFieldStyle(.plain)
@@ -736,12 +786,12 @@ private struct DestinationView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 38)
                 .background(
-                    ExplorerTheme.control,
+                    theme.control,
                     in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+                        .stroke(theme.divider, lineWidth: 0.75)
                 }
                 .help("Search file names or contents in this pane")
         }
@@ -771,7 +821,7 @@ private struct DestinationView: View {
                 if let statusMessage = fileOperations.statusMessage {
                     Text(statusMessage)
                         .font(.caption)
-                        .foregroundStyle(ExplorerTheme.textSecondary)
+                        .foregroundStyle(theme.textSecondary)
                 }
 
                 Spacer()
@@ -828,7 +878,7 @@ private struct DestinationView: View {
                         isSelected: pane.selectedURL == item.url
                     )
                 )
-                .listRowBackground(ExplorerTheme.row)
+                .listRowBackground(theme.row)
                 .internalFileInteraction(
                     for: item,
                     paneID: pane.id,
@@ -838,8 +888,8 @@ private struct DestinationView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(ExplorerTheme.panel)
-            .listRowSeparatorTint(ExplorerTheme.divider)
+            .background(theme.panel)
+            .listRowSeparatorTint(theme.divider)
         }
     }
 
@@ -859,6 +909,7 @@ private struct DestinationView: View {
         if item.isDirectory {
             pane.navigation.open(item.url)
             pane.selectedURL = nil
+            pane.selectedSearchResultID = nil
             pane.isInspectorPresented = false
         } else {
             _ = NSWorkspace.shared.open(item.url)
@@ -915,6 +966,18 @@ private struct DestinationView: View {
             guard requestedURL == pane.displayedDirectory else { return }
 
             pane.directoryContents = contents
+
+            if let pendingRevealURL = pane.pendingRevealURL,
+               let revealedItem = contents.first(where: {
+                   urlsReferToSameItem($0.url, pendingRevealURL)
+               }) {
+                pane.pendingRevealURL = nil
+                pane.selectedURL = revealedItem.url
+            }
+
+            // Publish the loading transition last. The macOS List must enter
+            // the hierarchy with its selection and rows already consistent;
+            // otherwise its initial empty selection can overwrite the reveal.
             pane.isLoading = false
         } catch is CancellationError {
             guard requestedURL == pane.displayedDirectory else { return }
@@ -932,6 +995,11 @@ private struct DestinationView: View {
             pane.errorMessage = "An unexpected error occurred: \(error.localizedDescription)\n\nPath: \(requestedURL.path)"
             pane.isLoading = false
         }
+    }
+
+    private func urlsReferToSameItem(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.resolvingSymlinksInPath()
+            == rhs.standardizedFileURL.resolvingSymlinksInPath()
     }
 }
 
@@ -956,6 +1024,8 @@ private struct WorkspacePaneAccessibilityModifier: ViewModifier {
 }
 
 struct FolderContentsInspector: View {
+    @Environment(\.explorerTheme) private var theme
+
     let folder: FileItem
     let paneID: UUID
     let fileOperations: FileOperationCoordinator
@@ -971,7 +1041,7 @@ struct FolderContentsInspector: View {
             InspectorHeader(item: folder, systemImage: "folder.fill")
 
             Divider()
-                .overlay(ExplorerTheme.divider)
+                .overlay(theme.divider)
 
             inspectorBody
                 .frame(
@@ -1024,7 +1094,7 @@ struct FolderContentsInspector: View {
                 }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .listRowBackground(ExplorerTheme.row)
+                    .listRowBackground(theme.row)
                     .internalFileInteraction(
                         for: item,
                         paneID: paneID,
@@ -1034,8 +1104,8 @@ struct FolderContentsInspector: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(ExplorerTheme.inspector)
-            .listRowSeparatorTint(ExplorerTheme.divider)
+            .background(theme.inspector)
+            .listRowSeparatorTint(theme.divider)
         }
     }
 
@@ -1068,6 +1138,8 @@ struct FolderContentsInspector: View {
 }
 
 private struct ImagePreviewInspector: View {
+    @Environment(\.explorerTheme) private var theme
+
     let image: FileItem
 
     var body: some View {
@@ -1075,7 +1147,7 @@ private struct ImagePreviewInspector: View {
             InspectorHeader(item: image, systemImage: "photo.fill")
 
             Divider()
-                .overlay(ExplorerTheme.divider)
+                .overlay(theme.divider)
 
             QuickLookPreview(url: image.url)
                 .accessibilityLabel("Preview of \(image.name)")
@@ -1084,6 +1156,8 @@ private struct ImagePreviewInspector: View {
 }
 
 private struct InspectorHeader: View {
+    @Environment(\.explorerTheme) private var theme
+
     let item: FileItem
     let systemImage: String
 
@@ -1091,11 +1165,11 @@ private struct InspectorHeader: View {
         VStack(alignment: .leading, spacing: 4) {
             Label(item.name, systemImage: systemImage)
                 .font(ExplorerTheme.paneTitleFont)
-                .foregroundStyle(ExplorerTheme.textPrimary)
+                .foregroundStyle(theme.textPrimary)
 
             Text(item.url.path(percentEncoded: false))
                 .font(.caption)
-                .foregroundStyle(ExplorerTheme.textSecondary)
+                .foregroundStyle(theme.textSecondary)
                 .lineLimit(2)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
@@ -1103,7 +1177,7 @@ private struct InspectorHeader: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(ExplorerTheme.elevatedPanel)
+        .background(theme.elevatedPanel)
     }
 }
 
@@ -1175,6 +1249,8 @@ private struct FileRowView: View {
 }
 
 private struct FileRowContent: View {
+    @Environment(\.explorerTheme) private var theme
+
     let item: FileItem
 
     var body: some View {
@@ -1184,14 +1260,14 @@ private struct FileRowContent: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(ExplorerTheme.fileNameFont)
-                    .foregroundStyle(ExplorerTheme.textPrimary)
+                    .foregroundStyle(theme.textPrimary)
 
                 if let modificationDate = item.modificationDate {
                     Text(
                         "Modified: \(modificationDate.formatted(date: .abbreviated, time: .shortened))"
                         )
                         .font(.system(.caption, design: .rounded))
-                        .foregroundStyle(ExplorerTheme.textSecondary)
+                        .foregroundStyle(theme.textSecondary)
                 }
             }
 
@@ -1206,6 +1282,7 @@ private struct FileRowContent: View {
 
 struct FileSizeLabel: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(\.explorerTheme) private var theme
 
     let item: FileItem
 
@@ -1237,7 +1314,7 @@ struct FileSizeLabel: View {
             }
         }
         .font(.system(.caption, design: .rounded))
-        .foregroundStyle(ExplorerTheme.textSecondary)
+        .foregroundStyle(theme.textSecondary)
         .task(id: folderSizeLoadRequest) {
             folderSize = nil
             isCalculatingFolderSize = item.isDirectory

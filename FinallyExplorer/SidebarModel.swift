@@ -169,12 +169,14 @@ nonisolated struct SidebarFavorite: Codable, Identifiable, Hashable, Sendable {
 nonisolated enum SidebarPlaceID: Hashable, Sendable {
     case builtIn(SidebarBuiltInPlace)
     case favorite(UUID)
+    case location(URL)
 }
 
 nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
     private enum Storage: Hashable, Sendable {
         case builtIn(SidebarBuiltInPlace)
         case favorite(SidebarFavorite)
+        case location(url: URL, title: String)
     }
 
     private let storage: Storage
@@ -201,12 +203,27 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
         Self(storage: .favorite(favorite))
     }
 
+    static func location(_ directoryURL: URL, title: String? = nil) -> Self {
+        let normalizedURL = directoryURL.standardizedFileURL
+        let defaultTitle = normalizedURL.lastPathComponent.isEmpty
+            ? normalizedURL.path(percentEncoded: false)
+            : normalizedURL.lastPathComponent
+        return Self(
+            storage: .location(
+                url: normalizedURL,
+                title: title ?? defaultTitle
+            )
+        )
+    }
+
     var id: SidebarPlaceID {
         switch storage {
         case let .builtIn(place):
             .builtIn(place)
         case let .favorite(favorite):
             .favorite(favorite.id)
+        case let .location(url, _):
+            .location(url)
         }
     }
 
@@ -216,6 +233,8 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             place.title
         case let .favorite(favorite):
             favorite.title
+        case let .location(_, title):
+            title
         }
     }
 
@@ -225,12 +244,14 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             place.systemImage
         case let .favorite(favorite):
             favorite.isDirectory ? "folder" : "doc"
+        case .location:
+            "folder"
         }
     }
 
     var isDirectory: Bool {
         switch storage {
-        case .builtIn:
+        case .builtIn, .location:
             true
         case let .favorite(favorite):
             favorite.isDirectory
@@ -243,6 +264,8 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             place.url
         case let .favorite(favorite):
             favorite.directoryURL
+        case let .location(url, _):
+            url
         }
     }
 

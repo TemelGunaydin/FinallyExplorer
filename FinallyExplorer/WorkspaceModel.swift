@@ -241,6 +241,7 @@ final class WorkspacePaneState: Identifiable {
     var errorMessage: String?
     var navigation: DirectoryNavigationState
     var selectedURL: URL?
+    var pendingRevealURL: URL?
     var selectedSearchResultID: ExplorerSearchResult.ID?
     var isInspectorPresented: Bool
     var showsHiddenItems: Bool
@@ -254,6 +255,7 @@ final class WorkspacePaneState: Identifiable {
         isLoading: Bool = false,
         errorMessage: String? = nil,
         selectedURL: URL? = nil,
+        pendingRevealURL: URL? = nil,
         selectedSearchResultID: ExplorerSearchResult.ID? = nil,
         isInspectorPresented: Bool = false,
         showsHiddenItems: Bool = false,
@@ -266,6 +268,7 @@ final class WorkspacePaneState: Identifiable {
         self.isLoading = isLoading
         self.errorMessage = errorMessage
         self.selectedURL = selectedURL
+        self.pendingRevealURL = pendingRevealURL
         self.selectedSearchResultID = selectedSearchResultID
         self.isInspectorPresented = isInspectorPresented
         self.showsHiddenItems = showsHiddenItems
@@ -325,6 +328,7 @@ final class WorkspacePaneState: Identifiable {
         errorMessage = nil
         navigation = DirectoryNavigationState()
         selectedURL = nil
+        pendingRevealURL = nil
         selectedSearchResultID = nil
         isInspectorPresented = false
         searchModel.query = ""
@@ -393,6 +397,18 @@ final class WorkspaceModel {
         guard let targetPane = panes[paneID] else { return }
         activate(paneID)
         targetPane.select(place)
+    }
+
+    /// Reveals a global-search hit in its containing folder without adding a
+    /// transient location to the user's sidebar favorites.
+    func reveal(_ item: FileItem, in paneID: UUID? = nil) {
+        let targetPaneID = paneID ?? activePaneID
+        guard let targetPane = panes[targetPaneID] else { return }
+
+        let containingDirectory = item.url.deletingLastPathComponent()
+        activate(targetPaneID)
+        targetPane.select(.location(containingDirectory))
+        targetPane.pendingRevealURL = item.url
     }
 
     @discardableResult

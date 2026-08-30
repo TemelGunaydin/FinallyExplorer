@@ -28,8 +28,16 @@ final class FinallyExplorerUITests: XCTestCase {
             at: destinationFolderURL,
             withIntermediateDirectories: false
         )
+        try FileManager.default.createDirectory(
+            at: globalSearchFolderURL,
+            withIntermediateDirectories: false
+        )
         try Data("Finally Explorer cross-pane drag regression fixture.".utf8)
             .write(to: sourceFileURL, options: .atomic)
+        try Data("A grep-only-phrase lives inside this fixture.".utf8)
+            .write(to: globalSearchAlphaURL, options: .atomic)
+        try Data("A second keyboard-navigation result.".utf8)
+            .write(to: globalSearchBetaURL, options: .atomic)
 
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
@@ -206,6 +214,11 @@ final class FinallyExplorerUITests: XCTestCase {
             searchField.frame.midY,
             "The current path belongs in the folder header above search"
         )
+        XCTAssertGreaterThanOrEqual(
+            locationPath.frame.height,
+            15,
+            "The current folder path must remain readable at normal window scale"
+        )
 
         searchField.click()
         searchField.typeText("Source")
@@ -324,6 +337,110 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testGlobalSearchSupportsArrowSelectionAndReturnReveal() throws {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let globalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
+        let paneSearchField = app.textFields["pane-search-field"]
+        XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
+        XCTAssertTrue(paneSearchField.waitForExistence(timeout: 5))
+        XCTAssertLessThan(
+            globalSearchField.frame.midY,
+            paneSearchField.frame.midY,
+            "The computer-wide search field belongs in the window toolbar"
+        )
+
+        globalSearchField.click()
+        globalSearchField.typeText("Global Needle")
+
+        let resultRows = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@",
+                "global-search-result-"
+            )
+        )
+        XCTAssertTrue(waitForElementCount(resultRows, toEqual: 2, timeout: 10))
+
+        let visibleResults = existingElements(in: resultRows).sorted {
+            $0.frame.minY < $1.frame.minY
+        }
+        let firstResult = try XCTUnwrap(visibleResults.first)
+        let secondResult = try XCTUnwrap(visibleResults.last)
+        XCTAssertEqual(firstResult.value as? String, "Selected")
+
+        globalSearchField.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(
+            waitForValue("Selected", on: secondResult, timeout: 3),
+            "Down Arrow must move the active global-search result"
+        )
+        let selectedResultName = secondResult.label
+        XCTAssertFalse(selectedResultName.isEmpty)
+
+        globalSearchField.typeKey(.return, modifierFlags: [])
+        let revealedRows = rows(named: selectedResultName)
+        XCTAssertTrue(revealedRows.firstMatch.waitForExistence(timeout: 10))
+        let revealedRow = revealedRows.firstMatch
+        let revealedCell = try XCTUnwrap(containingCell(for: revealedRow))
+        XCTAssertTrue(
+            waitForSelectedStatus(true, on: revealedCell, timeout: 5),
+            "Return must reveal and select the global-search result in its folder"
+        )
+    }
+
+    func testGlobalSearchOffersFFFGrepModes() {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let globalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
+        XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
+        globalSearchField.click()
+        globalSearchField.typeText("grep-only-phrase")
+
+        let contents = app.descendants(matching: .any)["Contents"]
+        XCTAssertTrue(contents.waitForExistence(timeout: 5))
+        contents.click()
+
+        XCTAssertTrue(
+            app.staticTexts["Global Needle Alpha.txt"]
+                .waitForExistence(timeout: 10),
+            "FFF live grep must surface a file whose name does not contain the query"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["Plain"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Regex"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Fuzzy"].exists)
+    }
+
+    func testThemePickerAndTerminalChooserAreAvailableFromToolbars() {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let themePicker = app.buttons["theme-picker-button"]
+        XCTAssertTrue(themePicker.waitForExistence(timeout: 5))
+        themePicker.click()
+
+        let midnightTheme = app.buttons["theme-choice-midnight"]
+        XCTAssertTrue(midnightTheme.waitForExistence(timeout: 5))
+        midnightTheme.click()
+        XCTAssertTrue(midnightTheme.waitForNonExistence(timeout: 5))
+
+        let terminalButton = app.buttons["pane-terminal-button"]
+        XCTAssertTrue(terminalButton.waitForExistence(timeout: 5))
+        terminalButton.click()
+        XCTAssertTrue(
+            app.staticTexts["Choose an installed terminal for this folder."]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.checkBoxes["remember-terminal-choice"].exists)
+    }
+
     private var sourceFileURL: URL {
         fixtureRootURL.appending(path: "Source Item.txt", directoryHint: .notDirectory)
     }
@@ -334,6 +451,24 @@ final class FinallyExplorerUITests: XCTestCase {
 
     private var copiedFileURL: URL {
         destinationFolderURL.appending(path: "Source Item.txt", directoryHint: .notDirectory)
+    }
+
+    private var globalSearchFolderURL: URL {
+        fixtureRootURL.appending(path: "Global Results", directoryHint: .isDirectory)
+    }
+
+    private var globalSearchAlphaURL: URL {
+        globalSearchFolderURL.appending(
+            path: "Global Needle Alpha.txt",
+            directoryHint: .notDirectory
+        )
+    }
+
+    private var globalSearchBetaURL: URL {
+        globalSearchFolderURL.appending(
+            path: "Global Needle Beta.txt",
+            directoryHint: .notDirectory
+        )
     }
 
     private func rows(named name: String) -> XCUIElementQuery {
@@ -389,6 +524,34 @@ final class FinallyExplorerUITests: XCTestCase {
         let expectation = XCTNSPredicateExpectation(
             predicate: predicate,
             object: path as NSString
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForValue(
+        _ expectedValue: String,
+        on element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate(format: "value == %@", expectedValue)
+        let expectation = XCTNSPredicateExpectation(
+            predicate: predicate,
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForSelectedStatus(
+        _ expectedStatus: Bool,
+        on element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate { object, _ in
+            (object as? XCUIElement)?.isSelected == expectedStatus
+        }
+        let expectation = XCTNSPredicateExpectation(
+            predicate: predicate,
+            object: element
         )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }

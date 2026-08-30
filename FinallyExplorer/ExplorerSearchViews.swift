@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct ExplorerSearchControlBar: View {
+    @Environment(\.explorerTheme) private var theme
+
     @Binding var scope: ExplorerSearchScope
     @Binding var contentMode: FFFContentSearchMode
 
@@ -21,12 +23,12 @@ struct ExplorerSearchControlBar: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
-            ExplorerTheme.elevatedPanel,
+            theme.elevatedPanel,
             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(ExplorerTheme.divider, lineWidth: 0.75)
+                .stroke(theme.divider, lineWidth: 0.75)
         }
     }
 
@@ -34,7 +36,7 @@ struct ExplorerSearchControlBar: View {
         HStack(spacing: 8) {
             Text("Search in")
                 .font(.caption)
-                .foregroundStyle(ExplorerTheme.textSecondary)
+                .foregroundStyle(theme.textSecondary)
                 .fixedSize()
 
             Picker("Search In", selection: $scope) {
@@ -50,7 +52,7 @@ struct ExplorerSearchControlBar: View {
             if scope == .contents {
                 Text("Match")
                     .font(.caption)
-                    .foregroundStyle(ExplorerTheme.textSecondary)
+                    .foregroundStyle(theme.textSecondary)
                     .fixedSize()
 
                 Picker("Match Type", selection: $contentMode) {
@@ -106,13 +108,15 @@ struct ExplorerSearchControlBar: View {
         } else {
             Text("\(resultCount) results")
                 .font(.caption)
-                .foregroundStyle(ExplorerTheme.textSecondary)
+                .foregroundStyle(theme.textSecondary)
                 .fixedSize()
         }
     }
 }
 
 struct ExplorerSearchResultsView: View {
+    @Environment(\.explorerTheme) private var theme
+
     let paneID: UUID
     let sidebar: SidebarModel
     let query: String
@@ -158,26 +162,28 @@ struct ExplorerSearchResultsView: View {
                             isSelected: selection == result.id
                         )
                     )
-                    .listRowBackground(ExplorerTheme.row)
+                    .listRowBackground(theme.row)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(ExplorerTheme.panel)
-                .listRowSeparatorTint(ExplorerTheme.divider)
+                .background(theme.panel)
+                .listRowSeparatorTint(theme.divider)
             }
         }
-        .background(ExplorerTheme.panel)
+        .background(theme.panel)
     }
 }
 
 private struct ExplorerSearchMessageBanner: View {
+    @Environment(\.explorerTheme) private var theme
+
     let message: ExplorerSearchMessage
 
     var body: some View {
         Label(message.text, systemImage: message.isError ? "exclamationmark.triangle.fill" : "info.circle.fill")
             .font(.caption)
             .foregroundStyle(
-                message.isError ? Color.red : ExplorerTheme.supportAccent
+                message.isError ? Color.red : theme.supportAccent
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
@@ -185,12 +191,14 @@ private struct ExplorerSearchMessageBanner: View {
             .background(
                 message.isError
                     ? Color.red.opacity(0.10)
-                    : ExplorerTheme.supportAccent.opacity(0.10)
+                    : theme.supportAccent.opacity(0.10)
             )
     }
 }
 
 private struct ExplorerSearchRowView: View {
+    @Environment(\.explorerTheme) private var theme
+
     let paneID: UUID
     let sidebar: SidebarModel
     let query: String
@@ -215,23 +223,23 @@ private struct ExplorerSearchRowView: View {
                         if result.contentMatch?.isDefinition == true {
                             Text("Definition")
                                 .font(.caption)
-                                .foregroundStyle(ExplorerTheme.textPrimary)
+                                .foregroundStyle(theme.textPrimary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(ExplorerTheme.accentSoft, in: .capsule)
+                                .background(theme.accentSoft, in: .capsule)
                         }
                     }
 
                     Text(result.relativePath)
                         .font(.caption)
-                        .foregroundStyle(ExplorerTheme.textSecondary)
+                        .foregroundStyle(theme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
 
                     if let match = result.contentMatch {
                         Text("Line \(match.lineNumber), column \(match.column + 1)")
                             .font(.caption)
-                            .foregroundStyle(ExplorerTheme.textTertiary)
+                            .foregroundStyle(theme.textTertiary)
 
                         HighlightedSearchLine(
                             text: match.lineContent,
@@ -280,14 +288,16 @@ private struct ExplorerSearchRowView: View {
 
 }
 
-private struct HighlightedSearchName: View {
+struct HighlightedSearchName: View {
+    @Environment(\.explorerTheme) private var theme
+
     let text: String
     let query: String
 
     var body: some View {
         Text(highlightedText)
             .font(ExplorerTheme.fileNameFont)
-            .foregroundStyle(ExplorerTheme.textPrimary)
+            .foregroundStyle(theme.textPrimary)
     }
 
     private var highlightedText: AttributedString {
@@ -302,8 +312,8 @@ private struct HighlightedSearchName: View {
 
             var matchedText = AttributedString(String(text[range]))
             matchedText.font = ExplorerTheme.fileNameFont.bold()
-            matchedText.foregroundColor = ExplorerTheme.textPrimary
-            matchedText.backgroundColor = ExplorerTheme.warmHighlight.opacity(0.74)
+            matchedText.foregroundColor = theme.textPrimary
+            matchedText.backgroundColor = theme.warmHighlight.opacity(0.74)
             output.append(matchedText)
             cursor = range.upperBound
         }
@@ -316,7 +326,9 @@ private struct HighlightedSearchName: View {
     }
 }
 
-private struct HighlightedSearchLine: View {
+struct HighlightedSearchLine: View {
+    @Environment(\.explorerTheme) private var theme
+
     let text: String
     let matchByteRanges: [Range<Int>]
 
@@ -338,7 +350,7 @@ private struct HighlightedSearchLine: View {
 
             var matchedText = AttributedString(String(text[range]))
             matchedText.font = .system(.caption, design: .monospaced).bold()
-            matchedText.foregroundColor = ExplorerTheme.accent
+            matchedText.foregroundColor = theme.accent
             output.append(matchedText)
             cursor = range.upperBound
         }

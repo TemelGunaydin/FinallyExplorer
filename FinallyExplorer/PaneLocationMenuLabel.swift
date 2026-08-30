@@ -8,6 +8,8 @@ import SwiftUI
 /// Keeps the current path outside `Menu`'s label. macOS constrains menu labels
 /// to one line, which otherwise clips the path when a `VStack` is used there.
 struct PaneLocationMenu<MenuItems: View>: View {
+    @Environment(\.explorerTheme) private var theme
+
     let title: String
     let systemImage: String
     let directoryURL: URL?
@@ -39,7 +41,7 @@ struct PaneLocationMenu<MenuItems: View>: View {
                             ? ExplorerTheme.actionFont
                             : ExplorerTheme.paneTitleFont
                     )
-                    .foregroundStyle(ExplorerTheme.textPrimary)
+                    .foregroundStyle(theme.textPrimary)
                     .lineLimit(1)
             }
             .menuStyle(.borderlessButton)
@@ -48,8 +50,8 @@ struct PaneLocationMenu<MenuItems: View>: View {
 
             if let directoryURL {
                 Text(abbreviatedPath(for: directoryURL))
-                    .font(.caption)
-                    .foregroundStyle(ExplorerTheme.textSecondary)
+                    .font(.system(.callout, design: .rounded).weight(.medium))
+                    .foregroundStyle(theme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .allowsHitTesting(false)
@@ -60,13 +62,13 @@ struct PaneLocationMenu<MenuItems: View>: View {
         .frame(minHeight: isCompact ? 40 : 48, alignment: .leading)
         .padding(.horizontal, 12)
         .background(
-            ExplorerTheme.accentSoft,
+            theme.accentSoft,
             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .stroke(
-                    ExplorerTheme.accent.opacity(0.22),
+                    theme.accent.opacity(0.22),
                     lineWidth: 0.75
                 )
         }

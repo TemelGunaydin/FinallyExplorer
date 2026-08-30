@@ -10,57 +10,59 @@ import SwiftUI
 // - The central 72pt icon surface echoes the rounded, dimensional reference cards.
 // - Title and guidance use the same rounded hierarchy as navigation and actions.
 struct EmptyPreviewInspector: View {
+    @Environment(\.explorerTheme) private var theme
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "eye.fill")
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(ExplorerTheme.accent)
+                    .foregroundStyle(theme.accent)
 
                 Text("Preview")
                     .font(ExplorerTheme.paneTitleFont)
-                    .foregroundStyle(ExplorerTheme.textPrimary)
+                    .foregroundStyle(theme.textPrimary)
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 18)
             .frame(height: 64)
-            .background(ExplorerTheme.elevatedPanel)
+            .background(theme.elevatedPanel)
 
             Divider()
-                .overlay(ExplorerTheme.divider)
+                .overlay(theme.divider)
 
             VStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(ExplorerTheme.accentSoft)
+                        .fill(theme.accentSoft)
 
                     Image(systemName: "eye.slash.fill")
                         .font(.largeTitle)
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(ExplorerTheme.accent)
+                        .foregroundStyle(theme.accent)
                 }
                 .frame(width: 72, height: 72)
                 .overlay {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .stroke(
-                            ExplorerTheme.accent.opacity(0.16),
+                            theme.accent.opacity(0.16),
                             lineWidth: 0.75
                         )
                 }
 
                 Text("Nothing to Preview")
                     .font(ExplorerTheme.paneTitleFont)
-                    .foregroundStyle(ExplorerTheme.textPrimary)
+                    .foregroundStyle(theme.textPrimary)
 
                 Text("Select a file or folder to see it here.")
                     .font(.system(.callout, design: .rounded))
-                    .foregroundStyle(ExplorerTheme.textSecondary)
+                    .foregroundStyle(theme.textSecondary)
                     .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(ExplorerTheme.inspector)
+        .background(theme.inspector)
     }
 }

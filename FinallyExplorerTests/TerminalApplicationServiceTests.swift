@@ -602,6 +602,59 @@ struct TerminalApplicationServiceTests {
         }
     }
 
+    @Test("A remembered installed terminal is resolved and can be forgotten")
+    func persistsPreferredTerminalChoice() throws {
+        let terminal = terminalCandidate(
+            name: "Ghostty",
+            bundleIdentifier: "com.mitchellh.ghostty"
+        )
+        let preferenceStore = TerminalPreferenceStoreMock(
+            applicationID: "com.mitchellh.ghostty"
+        )
+        let coordinator = TerminalApplicationCoordinator(
+            workspace: TerminalWorkspaceMock(candidates: [terminal]),
+            preferenceStore: preferenceStore
+        )
+
+        #expect(coordinator.preferredApplication?.name == "Ghostty")
+
+        let anotherTerminal = TerminalApplication(
+            name: "Orbit",
+            bundleIdentifier: "dev.example.orbit",
+            applicationURL: URL(filePath: "/Mock/Orbit.app")
+        )
+        coordinator.remember(anotherTerminal)
+        #expect(coordinator.preferredApplicationID == "dev.example.orbit")
+        #expect(preferenceStore.savedApplicationIDs == ["dev.example.orbit"])
+
+        coordinator.forgetPreferredApplication()
+        #expect(coordinator.preferredApplicationID == nil)
+        #expect(preferenceStore.savedApplicationIDs == ["dev.example.orbit", nil])
+    }
+
+    @Test("A stale remembered terminal never opens a different application")
+    func stalePreferenceRequiresAnotherChoice() {
+        let preferenceStore = TerminalPreferenceStoreMock(
+            applicationID: "dev.removed.terminal"
+        )
+        let coordinator = TerminalApplicationCoordinator(
+            workspace: TerminalWorkspaceMock(candidates: [
+                terminalCandidate(
+                    name: "Terminal",
+                    bundleIdentifier: "com.apple.Terminal"
+                )
+            ]),
+            preferenceStore: preferenceStore
+        )
+
+        #expect(coordinator.preferredApplication == nil)
+        #expect(
+            coordinator.openPreferred(
+                URL(filePath: "/tmp", directoryHint: .isDirectory)
+            ) == nil
+        )
+    }
+
     private func terminalApplication() -> TerminalApplication {
         TerminalApplication(
             name: "Terminal",
@@ -625,6 +678,24 @@ struct TerminalApplicationServiceTests {
 private struct TerminalOpenRequest: Equatable {
     let directoryURL: URL
     let applicationURL: URL
+}
+
+@MainActor
+private final class TerminalPreferenceStoreMock: TerminalPreferenceStoring {
+    private let applicationID: String?
+    private(set) var savedApplicationIDs: [String?] = []
+
+    init(applicationID: String?) {
+        self.applicationID = applicationID
+    }
+
+    func loadPreferredApplicationID() -> String? {
+        applicationID
+    }
+
+    func savePreferredApplicationID(_ applicationID: String?) {
+        savedApplicationIDs.append(applicationID)
+    }
 }
 
 @MainActor

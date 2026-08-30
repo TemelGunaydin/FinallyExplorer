@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct FavoriteToggleButton: View {
+    @Environment(\.explorerTheme) private var theme
+
     let item: FileItem
     let sidebar: SidebarModel
 
@@ -42,13 +44,13 @@ struct FavoriteToggleButton: View {
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(
                     status.isFavorite
-                        ? ExplorerTheme.warmHighlight
-                        : ExplorerTheme.textTertiary
+                        ? theme.warmHighlight
+                        : theme.textTertiary
                 )
                 .frame(width: 24, height: 30)
                 .background(
                     isHovered && canToggle
-                        ? ExplorerTheme.control.opacity(0.78)
+                        ? theme.control.opacity(0.78)
                         : Color.clear,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )

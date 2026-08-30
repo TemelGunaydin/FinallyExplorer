@@ -293,21 +293,50 @@ struct TerminalApplicationService {
 @Observable
 final class TerminalApplicationCoordinator {
     private(set) var installedApplications: [TerminalApplication] = []
+    private(set) var preferredApplicationID: String?
     private(set) var isOpening = false
 
     var isErrorPresented = false
     private(set) var errorMessage = ""
 
     @ObservationIgnored private let service: TerminalApplicationService
+    @ObservationIgnored private let preferenceStore: any TerminalPreferenceStoring
 
-    init(workspace: (any TerminalWorkspace)? = nil) {
+    init(
+        workspace: (any TerminalWorkspace)? = nil,
+        preferenceStore: (any TerminalPreferenceStoring)? = nil
+    ) {
         let workspace = workspace ?? SystemTerminalWorkspace()
+        let preferenceStore = preferenceStore ?? UserDefaultsTerminalPreferenceStore()
         service = TerminalApplicationService(workspace: workspace)
+        self.preferenceStore = preferenceStore
+        preferredApplicationID = preferenceStore.loadPreferredApplicationID()
         installedApplications = service.installedApplications()
+    }
+
+    var preferredApplication: TerminalApplication? {
+        guard let preferredApplicationID else { return nil }
+        return installedApplications.first { $0.id == preferredApplicationID }
     }
 
     func refresh() {
         installedApplications = service.installedApplications()
+    }
+
+    func remember(_ application: TerminalApplication) {
+        preferredApplicationID = application.id
+        preferenceStore.savePreferredApplicationID(application.id)
+    }
+
+    func forgetPreferredApplication() {
+        preferredApplicationID = nil
+        preferenceStore.savePreferredApplicationID(nil)
+    }
+
+    @discardableResult
+    func openPreferred(_ directoryURL: URL) -> Task<Void, Never>? {
+        guard let preferredApplication else { return nil }
+        return open(directoryURL, in: preferredApplication)
     }
 
     @discardableResult

@@ -8,6 +8,7 @@ import SwiftUI
 
 struct FileInformationView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.explorerTheme) private var theme
 
     let item: FileItem
 
@@ -36,17 +37,17 @@ struct FileInformationView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.name)
                         .font(ExplorerTheme.paneTitleFont)
-                        .foregroundStyle(ExplorerTheme.textPrimary)
+                        .foregroundStyle(theme.textPrimary)
                         .lineLimit(2)
 
                     Text(kindDescription)
                         .font(.callout)
-                        .foregroundStyle(ExplorerTheme.textSecondary)
+                        .foregroundStyle(theme.textSecondary)
                 }
             }
 
             Divider()
-                .overlay(ExplorerTheme.divider)
+                .overlay(theme.divider)
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
                 informationRow("Location", value: item.url.deletingLastPathComponent().path())
@@ -76,7 +77,7 @@ struct FileInformationView: View {
         }
         .padding(22)
         .frame(width: 460)
-        .background(ExplorerTheme.elevatedPanel)
+        .background(theme.elevatedPanel)
         .accessibilityIdentifier("file-info-panel")
     }
 
@@ -84,11 +85,11 @@ struct FileInformationView: View {
         GridRow {
             Text(title)
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(ExplorerTheme.textSecondary)
+                .foregroundStyle(theme.textSecondary)
 
             Text(value)
                 .font(.callout)
-                .foregroundStyle(ExplorerTheme.textPrimary)
+                .foregroundStyle(theme.textPrimary)
                 .lineLimit(2)
                 .truncationMode(.middle)
                 .textSelection(.enabled)

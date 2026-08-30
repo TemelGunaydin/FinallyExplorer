@@ -532,6 +532,42 @@ struct WorkspaceModelTests {
         #expect(pane.selectedCommandURLs == [staleURL])
         #expect(pane.selectedInspectorItem == staleItem)
     }
+
+    @Test("Global search reveal activates the target pane and selects the item in its parent")
+    func revealGlobalResultUsesTransientLocation() throws {
+        let firstID = uuid(90)
+        let secondID = uuid(91)
+        let splitID = uuid(92)
+        let ids = DeterministicWorkspaceIDSequence([secondID, splitID])
+        let model = WorkspaceModel(
+            initialPlace: .downloads,
+            initialPaneID: firstID,
+            idGenerator: { ids.next() }
+        )
+        let firstPane = try #require(model.activePane)
+        firstPane.searchModel.query = "stale"
+        _ = try #require(model.split(.right))
+
+        let itemURL = URL(filePath: "/Projects/App/ContentView.swift")
+        let item = FileItem(
+            url: itemURL,
+            isDirectory: false,
+            isImage: false,
+            fileSize: 12,
+            modificationDate: nil
+        )
+
+        model.reveal(item, in: firstID)
+
+        #expect(model.activePaneID == firstID)
+        #expect(model.activePane === firstPane)
+        #expect(firstPane.displayedDirectory == itemURL.deletingLastPathComponent())
+        #expect(firstPane.place.favorite == nil)
+        #expect(firstPane.place.title == "App")
+        #expect(firstPane.selectedURL == nil)
+        #expect(firstPane.pendingRevealURL == itemURL)
+        #expect(firstPane.searchModel.query.isEmpty)
+    }
 }
 
 @MainActor
