@@ -16,9 +16,12 @@ struct SidebarModelTests {
 
         let store = SidebarFavoriteStoreSpy()
         let firstModel = SidebarModel(store: store)
+        #expect(firstModel.canAdd(directoryURL: directoryURL))
+
         let favorite = try #require(firstModel.add(directoryURL: directoryURL))
 
         #expect(firstModel.favorites == [favorite])
+        #expect(firstModel.canAdd(directoryURL: directoryURL) == false)
         #expect(store.saveCount == 1)
 
         let restoredModel = SidebarModel(store: store)
@@ -39,9 +42,11 @@ struct SidebarModelTests {
 
         #expect(model.add(directoryURL: directoryURL) == favorite)
         #expect(model.favorites == [favorite])
+        #expect(model.canAdd(directoryURL: fileURL) == false)
         #expect(model.add(directoryURL: fileURL) == nil)
 
         let downloadsURL = try #require(SidebarBuiltInPlace.downloads.url)
+        #expect(model.canAdd(directoryURL: downloadsURL) == false)
         #expect(model.add(directoryURL: downloadsURL) == nil)
     }
 

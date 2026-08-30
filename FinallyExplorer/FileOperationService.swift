@@ -3,7 +3,6 @@
 //  FinallyExplorer
 //
 
-import CoreTransferable
 import Darwin
 import Foundation
 import UniformTypeIdentifiers
@@ -19,8 +18,8 @@ extension UTType {
     )
 }
 
-/// The only data placed on Finally Explorer's internal drag-and-drop pasteboard.
-nonisolated struct InternalFileTransfer: Codable, Hashable, Identifiable, Sendable, Transferable {
+/// The in-memory payload resolved from an opaque, process-local drag token.
+nonisolated struct InternalFileTransfer: Hashable, Identifiable, Sendable {
     nonisolated struct ID: Hashable, Sendable {
         let sourceURL: URL
         let sourcePaneID: UUID
@@ -33,10 +32,6 @@ nonisolated struct InternalFileTransfer: Codable, Hashable, Identifiable, Sendab
         ID(sourceURL: sourceURL, sourcePaneID: sourcePaneID)
     }
 
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .finallyExplorerInternalFileTransfer)
-            .visibility(.ownProcess)
-    }
 }
 
 /// Resolves the Finder-style operation for an internal drop.
@@ -63,6 +58,7 @@ nonisolated struct FileOperationOutcome: Equatable, Sendable {
 
 nonisolated protocol FileOperationServicing: Sendable {
     func createFolder(in destinationDirectoryURL: URL) async throws -> FileOperationOutcome
+    func setHidden(_ hidden: Bool, for directoryURL: URL) async throws -> FileOperationOutcome
     func copyItem(
         at sourceURL: URL,
         to destinationDirectoryURL: URL
@@ -81,6 +77,9 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
     case destinationIsNotDirectory(path: String)
     case destinationAlreadyExists(path: String)
     case cannotPlaceDirectoryInsideItself(sourcePath: String, destinationPath: String)
+    case sourceIsNotDirectory(path: String)
+    case cannotUnhideDotPrefixedDirectory(path: String)
+    case visibilityChangeFailed(path: String, hidden: Bool, reason: String)
     case createFolderFailed(destinationPath: String, reason: String)
     case copyFailed(sourcePath: String, destinationPath: String, reason: String)
     case moveFailed(sourcePath: String, destinationPath: String, reason: String)
@@ -101,6 +100,12 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
             "An item with the same name already exists in the destination folder.\n\nPath: \(path)"
         case let .cannotPlaceDirectoryInsideItself(sourcePath, destinationPath):
             "A folder cannot be copied or moved into itself or one of its subfolders.\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
+        case let .sourceIsNotDirectory(path):
+            "Only folders can be hidden with this command.\n\nPath: \(path)"
+        case let .cannotUnhideDotPrefixedDirectory(path):
+            "This folder stays hidden because its name begins with a period. Rename it before turning off its hidden status.\n\nPath: \(path)"
+        case let .visibilityChangeFailed(path, hidden, reason):
+            "Unable to \(hidden ? "hide" : "unhide") the folder: \(reason)\n\nPath: \(path)"
         case let .createFolderFailed(destinationPath, reason):
             "Unable to create the folder: \(reason)\n\nPath: \(destinationPath)"
         case let .copyFailed(sourcePath, destinationPath, reason):
@@ -113,6 +118,87 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
 
 /// Performs non-destructive file operations away from the caller's executor.
 nonisolated struct FileOperationService: FileOperationServicing, Sendable {
+    /// Changes a folder's Finder-compatible hidden resource flag.
+    @concurrent
+    func setHidden(
+        _ hidden: Bool,
+        for directoryURL: URL
+    ) async throws -> FileOperationOutcome {
+        try Task.checkCancellation()
+        guard Self.isLocalFileURL(directoryURL) else {
+            throw FileOperationError.sourceMustBeFileURL(
+                value: directoryURL.absoluteString
+            )
+        }
+
+        var directoryURL = directoryURL.standardizedFileURL
+        let fileManager = FileManager()
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(
+            atPath: directoryURL.path,
+            isDirectory: &isDirectory
+        ) else {
+            throw FileOperationError.sourceNotFound(path: directoryURL.path)
+        }
+        guard isDirectory.boolValue else {
+            throw FileOperationError.sourceIsNotDirectory(path: directoryURL.path)
+        }
+        if hidden == false, directoryURL.lastPathComponent.hasPrefix(".") {
+            throw FileOperationError.cannotUnhideDotPrefixedDirectory(
+                path: directoryURL.path
+            )
+        }
+
+        let currentValues: URLResourceValues
+        do {
+            currentValues = try directoryURL.resourceValues(forKeys: [.isHiddenKey])
+        } catch {
+            throw FileOperationError.visibilityChangeFailed(
+                path: directoryURL.path,
+                hidden: hidden,
+                reason: error.localizedDescription
+            )
+        }
+
+        guard currentValues.isHidden != hidden else {
+            return FileOperationOutcome(
+                destinationURL: directoryURL,
+                didChange: false
+            )
+        }
+
+        try Task.checkCancellation()
+        var updatedValues = URLResourceValues()
+        updatedValues.isHidden = hidden
+
+        do {
+            try directoryURL.setResourceValues(updatedValues)
+            let verifiedValues = try directoryURL.resourceValues(
+                forKeys: [.isHiddenKey]
+            )
+            guard verifiedValues.isHidden == hidden else {
+                throw FileOperationError.visibilityChangeFailed(
+                    path: directoryURL.path,
+                    hidden: hidden,
+                    reason: "The file system did not preserve the requested setting."
+                )
+            }
+        } catch let error as FileOperationError {
+            throw error
+        } catch {
+            throw FileOperationError.visibilityChangeFailed(
+                path: directoryURL.path,
+                hidden: hidden,
+                reason: error.localizedDescription
+            )
+        }
+
+        return FileOperationOutcome(
+            destinationURL: directoryURL,
+            didChange: true
+        )
+    }
+
     /// Creates a uniquely named folder without overwriting an existing item.
     ///
     /// The first folder is named `New Folder`, followed by `New Folder 2`,

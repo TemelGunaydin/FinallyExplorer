@@ -46,6 +46,17 @@
                ReferencedContainer = "container:FinallyExplorer.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "FEA100010000000000000001"
+               BuildableName = "FinallyExplorerUITests.xctest"
+               BlueprintName = "FinallyExplorerUITests"
+               ReferencedContainer = "container:FinallyExplorer.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

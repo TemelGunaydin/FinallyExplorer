@@ -254,7 +254,8 @@ struct ContentView: View {
                     folder: selectedItem,
                     paneID: pane.id,
                     fileOperations: fileOperations,
-                    terminalApplications: terminalApplications
+                    terminalApplications: terminalApplications,
+                    sidebar: sidebar
                 )
             } else {
                 ImagePreviewInspector(image: selectedItem)
@@ -317,6 +318,7 @@ private struct WorkspaceNodeView: View {
 private nonisolated struct DirectoryLoadRequest: Hashable {
     let directoryURL: URL?
     let operationRevision: Int
+    let includesHiddenItems: Bool
 }
 
 private nonisolated struct SearchLoadRequest: Hashable {
@@ -339,7 +341,8 @@ private struct DestinationView: View {
             directoryURL: pane.displayedDirectory,
             operationRevision: fileOperations.directoryRefreshRevision(
                 for: pane.displayedDirectory
-            )
+            ),
+            includesHiddenItems: pane.showsHiddenItems
         )
     }
 
@@ -597,6 +600,20 @@ private struct DestinationView: View {
                 .disabled(workspace.canSplit == false)
                 .help("Split this pane to the right")
 
+                Button(
+                    pane.showsHiddenItems ? "Hide Hidden Items" : "Show Hidden Items",
+                    systemImage: pane.showsHiddenItems ? "eye.slash" : "eye"
+                ) {
+                    toggleHiddenItems()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(ExplorerToolbarButtonStyle())
+                .help(
+                    pane.showsHiddenItems
+                        ? "Hide hidden files and folders in this pane"
+                        : "Show hidden files and folders in this pane"
+                )
+
                 Button("Split Below", systemImage: "rectangle.split.1x2") {
                     _ = workspace.split(paneID: pane.id, direction: .below)
                 }
@@ -663,6 +680,14 @@ private struct DestinationView: View {
         isAssistantPresented = true
     }
 
+    private func toggleHiddenItems() {
+        workspace.activate(pane.id)
+        pane.showsHiddenItems.toggle()
+        pane.selectedURL = nil
+        pane.selectedSearchResultID = nil
+        pane.isInspectorPresented = false
+    }
+
     private func directoryPathHeader(_ url: URL) -> some View {
         HStack {
             if pane.navigation.canGoBack {
@@ -706,6 +731,7 @@ private struct DestinationView: View {
         if pane.searchModel.isSearchActive {
             ExplorerSearchResultsView(
                 paneID: pane.id,
+                sidebar: sidebar,
                 query: pane.searchModel.query,
                 results: pane.searchModel.results,
                 isSearching: pane.searchModel.isSearching,
@@ -741,7 +767,12 @@ private struct DestinationView: View {
                 )
                 .tag(item.url)
                 .listRowBackground(ExplorerTheme.row)
-                .internalFileInteraction(for: item, paneID: pane.id)
+                .internalFileInteraction(
+                    for: item,
+                    paneID: pane.id,
+                    sidebar: sidebar
+                )
+                .accessibilityIdentifier("file-row-\(pane.id)-\(item.name)")
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -815,7 +846,8 @@ private struct DestinationView: View {
         do {
             let contents = try await FileSystemService().contents(
                 of: requestedURL,
-                folderTitle: pane.place.title
+                folderTitle: pane.place.title,
+                includingHiddenItems: pane.showsHiddenItems
             )
             try Task.checkCancellation()
             guard requestedURL == pane.displayedDirectory else { return }
@@ -866,6 +898,7 @@ struct FolderContentsInspector: View {
     let paneID: UUID
     let fileOperations: FileOperationCoordinator
     let terminalApplications: TerminalApplicationCoordinator
+    let sidebar: SidebarModel
 
     @State private var directoryContents: [FileItem] = []
     @State private var isLoading = false
@@ -894,7 +927,8 @@ struct FolderContentsInspector: View {
                 directoryURL: folder.url,
                 operationRevision: fileOperations.directoryRefreshRevision(
                     for: folder.url
-                )
+                ),
+                includesHiddenItems: false
             )
         ) {
             await loadDirectoryContents()
@@ -925,7 +959,12 @@ struct FolderContentsInspector: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .listRowBackground(ExplorerTheme.row)
-                    .internalFileInteraction(for: item, paneID: paneID)
+                    .internalFileInteraction(
+                        for: item,
+                        paneID: paneID,
+                        sidebar: sidebar
+                    )
+                    .accessibilityIdentifier("file-row-\(paneID)-\(item.name)")
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -1053,6 +1092,7 @@ private struct FileRowView: View {
                     .onEnded { onOpen() }
             )
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(item.name)
             .accessibilityHint(item.isDirectory ? "Double-click to open folder" : "Double-click to open file")
             .accessibilityAction(named: "Open", onOpen)
     }

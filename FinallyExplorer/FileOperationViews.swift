@@ -4,36 +4,134 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+enum InternalFileTransferProvider {
+    // Canceled drags remain resolvable for a later retry, but the registry is
+    // bounded so repeated abandoned drags cannot retain paths indefinitely.
+    private static let maximumActiveTransferCount = 256
+    private static var activeTransfers: [UUID: InternalFileTransfer] = [:]
+    private static var transferOrder: [UUID] = []
+
+    static func make(sourceURL: URL, sourcePaneID: UUID) -> NSItemProvider {
+        let payload = InternalFileTransfer(
+            sourceURL: sourceURL,
+            sourcePaneID: sourcePaneID
+        )
+        let token = UUID()
+        register(payload, for: token)
+
+        let provider = NSItemProvider()
+        guard let data = try? JSONEncoder().encode(
+            InternalFileTransferEnvelope(token: token)
+        ) else {
+            removeTransfer(for: token)
+            assertionFailure("Unable to encode an internal file transfer")
+            return provider
+        }
+
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.finallyExplorerInternalFileTransfer.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            completion(data, nil)
+            return nil
+        }
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.data.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            completion(data, nil)
+            return nil
+        }
+        return provider
+    }
+
+    static func load(from providers: [NSItemProvider]) async -> [InternalFileTransfer] {
+        var transfers: [InternalFileTransfer] = []
+        transfers.reserveCapacity(providers.count)
+
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(
+            UTType.data.identifier
+        ) {
+            if let transfer = try? await load(from: provider) {
+                transfers.append(transfer)
+            }
+        }
+
+        return transfers
+    }
+
+    private static func load(from provider: NSItemProvider) async throws -> InternalFileTransfer {
+        let data: Data = try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadDataRepresentation(
+                forTypeIdentifier: UTType.data.identifier
+            ) { data, error in
+                if let data {
+                    continuation.resume(returning: data)
+                } else {
+                    continuation.resume(
+                        throwing: error ?? InternalFileTransferProviderError.missingData
+                    )
+                }
+            }
+        }
+        let envelope = try JSONDecoder().decode(
+            InternalFileTransferEnvelope.self,
+            from: data
+        )
+        guard let transfer = activeTransfers[envelope.token] else {
+            throw InternalFileTransferProviderError.unknownToken
+        }
+        removeTransfer(for: envelope.token)
+        return transfer
+    }
+
+    private static func register(_ transfer: InternalFileTransfer, for token: UUID) {
+        while activeTransfers.count >= maximumActiveTransferCount,
+              let oldestToken = transferOrder.first {
+            removeTransfer(for: oldestToken)
+        }
+
+        activeTransfers[token] = transfer
+        transferOrder.append(token)
+    }
+
+    private static func removeTransfer(for token: UUID) {
+        activeTransfers[token] = nil
+        transferOrder.removeAll { $0 == token }
+    }
+}
+
+private enum InternalFileTransferProviderError: Error {
+    case missingData
+    case unknownToken
+}
+
+private struct InternalFileTransferEnvelope: Codable {
+    let token: UUID
+}
 
 private struct InternalFileInteractionModifier: ViewModifier {
     @Environment(FileOperationCoordinator.self) private var fileOperations
 
     let item: FileItem
     let paneID: UUID
+    let sidebar: SidebarModel
 
     func body(content: Content) -> some View {
         content
-            .draggable(
-                InternalFileTransfer.self,
-                item: InternalFileTransfer(
+            .contentShape(.interaction, Rectangle())
+            .contentShape(
+                .dragPreview,
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .onDrag {
+                InternalFileTransferProvider.make(
                     sourceURL: item.url,
                     sourcePaneID: paneID
                 )
-            )
-            .dragConfiguration(
-                DragConfiguration(
-                    operationsWithinApp: .init(
-                        allowCopy: true,
-                        allowMove: true,
-                        allowDelete: false
-                    ),
-                    operationsOutsideApp: .init(
-                        allowCopy: false,
-                        allowMove: false,
-                        allowDelete: false
-                    )
-                )
-            )
+            }
             .modifier(
                 InternalDirectoryRowDropModifier(
                     destinationDirectoryURL: item.isDirectory ? item.url : nil,
@@ -50,6 +148,29 @@ private struct InternalFileInteractionModifier: ViewModifier {
                 }
 
                 if item.isDirectory {
+                    Divider()
+
+                    if let favorite = sidebar.favorite(for: item.url) {
+                        Button("Remove from Favorites", systemImage: "star.slash") {
+                            sidebar.remove(favorite)
+                        }
+                    } else if sidebar.canAdd(directoryURL: item.url) {
+                        Button("Add to Favorites", systemImage: "star") {
+                            sidebar.add(directoryURL: item.url)
+                        }
+                    }
+
+                    Button(
+                        item.isHidden ? "Unhide Folder" : "Hide Folder",
+                        systemImage: item.isHidden ? "eye" : "eye.slash"
+                    ) {
+                        fileOperations.setHidden(
+                            item.isHidden == false,
+                            for: item.url
+                        )
+                    }
+                    .disabled(fileOperations.isPerforming)
+
                     Button("Paste Into Folder") {
                         fileOperations.paste(into: item.url)
                     }
@@ -89,60 +210,47 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
                             .allowsHitTesting(false)
                     }
                 }
-                .dropDestination(
-                    for: InternalFileTransfer.self,
-                    isEnabled: acceptsDrop
-                ) { transfers, _ in
-                    fileOperations.drop(
-                        transfers,
+                .onDrop(
+                    of: [.data],
+                    isTargeted: $isDropTargeted
+                ) { providers in
+                    acceptDrop(
+                        from: providers,
                         into: destinationDirectoryURL,
-                        destinationPaneID: paneID
+                        acceptsDrop: acceptsDrop
                     )
-                }
-                .dropConfiguration { session in
-                    dropConfiguration(for: session, acceptsDrop: acceptsDrop)
-                }
-                .onDropSessionUpdated { session in
-                    updateDropTarget(session, acceptsDrop: acceptsDrop)
                 }
         } else {
             content
         }
     }
 
-    private func dropConfiguration(
-        for session: DropSession,
+    private func acceptDrop(
+        from providers: [NSItemProvider],
+        into destinationDirectoryURL: URL,
         acceptsDrop: Bool
-    ) -> DropConfiguration {
-        guard acceptsDrop else {
-            return DropConfiguration(operation: .forbidden)
+    ) -> Bool {
+        let internalProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(
+                UTType.data.identifier
+            )
         }
+        guard acceptsDrop, internalProviders.isEmpty == false else { return false }
 
-        let sourcePaneIDs = session.localSession?
-            .draggedItemIDs(for: InternalFileTransfer.ID.self)
-            .map(\.sourcePaneID) ?? []
-        let action = InternalFileDropAction(
-            sourcePaneIDs: sourcePaneIDs,
-            destinationPaneID: paneID
-        )
+        isDropTargeted = false
+        Task {
+            let transfers = await InternalFileTransferProvider.load(
+                from: internalProviders
+            )
+            guard transfers.isEmpty == false else { return }
 
-        return DropConfiguration(operation: action == .move ? .move : .copy)
-    }
-
-    private func updateDropTarget(_ session: DropSession, acceptsDrop: Bool) {
-        guard acceptsDrop else {
-            isDropTargeted = false
-            return
+            fileOperations.drop(
+                transfers,
+                into: destinationDirectoryURL,
+                destinationPaneID: paneID
+            )
         }
-
-        switch session.phase {
-        case .entering, .active:
-            isDropTargeted = true
-        case .exiting, .ended, .dataTransferCompleted:
-            isDropTargeted = false
-        @unknown default:
-            isDropTargeted = false
-        }
+        return true
     }
 }
 
@@ -175,21 +283,11 @@ private struct InternalFolderDropModifier: ViewModifier {
                         .allowsHitTesting(false)
                 }
             }
-            .dropDestination(
-                for: InternalFileTransfer.self,
-                isEnabled: acceptsDrop
-            ) { transfers, _ in
-                fileOperations.drop(
-                    transfers,
-                    into: destinationDirectoryURL,
-                    destinationPaneID: paneID
-                )
-            }
-            .dropConfiguration { session in
-                dropConfiguration(for: session, acceptsDrop: acceptsDrop)
-            }
-            .onDropSessionUpdated { session in
-                updateDropTarget(session, acceptsDrop: acceptsDrop)
+            .onDrop(
+                of: [.data],
+                isTargeted: $isDropTargeted
+            ) { providers in
+                acceptDrop(from: providers, acceptsDrop: acceptsDrop)
             }
             .contextMenu {
                 if showsNewFolderCommand {
@@ -218,39 +316,32 @@ private struct InternalFolderDropModifier: ViewModifier {
             }
     }
 
-    private func dropConfiguration(
-        for session: DropSession,
+    private func acceptDrop(
+        from providers: [NSItemProvider],
         acceptsDrop: Bool
-    ) -> DropConfiguration {
-        guard acceptsDrop else {
-            return DropConfiguration(operation: .forbidden)
+    ) -> Bool {
+        guard let destinationDirectoryURL else { return false }
+        let internalProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(
+                UTType.data.identifier
+            )
         }
+        guard acceptsDrop, internalProviders.isEmpty == false else { return false }
 
-        let sourcePaneIDs = session.localSession?
-            .draggedItemIDs(for: InternalFileTransfer.ID.self)
-            .map(\.sourcePaneID) ?? []
-        let action = InternalFileDropAction(
-            sourcePaneIDs: sourcePaneIDs,
-            destinationPaneID: paneID
-        )
+        isDropTargeted = false
+        Task {
+            let transfers = await InternalFileTransferProvider.load(
+                from: internalProviders
+            )
+            guard transfers.isEmpty == false else { return }
 
-        return DropConfiguration(operation: action == .move ? .move : .copy)
-    }
-
-    private func updateDropTarget(_ session: DropSession, acceptsDrop: Bool) {
-        guard acceptsDrop else {
-            isDropTargeted = false
-            return
+            fileOperations.drop(
+                transfers,
+                into: destinationDirectoryURL,
+                destinationPaneID: paneID
+            )
         }
-
-        switch session.phase {
-        case .entering, .active:
-            isDropTargeted = true
-        case .exiting, .ended, .dataTransferCompleted:
-            isDropTargeted = false
-        @unknown default:
-            isDropTargeted = false
-        }
+        return true
     }
 }
 
@@ -276,8 +367,18 @@ private struct TerminalContextMenuCommands: View {
 }
 
 extension View {
-    func internalFileInteraction(for item: FileItem, paneID: UUID) -> some View {
-        modifier(InternalFileInteractionModifier(item: item, paneID: paneID))
+    func internalFileInteraction(
+        for item: FileItem,
+        paneID: UUID,
+        sidebar: SidebarModel
+    ) -> some View {
+        modifier(
+            InternalFileInteractionModifier(
+                item: item,
+                paneID: paneID,
+                sidebar: sidebar
+            )
+        )
     }
 
     func internalFolderDropTarget(

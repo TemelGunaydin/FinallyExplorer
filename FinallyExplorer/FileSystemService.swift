@@ -41,6 +41,23 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
     let isImage: Bool
     let fileSize: Int64?
     let modificationDate: Date?
+    let isHidden: Bool
+
+    init(
+        url: URL,
+        isDirectory: Bool,
+        isImage: Bool,
+        fileSize: Int64?,
+        modificationDate: Date?,
+        isHidden: Bool = false
+    ) {
+        self.url = url
+        self.isDirectory = isDirectory
+        self.isImage = isImage
+        self.fileSize = fileSize
+        self.modificationDate = modificationDate
+        self.isHidden = isHidden
+    }
 
     var id: URL { url }
     var name: String { url.lastPathComponent }
@@ -85,6 +102,7 @@ nonisolated struct FileSystemService: Sendable {
         .contentTypeKey,
         .fileSizeKey,
         .contentModificationDateKey,
+        .isHiddenKey,
     ]
 
     private static let sizeResourceKeys: Set<URLResourceKey> = [
@@ -94,7 +112,11 @@ nonisolated struct FileSystemService: Sendable {
     ]
 
     @concurrent
-    func contents(of url: URL, folderTitle: String) async throws -> [FileItem] {
+    func contents(
+        of url: URL,
+        folderTitle: String,
+        includingHiddenItems: Bool = false
+    ) async throws -> [FileItem] {
         try Task.checkCancellation()
         guard Self.isLocalFileURL(url) else {
             throw DirectoryAccessError.invalidURL
@@ -115,7 +137,7 @@ nonisolated struct FileSystemService: Sendable {
             contents = try FileManager.default.contentsOfDirectory(
                 at: resolvedURL,
                 includingPropertiesForKeys: Array(Self.resourceKeys),
-                options: [.skipsHiddenFiles]
+                options: includingHiddenItems ? [] : [.skipsHiddenFiles]
             )
         } catch let error as DirectoryAccessError {
             throw error
@@ -146,7 +168,8 @@ nonisolated struct FileSystemService: Sendable {
                     isDirectory: values?.isDirectory ?? false,
                     isImage: contentType?.conforms(to: .image) == true,
                     fileSize: values?.fileSize.map(Int64.init),
-                    modificationDate: values?.contentModificationDate
+                    modificationDate: values?.contentModificationDate,
+                    isHidden: values?.isHidden ?? url.lastPathComponent.hasPrefix(".")
                 )
             )
         }

@@ -298,6 +298,7 @@ struct WorkspaceModelTests {
         firstPane.selectedURL = selected
         firstPane.errorMessage = "Keep only in the source pane"
         firstPane.isInspectorPresented = true
+        firstPane.showsHiddenItems = true
         firstPane.searchModel.query = "needle"
 
         let createdID = try #require(model.split(.right))
@@ -315,6 +316,7 @@ struct WorkspaceModelTests {
         #expect(newPane.selectedURL == nil)
         #expect(newPane.errorMessage == nil)
         #expect(newPane.isInspectorPresented == false)
+        #expect(newPane.showsHiddenItems)
         #expect(newPane.searchModel.query.isEmpty)
         #expect(newPane.searchModel !== firstPane.searchModel)
         #expect(model.activePane === newPane)
@@ -327,8 +329,10 @@ struct WorkspaceModelTests {
         #expect(newPane.searchModel.query.isEmpty)
 
         newPane.navigation.goBack()
+        newPane.showsHiddenItems = false
         newPane.searchModel.query = "new-pane-only"
         #expect(firstPane.navigation.currentDirectory == deeperFolder)
+        #expect(firstPane.showsHiddenItems)
         #expect(firstPane.searchModel.query == "source-only")
 
         #expect(model.close(createdID))

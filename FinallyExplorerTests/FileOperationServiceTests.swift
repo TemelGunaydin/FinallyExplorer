@@ -3,7 +3,6 @@
 //  FinallyExplorerTests
 //
 
-import CoreTransferable
 import Foundation
 import Testing
 import UniformTypeIdentifiers
@@ -30,6 +29,78 @@ struct FileOperationServiceTests {
         #expect(outcome.destinationURL == destinationDirectory.appending(path: "note.txt"))
         #expect(try Data(contentsOf: outcome.destinationURL) == sourceData)
         #expect(try Data(contentsOf: sourceURL) == sourceData)
+    }
+
+    @Test("A folder can be hidden, repeated safely, and unhidden")
+    func folderVisibilityRoundTrips() async throws {
+        let root = try makeFileOperationTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let folderURL = try makeDirectory(named: "Private", in: root)
+        let service = FileOperationService()
+
+        let hiddenOutcome = try await service.setHidden(true, for: folderURL)
+        let hiddenValues = try folderURL.resourceValues(forKeys: [.isHiddenKey])
+        let hiddenListing = try await FileSystemService().contents(
+            of: root,
+            folderTitle: "Fixture"
+        )
+        let completeListing = try await FileSystemService().contents(
+            of: root,
+            folderTitle: "Fixture",
+            includingHiddenItems: true
+        )
+
+        #expect(hiddenOutcome.didChange)
+        #expect(hiddenValues.isHidden == true)
+        #expect(hiddenListing.isEmpty)
+        #expect(completeListing.map(\.name) == ["Private"])
+        #expect(completeListing.first?.isHidden == true)
+
+        let repeatedOutcome = try await service.setHidden(true, for: folderURL)
+        #expect(repeatedOutcome.didChange == false)
+
+        let visibleOutcome = try await service.setHidden(false, for: folderURL)
+        let refreshedFolderURL = URL(
+            filePath: folderURL.path(),
+            directoryHint: .isDirectory
+        )
+        let visibleValues = try refreshedFolderURL.resourceValues(
+            forKeys: [.isHiddenKey]
+        )
+        #expect(visibleOutcome.didChange)
+        #expect(visibleValues.isHidden == false)
+    }
+
+    @Test("Folder visibility rejects regular files")
+    func folderVisibilityRejectsFiles() async throws {
+        let root = try makeFileOperationTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fileURL = root.appending(path: "note.txt")
+        try Data().write(to: fileURL)
+
+        await #expect(
+            throws: FileOperationError.sourceIsNotDirectory(path: fileURL.path)
+        ) {
+            try await FileOperationService().setHidden(true, for: fileURL)
+        }
+    }
+
+    @Test("A dot-prefixed folder cannot claim to be unhidden")
+    func dotPrefixedFolderCannotBeUnhidden() async throws {
+        let root = try makeFileOperationTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let folderURL = try makeDirectory(named: ".private", in: root)
+
+        await #expect(
+            throws: FileOperationError.cannotUnhideDotPrefixedDirectory(
+                path: folderURL.path
+            )
+        ) {
+            try await FileOperationService().setHidden(false, for: folderURL)
+        }
     }
 
     @Test("Copy collisions use copy and copy 2 without overwriting existing files")
@@ -671,7 +742,7 @@ struct FileOperationServiceTests {
     }
 
     @Test("The internal transfer payload keeps its identity and custom type")
-    func internalTransferPayloadRoundTrips() throws {
+    func internalTransferPayloadKeepsIdentity() throws {
         let sourceURL = URL(filePath: "/tmp/internal-transfer.txt")
         let sourcePaneID = try #require(
             UUID(uuidString: "10000000-0000-0000-0000-000000000001")
@@ -680,15 +751,9 @@ struct FileOperationServiceTests {
             sourceURL: sourceURL,
             sourcePaneID: sourcePaneID
         )
-        let decoded = try JSONDecoder().decode(
-            InternalFileTransfer.self,
-            from: JSONEncoder().encode(payload)
-        )
-
-        #expect(decoded == payload)
-        #expect(decoded.sourcePaneID == sourcePaneID)
-        #expect(decoded.id.sourceURL == sourceURL)
-        #expect(decoded.id.sourcePaneID == sourcePaneID)
+        #expect(payload.sourcePaneID == sourcePaneID)
+        #expect(payload.id.sourceURL == sourceURL)
+        #expect(payload.id.sourcePaneID == sourcePaneID)
         #expect(
             UTType.finallyExplorerInternalFileTransfer.identifier
                 == "com.temelgunaydin.finallyexplorer.internal-file-transfer"
@@ -696,7 +761,8 @@ struct FileOperationServiceTests {
         #expect(UTType.finallyExplorerInternalFileTransfer != .fileURL)
     }
 
-    @Test("The internal transfer payload round-trips through CoreTransferable")
+    @Test("The private item provider advertises, decodes, and never exports a file URL")
+    @MainActor
     func internalTransferPayloadLoadsFromItemProvider() async throws {
         let payload = InternalFileTransfer(
             sourceURL: URL(filePath: "/tmp/dragged-item.txt"),
@@ -704,17 +770,47 @@ struct FileOperationServiceTests {
                 UUID(uuidString: "10000000-0000-0000-0000-000000000002")
             )
         )
-        let provider = NSItemProvider()
-        provider.register(payload)
+        let provider = InternalFileTransferProvider.make(
+            sourceURL: payload.sourceURL,
+            sourcePaneID: payload.sourcePaneID
+        )
 
-        let decoded: InternalFileTransfer = try await withCheckedThrowingContinuation {
-            continuation in
-            provider.loadTransferable(type: InternalFileTransfer.self) { result in
-                continuation.resume(with: result)
-            }
-        }
+        #expect(
+            provider.hasItemConformingToTypeIdentifier(
+                UTType.finallyExplorerInternalFileTransfer.identifier
+            )
+        )
+        #expect(provider.hasItemConformingToTypeIdentifier(UTType.data.identifier))
+        #expect(
+            provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+                == false
+        )
+
+        let decoded = try #require(
+            await InternalFileTransferProvider.load(from: [provider]).first
+        )
 
         #expect(decoded == payload)
+    }
+
+    @Test("A forged public data provider cannot create an internal file transfer")
+    @MainActor
+    func forgedProviderCannotCreateInternalTransfer() async throws {
+        let provider = NSItemProvider()
+        let forgedEnvelope = Data(
+            #"{"token":"30000000-0000-0000-0000-000000000001"}"#.utf8
+        )
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.data.identifier,
+            visibility: .all
+        ) { completion in
+            completion(forgedEnvelope, nil)
+            return nil
+        }
+
+        let decoded = await InternalFileTransferProvider.load(from: [provider])
+
+        #expect(decoded.isEmpty)
     }
 
     @Test("Drop action truth table prefers copying unless every source is local")

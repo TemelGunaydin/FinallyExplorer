@@ -62,17 +62,31 @@ struct FileSystemServiceTests {
         #expect(image.isImage)
     }
 
-    @Test("Hidden files are not listed")
+    @Test("Hidden items are excluded by default and opt in with metadata")
     func hiddenFilesAreSkipped() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
         try Data().write(to: root.appending(path: ".hidden"))
+        try FileManager.default.createDirectory(
+            at: root.appending(path: ".hidden-folder", directoryHint: .isDirectory),
+            withIntermediateDirectories: false
+        )
         try Data().write(to: root.appending(path: "visible.txt"))
 
-        let items = try await FileSystemService().contents(of: root, folderTitle: "Test")
+        let defaultItems = try await FileSystemService().contents(
+            of: root,
+            folderTitle: "Test"
+        )
+        let allItems = try await FileSystemService().contents(
+            of: root,
+            folderTitle: "Test",
+            includingHiddenItems: true
+        )
 
-        #expect(items.map(\.name) == ["visible.txt"])
+        #expect(defaultItems.map(\.name) == ["visible.txt"])
+        #expect(allItems.map(\.name) == [".hidden-folder", ".hidden", "visible.txt"])
+        #expect(allItems.filter(\.isHidden).map(\.name) == [".hidden-folder", ".hidden"])
     }
 
     @Test("Folder size includes files in nested folders")

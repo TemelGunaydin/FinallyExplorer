@@ -243,6 +243,7 @@ final class WorkspacePaneState: Identifiable {
     var selectedURL: URL?
     var selectedSearchResultID: ExplorerSearchResult.ID?
     var isInspectorPresented: Bool
+    var showsHiddenItems: Bool
     var searchModel: ExplorerSearchModel
 
     init(
@@ -255,6 +256,7 @@ final class WorkspacePaneState: Identifiable {
         selectedURL: URL? = nil,
         selectedSearchResultID: ExplorerSearchResult.ID? = nil,
         isInspectorPresented: Bool = false,
+        showsHiddenItems: Bool = false,
         searchModel: ExplorerSearchModel? = nil
     ) {
         self.id = id
@@ -266,6 +268,7 @@ final class WorkspacePaneState: Identifiable {
         self.selectedURL = selectedURL
         self.selectedSearchResultID = selectedSearchResultID
         self.isInspectorPresented = isInspectorPresented
+        self.showsHiddenItems = showsHiddenItems
         self.searchModel = searchModel ?? ExplorerSearchModel()
     }
 
@@ -412,7 +415,8 @@ final class WorkspaceModel {
         let newPane = WorkspacePaneState(
             id: newPaneID,
             place: sourcePane.place,
-            navigation: sourcePane.navigation
+            navigation: sourcePane.navigation,
+            showsHiddenItems: sourcePane.showsHiddenItems
         )
 
         var updatedLayout = layout

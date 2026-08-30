@@ -254,6 +254,15 @@ final class SidebarModel {
         return favorites.first { $0.directoryURL == normalizedURL }
     }
 
+    func canAdd(directoryURL: URL) -> Bool {
+        guard let directoryURL = Self.existingDirectoryURL(directoryURL) else {
+            return false
+        }
+
+        return Self.isBuiltIn(directoryURL) == false
+            && favorite(for: directoryURL) == nil
+    }
+
     /// Adds a local folder to the sidebar, or returns its existing favorite.
     @discardableResult
     func add(directoryURL: URL) -> SidebarFavorite? {

@@ -12,6 +12,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		FEA100070000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AB79414F2EC739F0004CAC65 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB7941562EC739F0004CAC65;
+			remoteInfo = FinallyExplorer;
+		};
 		ABD932872F19102C0052CD7E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AB79414F2EC739F0004CAC65 /* Project object */;
@@ -38,6 +45,7 @@
 /* Begin PBXFileReference section */
 		AB7941572EC739F0004CAC65 /* FinallyExplorer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FinallyExplorer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABD932832F19102C0052CD7E /* FinallyExplorerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FinallyExplorerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FEA100020000000000000002 /* FinallyExplorerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FinallyExplorerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABD9328C2F1910F70052CD7E /* FinallyExplorer.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FinallyExplorer.xctestplan; sourceTree = "<group>"; };
 		FEFFF0030000000000000001 /* FFF.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FFF.xcframework; path = Vendor/FFF/FFF.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -51,6 +59,11 @@
 		ABD932842F19102C0052CD7E /* FinallyExplorerTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FinallyExplorerTests;
+			sourceTree = "<group>";
+		};
+		FEA100030000000000000003 /* FinallyExplorerUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FinallyExplorerUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -71,6 +84,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FEA100040000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -81,6 +101,7 @@
 				FEFFF0030000000000000001 /* FFF.xcframework */,
 				AB7941592EC739F0004CAC65 /* FinallyExplorer */,
 				ABD932842F19102C0052CD7E /* FinallyExplorerTests */,
+				FEA100030000000000000003 /* FinallyExplorerUITests */,
 				AB7941582EC739F0004CAC65 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +111,7 @@
 			children = (
 				AB7941572EC739F0004CAC65 /* FinallyExplorer.app */,
 				ABD932832F19102C0052CD7E /* FinallyExplorerTests.xctest */,
+				FEA100020000000000000002 /* FinallyExplorerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -143,6 +165,29 @@
 			productReference = ABD932832F19102C0052CD7E /* FinallyExplorerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		FEA100010000000000000001 /* FinallyExplorerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FEA1000B000000000000000B /* Build configuration list for PBXNativeTarget "FinallyExplorerUITests" */;
+			buildPhases = (
+				FEA100060000000000000006 /* Sources */,
+				FEA100040000000000000004 /* Frameworks */,
+				FEA100050000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FEA100080000000000000008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				FEA100030000000000000003 /* FinallyExplorerUITests */,
+			);
+			name = FinallyExplorerUITests;
+			packageProductDependencies = (
+			);
+			productName = FinallyExplorerUITests;
+			productReference = FEA100020000000000000002 /* FinallyExplorerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -158,6 +203,10 @@
 					};
 					ABD932822F19102C0052CD7E = {
 						CreatedOnToolsVersion = 26.2;
+						TestTargetID = AB7941562EC739F0004CAC65;
+					};
+					FEA100010000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
 						TestTargetID = AB7941562EC739F0004CAC65;
 					};
 				};
@@ -178,6 +227,7 @@
 			targets = (
 				AB7941562EC739F0004CAC65 /* FinallyExplorer */,
 				ABD932822F19102C0052CD7E /* FinallyExplorerTests */,
+				FEA100010000000000000001 /* FinallyExplorerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -191,6 +241,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		ABD932812F19102C0052CD7E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FEA100050000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -214,6 +271,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FEA100060000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -221,6 +285,11 @@
 			isa = PBXTargetDependency;
 			target = AB7941562EC739F0004CAC65 /* FinallyExplorer */;
 			targetProxy = ABD932872F19102C0052CD7E /* PBXContainerItemProxy */;
+		};
+		FEA100080000000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB7941562EC739F0004CAC65 /* FinallyExplorer */;
+			targetProxy = FEA100070000000000000007 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -481,6 +550,48 @@
 			};
 			name = Release;
 		};
+		FEA100090000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = HN9RYRSS6A;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.temelgunaydin.FinallyExplorerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = FinallyExplorer;
+			};
+			name = Debug;
+		};
+		FEA1000A000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = HN9RYRSS6A;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.temelgunaydin.FinallyExplorerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = FinallyExplorer;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -507,6 +618,15 @@
 			buildConfigurations = (
 				ABD932892F19102C0052CD7E /* Debug */,
 				ABD9328A2F19102C0052CD7E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FEA1000B000000000000000B /* Build configuration list for PBXNativeTarget "FinallyExplorerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FEA100090000000000000009 /* Debug */,
+				FEA1000A000000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

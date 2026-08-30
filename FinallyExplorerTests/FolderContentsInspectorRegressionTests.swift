@@ -31,7 +31,8 @@ struct FolderContentsInspectorRegressionTests {
                     fileOperations: FileOperationCoordinator(),
                     terminalApplications: TerminalApplicationCoordinator(
                         workspace: EmptyTerminalWorkspace()
-                    )
+                    ),
+                    sidebar: SidebarModel(store: EmptySidebarFavoriteStore())
                 )
                 let hostingView = NSHostingView(rootView: inspector)
 
@@ -41,6 +42,13 @@ struct FolderContentsInspectorRegressionTests {
             }
         }
     }
+}
+
+@MainActor
+private final class EmptySidebarFavoriteStore: SidebarFavoriteStoring {
+    func loadFavorites() -> [SidebarFavorite] { [] }
+
+    func saveFavorites(_ favorites: [SidebarFavorite]) {}
 }
 
 @MainActor

@@ -12,9 +12,11 @@ import SwiftUI
 // 3. Tertiary: a subtle highlight and bottom hairline defining the content edge.
 //
 // SPATIAL GRID
-// - Header height: 58pt; leading inset: 82pt to clear macOS traffic lights.
+// - Header height: 72pt; leading inset: 82pt to clear macOS traffic lights.
 // - Brand gap: 11pt; right-side control gap: 8pt; outer trailing inset: 16pt.
 // - Badge: 34pt with a continuous 10pt corner; status controls: 34pt high.
+// - Content stays centered inside the expanded chrome so every control remains
+//   below the macOS title-bar drag region and keeps its full hit target.
 //
 // TYPOGRAPHY AND EFFECTS
 // - Brand: rounded title3 bold; subtitle/status: rounded caption/callout bold.
@@ -120,7 +122,7 @@ struct ExplorerWindowHeader: View {
         .padding(.leading, 82)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity)
-        .frame(height: 58)
+        .frame(height: 72)
         .background(ExplorerTheme.windowChrome)
         .overlay(alignment: .top) {
             LinearGradient(

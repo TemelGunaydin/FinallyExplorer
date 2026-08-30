@@ -18,6 +18,14 @@
         "identifier" : "ABD932822F19102C0052CD7E",
         "name" : "FinallyExplorerTests"
       }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:FinallyExplorer.xcodeproj",
+        "identifier" : "FEA100010000000000000001",
+        "name" : "FinallyExplorerUITests"
+      }
     }
   ],
   "version" : 1

@@ -99,6 +99,7 @@ struct ExplorerSearchControlBar: View {
 
 struct ExplorerSearchResultsView: View {
     let paneID: UUID
+    let sidebar: SidebarModel
     let query: String
     let results: [ExplorerSearchResult]
     let isSearching: Bool
@@ -130,6 +131,7 @@ struct ExplorerSearchResultsView: View {
                 List(results, selection: $selection) { result in
                     ExplorerSearchRowView(
                         paneID: paneID,
+                        sidebar: sidebar,
                         result: result,
                         onSelect: { onSelect(result) },
                         onOpen: { onOpen(result) }
@@ -169,6 +171,7 @@ private struct ExplorerSearchMessageBanner: View {
 
 private struct ExplorerSearchRowView: View {
     let paneID: UUID
+    let sidebar: SidebarModel
     let result: ExplorerSearchResult
     let onSelect: () -> Void
     let onOpen: () -> Void
@@ -235,13 +238,19 @@ private struct ExplorerSearchRowView: View {
                 .onEnded { onOpen() }
         )
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(result.item.name)
         .accessibilityHint(
             result.item.isDirectory
                 ? "Double-click to open folder"
                 : "Double-click to open file"
         )
         .accessibilityAction(named: "Open", onOpen)
-        .internalFileInteraction(for: result.item, paneID: paneID)
+        .internalFileInteraction(
+            for: result.item,
+            paneID: paneID,
+            sidebar: sidebar
+        )
+        .accessibilityIdentifier("file-row-\(paneID)-\(result.item.name)")
     }
 
     private var systemImage: String {

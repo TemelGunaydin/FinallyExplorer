@@ -33,9 +33,34 @@ struct FileOperationCoordinatorTests {
             ) == false
         )
         #expect(coordinator.createFolder(in: nil) == false)
+        #expect(coordinator.setHidden(true, for: nil) == false)
         #expect(coordinator.cancelCurrentOperation() == false)
         #expect(coordinator.isPerforming == false)
         #expect(await service.operationCount() == 0)
+    }
+
+    @Test("Hiding a folder refreshes its parent and preserves request intent")
+    func hideFolderRefreshesParent() async throws {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let directoryURL = URL(
+            filePath: "/tmp/visible/folder",
+            directoryHint: .isDirectory
+        )
+
+        #expect(coordinator.setHidden(true, for: directoryURL))
+        #expect(coordinator.statusMessage == "Hiding folder…")
+        await coordinator.waitForCurrentOperation()
+
+        let request = try #require(await service.visibilityRequests().first)
+        #expect(request.0 == directoryURL)
+        #expect(request.1)
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: directoryURL.deletingLastPathComponent()
+            ) == 1
+        )
+        #expect(coordinator.directoryRefreshRevision(for: directoryURL) == 0)
     }
 
     @Test("A file-command cut pastes as a move and consumes the completed cut")
@@ -448,6 +473,7 @@ private actor ScriptedFileOperationService: FileOperationServicing {
     private var copySourceURLs: [URL] = []
     private var moveSourceURLs: [URL] = []
     private var createFolderCount = 0
+    private var hiddenRequests: [(URL, Bool)] = []
 
     init(
         copyResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
@@ -495,6 +521,17 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         )
     }
 
+    func setHidden(
+        _ hidden: Bool,
+        for directoryURL: URL
+    ) async throws -> FileOperationOutcome {
+        hiddenRequests.append((directoryURL, hidden))
+        return FileOperationOutcome(
+            destinationURL: directoryURL,
+            didChange: true
+        )
+    }
+
     func moveItem(
         at sourceURL: URL,
         to destinationDirectoryURL: URL
@@ -514,7 +551,10 @@ private actor ScriptedFileOperationService: FileOperationServicing {
     }
 
     func operationCount() -> Int {
-        copySourceURLs.count + moveSourceURLs.count + createFolderCount
+        copySourceURLs.count
+            + moveSourceURLs.count
+            + createFolderCount
+            + hiddenRequests.count
     }
 
     func copiedSources() -> [URL] {
@@ -523,6 +563,10 @@ private actor ScriptedFileOperationService: FileOperationServicing {
 
     func movedSources() -> [URL] {
         moveSourceURLs
+    }
+
+    func visibilityRequests() -> [(URL, Bool)] {
+        hiddenRequests
     }
 }
 
@@ -554,6 +598,16 @@ private actor BlockingFileOperationService: FileOperationServicing {
             destinationURL: destinationDirectoryURL.appending(
                 path: sourceURL.lastPathComponent
             ),
+            didChange: true
+        )
+    }
+
+    func setHidden(
+        _ hidden: Bool,
+        for directoryURL: URL
+    ) async throws -> FileOperationOutcome {
+        FileOperationOutcome(
+            destinationURL: directoryURL,
             didChange: true
         )
     }

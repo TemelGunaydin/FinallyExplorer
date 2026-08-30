@@ -160,6 +160,18 @@ final class FileOperationCoordinator {
         )
     }
 
+    @discardableResult
+    func setHidden(_ hidden: Bool, for directoryURL: URL?) -> Bool {
+        guard let directoryURL else { return false }
+
+        return start(
+            operation: .setHidden(hidden),
+            sources: [directoryURL],
+            destinationDirectoryURL: directoryURL.deletingLastPathComponent(),
+            cutClipboardSnapshot: nil
+        )
+    }
+
     /// Requests cancellation and lets the current operation unwind safely.
     /// FileManager calls are synchronous, so cancellation takes effect at the
     /// next safe boundary before another item or a staged copy is committed.
@@ -243,6 +255,21 @@ final class FileOperationCoordinator {
                         Self.standardizedURL(destinationDirectoryURL)
                     )
                 }
+            case let .setHidden(hidden):
+                guard let directoryURL = sources.first else { return }
+                let outcome = try await service.setHidden(
+                    hidden,
+                    for: directoryURL
+                )
+                didChange = outcome.didChange
+
+                if outcome.didChange {
+                    directlyAffectedDirectoryURLs.insert(
+                        Self.standardizedURL(
+                            directoryURL.deletingLastPathComponent()
+                        )
+                    )
+                }
             case .copy, .move:
                 var failureMessages: [String] = []
 
@@ -262,8 +289,10 @@ final class FileOperationCoordinator {
                                 at: sourceURL,
                                 to: destinationDirectoryURL
                             )
-                        case .createFolder:
-                            preconditionFailure("Create Folder does not process source items.")
+                        case .createFolder, .setHidden:
+                            preconditionFailure(
+                                "This operation does not process copy or move sources."
+                            )
                         }
 
                         didChange = didChange || outcome.didChange
@@ -273,7 +302,7 @@ final class FileOperationCoordinator {
                                 Self.standardizedURL(destinationDirectoryURL)
                             )
 
-                            if operation == .move {
+                            if operation.isMove {
                                 directlyAffectedDirectoryURLs.insert(
                                     Self.standardizedURL(
                                         sourceURL.deletingLastPathComponent()
@@ -282,7 +311,7 @@ final class FileOperationCoordinator {
                             }
                         }
 
-                        if operation == .move,
+                        if operation.isMove,
                            cutClipboardSnapshot != nil,
                            outcome.didChange {
                             successfullyMovedCutSources.insert(sourceURL)
@@ -417,10 +446,19 @@ final class FileOperationCoordinator {
         case copy
         case move
         case createFolder
+        case setHidden(Bool)
+
+        var isMove: Bool {
+            if case .move = self {
+                true
+            } else {
+                false
+            }
+        }
 
         var requiresSources: Bool {
             switch self {
-            case .copy, .move:
+            case .copy, .move, .setHidden:
                 true
             case .createFolder:
                 false
@@ -435,6 +473,8 @@ final class FileOperationCoordinator {
                 "Move files"
             case .createFolder:
                 "Create folder"
+            case let .setHidden(hidden):
+                hidden ? "Hide folder" : "Unhide folder"
             }
         }
 
@@ -450,6 +490,8 @@ final class FileOperationCoordinator {
                 "Moving \(itemCount) items…"
             case (.createFolder, _):
                 "Creating folder…"
+            case let (.setHidden(hidden), _):
+                hidden ? "Hiding folder…" : "Unhiding folder…"
             }
         }
     }

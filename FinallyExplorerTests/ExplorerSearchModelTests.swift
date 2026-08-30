@@ -133,7 +133,16 @@ struct ExplorerSearchModelTests {
         let model = ExplorerSearchModel(debounce: { try Task.checkCancellation() })
         model.query = "FirstResult"
         await model.search(in: root)
-        try #require(model.results.isEmpty == false)
+        try await waitUntilExplorerSearchResult(in: model) {
+            $0.results.contains {
+                $0.item.url.lastPathComponent == "FirstResult.txt"
+            }
+        }
+        try #require(
+            model.results.contains {
+                $0.item.url.lastPathComponent == "FirstResult.txt"
+            }
+        )
 
         let startGate = SearchStartGate()
         model.query = "SecondResult"
