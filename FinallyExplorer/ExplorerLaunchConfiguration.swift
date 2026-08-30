@@ -27,11 +27,15 @@ struct ProcessInfoLaunchEnvironment: ExplorerLaunchEnvironmentProviding {
 struct ExplorerLaunchConfiguration: Equatable, Sendable {
     static let uiTestingArgument = "--ui-testing"
     static let fixtureRootEnvironmentKey = "FINALLY_EXPLORER_UI_FIXTURE_ROOT"
+    static let mountedVolumeEnvironmentKey = "FINALLY_EXPLORER_UI_MOUNTED_VOLUME"
     static let defaultsSuiteEnvironmentKey = "FINALLY_EXPLORER_UI_DEFAULTS_SUITE"
+    static let nearbyPeerNameEnvironmentKey = "FINALLY_EXPLORER_UI_NEARBY_PEER"
 
     let isUITesting: Bool
     let fixtureRoot: URL?
+    let mountedVolumeFixture: URL?
     let defaultsSuiteName: String?
+    let nearbyPeerName: String?
 
     init(environment: some ExplorerLaunchEnvironmentProviding) {
         let isUITesting = environment.arguments.contains(Self.uiTestingArgument)
@@ -39,15 +43,23 @@ struct ExplorerLaunchConfiguration: Equatable, Sendable {
 
         guard isUITesting else {
             fixtureRoot = nil
+            mountedVolumeFixture = nil
             defaultsSuiteName = nil
+            nearbyPeerName = nil
             return
         }
 
         fixtureRoot = Self.validFixtureRoot(
             from: environment.environment[Self.fixtureRootEnvironmentKey]
         )
+        mountedVolumeFixture = Self.validFixtureRoot(
+            from: environment.environment[Self.mountedVolumeEnvironmentKey]
+        )
         defaultsSuiteName = Self.nonEmptyValue(
             environment.environment[Self.defaultsSuiteEnvironmentKey]
+        )
+        nearbyPeerName = Self.nonEmptyValue(
+            environment.environment[Self.nearbyPeerNameEnvironmentKey]
         )
     }
 

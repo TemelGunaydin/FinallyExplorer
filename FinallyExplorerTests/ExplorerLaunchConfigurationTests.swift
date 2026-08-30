@@ -14,7 +14,9 @@ struct ExplorerLaunchConfigurationTests {
             arguments: ["FinallyExplorer"],
             environment: [
                 ExplorerLaunchConfiguration.fixtureRootEnvironmentKey: "/not/a/real/fixture",
-                ExplorerLaunchConfiguration.defaultsSuiteEnvironmentKey: "ui-tests.defaults"
+                ExplorerLaunchConfiguration.mountedVolumeEnvironmentKey: "/not/a/real/volume",
+                ExplorerLaunchConfiguration.defaultsSuiteEnvironmentKey: "ui-tests.defaults",
+                ExplorerLaunchConfiguration.nearbyPeerNameEnvironmentKey: "Fake Mac",
             ]
         )
 
@@ -22,9 +24,34 @@ struct ExplorerLaunchConfigurationTests {
 
         #expect(configuration.isUITesting == false)
         #expect(configuration.fixtureRoot == nil)
+        #expect(configuration.mountedVolumeFixture == nil)
         #expect(configuration.defaultsSuiteName == nil)
+        #expect(configuration.nearbyPeerName == nil)
         #expect(configuration.initialPlace == .downloads)
         #expect(environment.environmentReadCount == 0)
+    }
+
+    @Test("UI launch accepts a verified mounted-volume fixture")
+    func uiLaunchUsesMountedVolumeFixture() throws {
+        let fixtureRoot = try makeFixtureDirectory()
+        let mountedVolume = try makeFixtureDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: fixtureRoot)
+            try? FileManager.default.removeItem(at: mountedVolume)
+        }
+
+        let configuration = ExplorerLaunchConfiguration(
+            environment: StaticLaunchEnvironment(
+                arguments: [ExplorerLaunchConfiguration.uiTestingArgument],
+                environment: [
+                    ExplorerLaunchConfiguration.fixtureRootEnvironmentKey: fixtureRoot.path,
+                    ExplorerLaunchConfiguration.mountedVolumeEnvironmentKey: mountedVolume.path,
+                ]
+            )
+        )
+
+        #expect(configuration.fixtureRoot == fixtureRoot.standardizedFileURL)
+        #expect(configuration.mountedVolumeFixture == mountedVolume.standardizedFileURL)
     }
 
     @Test("UI launch uses a verified local fixture directory and defaults suite")
@@ -115,6 +142,21 @@ struct ExplorerLaunchConfigurationTests {
         )
 
         #expect(configuration.defaultsSuiteName == nil)
+    }
+
+    @Test("UI launch trims an injected nearby peer name")
+    func uiLaunchUsesNearbyPeerFixture() {
+        let configuration = ExplorerLaunchConfiguration(
+            environment: StaticLaunchEnvironment(
+                arguments: [ExplorerLaunchConfiguration.uiTestingArgument],
+                environment: [
+                    ExplorerLaunchConfiguration.nearbyPeerNameEnvironmentKey:
+                        "  Nearby Test Mac  ",
+                ]
+            )
+        )
+
+        #expect(configuration.nearbyPeerName == "Nearby Test Mac")
     }
 
     private func makeFixtureDirectory() throws -> URL {

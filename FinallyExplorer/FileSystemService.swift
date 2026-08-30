@@ -94,6 +94,16 @@ nonisolated struct DirectoryNavigationState: Equatable, Sendable {
         guard path.isEmpty == false else { return }
         path.removeLast()
     }
+
+    mutating func applyRename(_ result: FileRenameResult) {
+        path = path.map { url in
+            FileURLRelocation.rebase(
+                url,
+                from: result.sourceURL,
+                to: result.destinationURL
+            ) ?? url
+        }
+    }
 }
 
 nonisolated struct FileSystemService: Sendable {

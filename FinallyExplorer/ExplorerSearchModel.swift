@@ -119,6 +119,14 @@ final class ExplorerSearchModel {
         query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
+    func clear() {
+        requestGeneration += 1
+        query = ""
+        results = []
+        errorMessage = nil
+        isSearching = false
+    }
+
     func request(in rootURL: URL?) -> ExplorerSearchRequest {
         ExplorerSearchRequest(
             rootURL: rootURL,
@@ -532,7 +540,7 @@ final class ExplorerSearchModel {
 
         if let regexFallbackError = page.regexFallbackError {
             messages.append(
-                "The regex was invalid (\(regexFallbackError)); FFF searched for it literally."
+                "The regex was invalid (\(regexFallbackError)); it was searched for literally."
             )
         }
 

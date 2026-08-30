@@ -131,7 +131,8 @@ struct ExplorerSearchResultsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let errorMessage {
+            if let errorMessage,
+               errorMessage.isError == false || results.isEmpty == false {
                 ExplorerSearchMessageBanner(message: errorMessage)
             }
 

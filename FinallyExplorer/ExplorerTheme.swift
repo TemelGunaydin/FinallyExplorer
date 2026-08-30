@@ -52,13 +52,17 @@ struct ExplorerTheme {
     let chromeText: Color
     let chromeSecondaryText: Color
     let chromeDivider: Color
-    let sidebarIconSurface: Color
     let windowChrome: LinearGradient
     let sidebarBackground: LinearGradient
     let sidebarFooter: LinearGradient
 
     static let paneTitleFont = Font.system(.title3, design: .rounded).bold()
     static let navigationFont = Font.system(.body, design: .rounded).bold()
+    static let sidebarNavigationFont = Font.system(
+        size: 16,
+        weight: .bold,
+        design: .rounded
+    )
     static let actionFont = Font.system(.callout, design: .rounded).bold()
     static let fileNameFont = Font.system(.body, design: .rounded).weight(.medium)
 
@@ -236,7 +240,6 @@ struct ExplorerTheme {
             chromeText: classicChalk,
             chromeSecondaryText: chinaSilk.opacity(0.82),
             chromeDivider: Color.white.opacity(0.12),
-            sidebarIconSurface: Color.white.opacity(0.09),
             windowChrome: LinearGradient(
                 colors: [shellStart, shellMiddle, shellEnd],
                 startPoint: .leading,
@@ -244,8 +247,8 @@ struct ExplorerTheme {
             ),
             sidebarBackground: LinearGradient(
                 colors: [shellStart, shellMiddle, shellEnd],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                startPoint: .leading,
+                endPoint: .trailing
             ),
             sidebarFooter: LinearGradient(
                 colors: [shellMiddle, shellEnd],
@@ -284,15 +287,11 @@ struct ExplorerSidebarLabelStyle: LabelStyle {
     @Environment(\.explorerTheme) private var theme
 
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 11) {
+        HStack(spacing: 7) {
             configuration.icon
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(theme.accent)
-                .frame(width: 28, height: 28)
-                .background(
-                    theme.sidebarIconSurface,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
+                .frame(width: 27, height: 28)
 
             configuration.title
                 .foregroundStyle(theme.chromeText)

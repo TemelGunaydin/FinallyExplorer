@@ -12,14 +12,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		FEA100070000000000000007 /* PBXContainerItemProxy */ = {
+		ABD932872F19102C0052CD7E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AB79414F2EC739F0004CAC65 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = AB7941562EC739F0004CAC65;
 			remoteInfo = FinallyExplorer;
 		};
-		ABD932872F19102C0052CD7E /* PBXContainerItemProxy */ = {
+		FEA100070000000000000007 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AB79414F2EC739F0004CAC65 /* Project object */;
 			proxyType = 1;
@@ -45,14 +45,27 @@
 /* Begin PBXFileReference section */
 		AB7941572EC739F0004CAC65 /* FinallyExplorer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FinallyExplorer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABD932832F19102C0052CD7E /* FinallyExplorerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FinallyExplorerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		FEA100020000000000000002 /* FinallyExplorerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FinallyExplorerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABD9328C2F1910F70052CD7E /* FinallyExplorer.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FinallyExplorer.xctestplan; sourceTree = "<group>"; };
+		FEA100020000000000000002 /* FinallyExplorerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FinallyExplorerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FEFFF0030000000000000001 /* FFF.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FFF.xcframework; path = Vendor/FFF/FFF.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FEA200010000000000000001 /* Exceptions for "FinallyExplorer" folder in "FinallyExplorer" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AB7941562EC739F0004CAC65 /* FinallyExplorer */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AB7941592EC739F0004CAC65 /* FinallyExplorer */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FEA200010000000000000001 /* Exceptions for "FinallyExplorer" folder in "FinallyExplorer" target */,
+			);
 			path = FinallyExplorer;
 			sourceTree = "<group>";
 		};
@@ -438,6 +451,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FinallyExplorer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FinallyExplorer;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -480,6 +494,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FinallyExplorer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FinallyExplorer;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

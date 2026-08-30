@@ -115,6 +115,7 @@ private struct InternalFileTransferEnvelope: Codable {
 
 private struct InternalFileInteractionModifier: ViewModifier {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(NearbyTransferCoordinator.self) private var nearbyTransfers
 
     let item: FileItem
     let paneID: UUID
@@ -150,10 +151,19 @@ private struct InternalFileInteractionModifier: ViewModifier {
                     fileOperations.copy([item.url])
                 }
 
+                Button("Rename", systemImage: "pencil") {
+                    fileOperations.requestRename(item.url)
+                }
+                .disabled(fileOperations.isPerforming)
+
                 Divider()
 
                 ShareLink(item: item.url) {
                     Label("Share", systemImage: "square.and.arrow.up")
+                }
+
+                Button("Send to Nearby Device…", systemImage: "person.2.wave.2") {
+                    nearbyTransfers.prepareToSend([item.url])
                 }
 
                 Button("Get Info", systemImage: "info.circle") {

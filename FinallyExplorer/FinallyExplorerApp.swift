@@ -16,6 +16,7 @@ struct FinallyExplorerApp: App {
     @State private var workspace: WorkspaceModel
     @State private var fileOperations: FileOperationCoordinator
     @State private var terminalApplications: TerminalApplicationCoordinator
+    @State private var nearbyTransfers: NearbyTransferCoordinator
     @State private var sidebar: SidebarModel
     @State private var themeController: ExplorerThemeController
 
@@ -28,7 +29,11 @@ struct FinallyExplorerApp: App {
         _workspace = State(
             initialValue: WorkspaceModel(initialPlace: launchConfiguration.initialPlace)
         )
-        _fileOperations = State(initialValue: FileOperationCoordinator())
+        _fileOperations = State(
+            initialValue: Self.fileOperationCoordinator(
+                for: launchConfiguration
+            )
+        )
         _terminalApplications = State(
             initialValue: TerminalApplicationCoordinator(
                 preferenceStore: Self.terminalPreferenceStore(
@@ -36,9 +41,15 @@ struct FinallyExplorerApp: App {
                 )
             )
         )
+        _nearbyTransfers = State(
+            initialValue: Self.nearbyTransferCoordinator(for: launchConfiguration)
+        )
         _sidebar = State(
             initialValue: SidebarModel(
-                store: Self.sidebarStore(for: launchConfiguration)
+                store: Self.sidebarStore(for: launchConfiguration),
+                mountedVolumeMonitor: Self.mountedVolumeMonitor(
+                    for: launchConfiguration
+                )
             )
         )
         _themeController = State(
@@ -54,6 +65,7 @@ struct FinallyExplorerApp: App {
                 workspace: workspace,
                 fileOperations: fileOperations,
                 terminalApplications: terminalApplications,
+                nearbyTransfers: nearbyTransfers,
                 sidebar: sidebar,
                 themeController: themeController,
                 globalSearchRootURL: launchConfiguration.fixtureRoot
@@ -78,6 +90,42 @@ struct FinallyExplorerApp: App {
         return UserDefaultsSidebarFavoriteStore(defaults: defaults)
     }
 
+    private static func fileOperationCoordinator(
+        for launchConfiguration: ExplorerLaunchConfiguration
+    ) -> FileOperationCoordinator {
+        guard launchConfiguration.isUITesting else {
+            return FileOperationCoordinator()
+        }
+
+        return FileOperationCoordinator(noticeDelay: {
+            try await Task.sleep(for: .seconds(8))
+        })
+    }
+
+    private static func mountedVolumeMonitor(
+        for launchConfiguration: ExplorerLaunchConfiguration
+    ) -> MountedVolumeMonitor? {
+        guard let fixtureURL = launchConfiguration.mountedVolumeFixture else {
+            return nil
+        }
+
+        return MountedVolumeMonitor(
+            loadVolumes: {
+                [
+                    MountedVolume(
+                        url: fixtureURL,
+                        title: fixtureURL.lastPathComponent,
+                        isInternal: false,
+                        isRemovable: true,
+                        isEjectable: true,
+                        isBrowsable: true
+                    )
+                ]
+            },
+            observesWorkspaceChanges: false
+        )
+    }
+
     private static func terminalPreferenceStore(
         for launchConfiguration: ExplorerLaunchConfiguration
     ) -> (any TerminalPreferenceStoring)? {
@@ -86,6 +134,17 @@ struct FinallyExplorerApp: App {
         }
 
         return UserDefaultsTerminalPreferenceStore(defaults: defaults)
+    }
+
+    private static func nearbyTransferCoordinator(
+        for launchConfiguration: ExplorerLaunchConfiguration
+    ) -> NearbyTransferCoordinator {
+        guard let peerName = launchConfiguration.nearbyPeerName else {
+            return NearbyTransferCoordinator()
+        }
+        return NearbyTransferCoordinator(
+            service: UITestNearbyTransferService(peerName: peerName)
+        )
     }
 
     private static func themeStore(

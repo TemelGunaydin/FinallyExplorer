@@ -251,11 +251,11 @@ nonisolated enum FFFSearchError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .libraryUnavailable:
-            "The FFF search library is not linked to the application."
+            "The search engine is not available."
         case let .invalidRootURL(url):
-            "FFF requires an existing local folder.\n\nPath: \(url.path(percentEncoded: false))"
+            "Search requires an existing local folder.\n\nPath: \(url.path(percentEncoded: false))"
         case .notPrepared:
-            "The FFF search engine has not been prepared yet."
+            "The search index is not ready yet."
         case let .invalidQuery(reason):
             "Search query is invalid: \(reason)"
         case let .invalidLimit(limit):
@@ -265,10 +265,18 @@ nonisolated enum FFFSearchError: LocalizedError, Equatable, Sendable {
         case let .invalidTimeBudget(milliseconds):
             "Search time budget must be between 0 and \(FFFSearchInputValidator.maximumTimeBudgetMilliseconds) ms (received \(milliseconds) ms)."
         case let .operationFailed(operation, message):
-            "FFF could not \(operation): \(message)"
+            "Search could not \(operation): \(Self.userFacing(message))"
         case let .invalidPayload(operation, field):
-            "FFF returned an invalid \(field) while attempting to \(operation)."
+            "Search returned an invalid \(field) while attempting to \(operation)."
         }
+    }
+
+    private static func userFacing(_ message: String) -> String {
+        message.replacingOccurrences(
+            of: "FFF",
+            with: "search engine",
+            options: .caseInsensitive
+        )
     }
 }
 
@@ -673,8 +681,10 @@ actor FFFSearchEngine {
         options.cache_budget_max_files = 0
         options.cache_budget_max_bytes = 0
         options.cache_budget_max_file_size = 0
-        options.enable_fs_root_scanning = false
-        options.enable_home_dir_scanning = false
+        options.enable_fs_root_scanning = FFFRootScanPolicy
+            .allowsFileSystemRootScanning(for: rootURL)
+        options.enable_home_dir_scanning = FFFRootScanPolicy
+            .allowsHomeDirectoryScanning(for: rootURL)
         options.follow_symlinks = false
 
         let envelope = rootURL.path(percentEncoded: false).withCString { rootPointer in

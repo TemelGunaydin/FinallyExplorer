@@ -32,7 +32,10 @@ final class FileOperationCoordinator {
     private(set) var clipboardOperation: FileClipboardOperation?
     private(set) var isPerforming = false
     private(set) var statusMessage: String?
+    private(set) var notice: FileOperationNotice?
     private(set) var completedOperationCount = 0
+    var renameRequest: FileRenameRequest?
+    private(set) var lastRenameResult: FileRenameResult?
     private var latestFileSystemChange = FileSystemChange(
         revision: 0,
         directlyAffectedDirectoryURLs: []
@@ -42,11 +45,24 @@ final class FileOperationCoordinator {
     private(set) var errorMessage = ""
 
     @ObservationIgnored private var operationTask: Task<Void, Never>?
+    @ObservationIgnored private var noticeDismissalTask: Task<Void, Never>?
     @ObservationIgnored private let service: any FileOperationServicing
+    @ObservationIgnored private let noticeDelay: @Sendable () async throws -> Void
     @ObservationIgnored private var clipboardRevision = UUID()
 
-    init(service: any FileOperationServicing = FileOperationService()) {
+    init(
+        service: any FileOperationServicing = FileOperationService(),
+        noticeDelay: @escaping @Sendable () async throws -> Void = {
+            try await Task.sleep(for: .seconds(2.2))
+        }
+    ) {
         self.service = service
+        self.noticeDelay = noticeDelay
+    }
+
+    deinit {
+        operationTask?.cancel()
+        noticeDismissalTask?.cancel()
     }
 
     var canPaste: Bool {
@@ -78,12 +94,45 @@ final class FileOperationCoordinator {
         } ? latestFileSystemChange.revision : 0
     }
 
+    func recordExternalChange(
+        directlyAffecting directoryURL: URL,
+        message: String,
+        systemImage: String
+    ) async {
+        await publishFileSystemChange(
+            directlyAffecting: [Self.standardizedURL(directoryURL)]
+        )
+        presentNotice(message: message, systemImage: systemImage)
+    }
+
+    func presentExternalNotice(message: String, systemImage: String) {
+        presentNotice(message: message, systemImage: systemImage)
+    }
+
     func copy(_ urls: [URL]) {
         setClipboard(urls, operation: .copy)
+
+        guard clipboardURLs.isEmpty == false else { return }
+        presentNotice(
+            message: Self.completedMessage(
+                singular: "Copied",
+                itemCount: clipboardURLs.count
+            ),
+            systemImage: "doc.on.doc.fill"
+        )
     }
 
     func cut(_ urls: [URL]) {
         setClipboard(urls, operation: .cut)
+
+        guard clipboardURLs.isEmpty == false else { return }
+        presentNotice(
+            message: Self.completedMessage(
+                singular: "Cut",
+                itemCount: clipboardURLs.count
+            ),
+            systemImage: "scissors"
+        )
     }
 
     @discardableResult
@@ -106,7 +155,14 @@ final class FileOperationCoordinator {
             destinationDirectoryURL: destinationDirectoryURL,
             cutClipboardSnapshot: clipboardOperation == .cut
                 ? clipboardSnapshot
-                : nil
+                : nil,
+            completionMessage: Self.completedMessage(
+                singular: clipboardOperation == .cut ? "Moved" : "Pasted",
+                itemCount: clipboardSnapshot.urls.count
+            ),
+            completionSystemImage: clipboardOperation == .cut
+                ? "arrow.right.doc.on.clipboard"
+                : "doc.on.clipboard.fill"
         )
     }
 
@@ -121,7 +177,12 @@ final class FileOperationCoordinator {
             operation: .move,
             sources: transfers.map(\.sourceURL),
             destinationDirectoryURL: destinationDirectoryURL,
-            cutClipboardSnapshot: nil
+            cutClipboardSnapshot: nil,
+            completionMessage: Self.completedMessage(
+                singular: "Moved",
+                itemCount: transfers.count
+            ),
+            completionSystemImage: "arrow.right.doc.on.clipboard"
         )
     }
 
@@ -140,11 +201,19 @@ final class FileOperationCoordinator {
             destinationPaneID: destinationPaneID
         )
 
+        let operation: Operation = action == .move ? .move : .copy
         return start(
-            operation: action == .move ? .move : .copy,
+            operation: operation,
             sources: transfers.map(\.sourceURL),
             destinationDirectoryURL: destinationDirectoryURL,
-            cutClipboardSnapshot: nil
+            cutClipboardSnapshot: nil,
+            completionMessage: Self.completedMessage(
+                singular: operation.isMove ? "Moved" : "Copied",
+                itemCount: transfers.count
+            ),
+            completionSystemImage: operation.isMove
+                ? "arrow.right.doc.on.clipboard"
+                : "doc.on.doc.fill"
         )
     }
 
@@ -156,7 +225,9 @@ final class FileOperationCoordinator {
             operation: .createFolder,
             sources: [],
             destinationDirectoryURL: destinationDirectoryURL,
-            cutClipboardSnapshot: nil
+            cutClipboardSnapshot: nil,
+            completionMessage: "Folder created",
+            completionSystemImage: "folder.badge.plus"
         )
     }
 
@@ -168,8 +239,38 @@ final class FileOperationCoordinator {
             operation: .setHidden(hidden),
             sources: [directoryURL],
             destinationDirectoryURL: directoryURL.deletingLastPathComponent(),
-            cutClipboardSnapshot: nil
+            cutClipboardSnapshot: nil,
+            completionMessage: hidden ? "Folder hidden" : "Folder unhidden",
+            completionSystemImage: hidden ? "eye.slash.fill" : "eye.fill"
         )
+    }
+
+    func requestRename(_ sourceURL: URL?) {
+        guard let sourceURL, isPerforming == false else { return }
+        renameRequest = FileRenameRequest(sourceURL: sourceURL)
+    }
+
+    func cancelRename() {
+        renameRequest = nil
+    }
+
+    @discardableResult
+    func rename(_ sourceURL: URL, to newName: String) -> Bool {
+        let started = start(
+            operation: .rename(newName),
+            sources: [sourceURL.standardizedFileURL],
+            destinationDirectoryURL: sourceURL
+                .deletingLastPathComponent()
+                .standardizedFileURL,
+            cutClipboardSnapshot: nil,
+            completionMessage: "Renamed",
+            completionSystemImage: "pencil"
+        )
+
+        if started {
+            renameRequest = nil
+        }
+        return started
     }
 
     /// Requests cancellation and lets the current operation unwind safely.
@@ -192,7 +293,9 @@ final class FileOperationCoordinator {
         operation: Operation,
         sources: [URL],
         destinationDirectoryURL: URL,
-        cutClipboardSnapshot: ClipboardSnapshot?
+        cutClipboardSnapshot: ClipboardSnapshot?,
+        completionMessage: String,
+        completionSystemImage: String
     ) -> Bool {
         let sources = Self.uniqueStandardizedURLs(sources)
 
@@ -212,7 +315,9 @@ final class FileOperationCoordinator {
                 operation: operation,
                 sources: sources,
                 destinationDirectoryURL: destinationDirectoryURL,
-                cutClipboardSnapshot: cutClipboardSnapshot
+                cutClipboardSnapshot: cutClipboardSnapshot,
+                completionMessage: completionMessage,
+                completionSystemImage: completionSystemImage
             )
         }
 
@@ -223,11 +328,14 @@ final class FileOperationCoordinator {
         operation: Operation,
         sources: [URL],
         destinationDirectoryURL: URL,
-        cutClipboardSnapshot: ClipboardSnapshot?
+        cutClipboardSnapshot: ClipboardSnapshot?,
+        completionMessage: String,
+        completionSystemImage: String
     ) async {
         var didChange = false
         var successfullyMovedCutSources: Set<URL> = []
         var directlyAffectedDirectoryURLs: Set<URL> = []
+        var completedRenameResult: FileRenameResult?
 
         defer {
             if let cutClipboardSnapshot {
@@ -270,6 +378,25 @@ final class FileOperationCoordinator {
                         )
                     )
                 }
+            case let .rename(newName):
+                guard let sourceURL = sources.first else { return }
+                let outcome = try await service.renameItem(
+                    at: sourceURL,
+                    to: newName
+                )
+                didChange = outcome.didChange
+
+                if outcome.didChange {
+                    directlyAffectedDirectoryURLs.insert(
+                        Self.standardizedURL(
+                            sourceURL.deletingLastPathComponent()
+                        )
+                    )
+                    completedRenameResult = FileRenameResult(
+                        sourceURL: sourceURL,
+                        destinationURL: outcome.destinationURL
+                    )
+                }
             case .copy, .move:
                 var failureMessages: [String] = []
 
@@ -289,7 +416,7 @@ final class FileOperationCoordinator {
                                 at: sourceURL,
                                 to: destinationDirectoryURL
                             )
-                        case .createFolder, .setHidden:
+                        case .createFolder, .setHidden, .rename:
                             preconditionFailure(
                                 "This operation does not process copy or move sources."
                             )
@@ -342,7 +469,46 @@ final class FileOperationCoordinator {
             await publishFileSystemChange(
                 directlyAffecting: directlyAffectedDirectoryURLs
             )
+            lastRenameResult = completedRenameResult
+
+            if isErrorPresented == false {
+                presentNotice(
+                    message: completionMessage,
+                    systemImage: completionSystemImage
+                )
+            }
         }
+    }
+
+    private func presentNotice(message: String, systemImage: String) {
+        noticeDismissalTask?.cancel()
+
+        let newNotice = FileOperationNotice(
+            message: message,
+            systemImage: systemImage
+        )
+        notice = newNotice
+        let noticeDelay = noticeDelay
+
+        noticeDismissalTask = Task { @MainActor [weak self] in
+            do {
+                try await noticeDelay()
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+
+            guard let self, self.notice?.id == newNotice.id else { return }
+            self.notice = nil
+            self.noticeDismissalTask = nil
+        }
+    }
+
+    private static func completedMessage(
+        singular: String,
+        itemCount: Int
+    ) -> String {
+        itemCount == 1 ? singular : "\(singular) \(itemCount) items"
     }
 
     private static func uniqueStandardizedURLs(_ urls: [URL]) -> [URL] {
@@ -447,6 +613,7 @@ final class FileOperationCoordinator {
         case move
         case createFolder
         case setHidden(Bool)
+        case rename(String)
 
         var isMove: Bool {
             if case .move = self {
@@ -458,7 +625,7 @@ final class FileOperationCoordinator {
 
         var requiresSources: Bool {
             switch self {
-            case .copy, .move, .setHidden:
+            case .copy, .move, .setHidden, .rename:
                 true
             case .createFolder:
                 false
@@ -475,6 +642,8 @@ final class FileOperationCoordinator {
                 "Create folder"
             case let .setHidden(hidden):
                 hidden ? "Hide folder" : "Unhide folder"
+            case .rename:
+                "Rename item"
             }
         }
 
@@ -492,6 +661,8 @@ final class FileOperationCoordinator {
                 "Creating folder…"
             case let (.setHidden(hidden), _):
                 hidden ? "Hiding folder…" : "Unhiding folder…"
+            case (.rename, _):
+                "Renaming item…"
             }
         }
     }
@@ -505,9 +676,37 @@ final class FileOperationCoordinator {
 
 @MainActor
 struct FileCommandContext {
-    let selectedURLs: [URL]
-    let destinationDirectoryURL: URL?
     let coordinator: FileOperationCoordinator
+
+    private let selectedURLsProvider: () -> [URL]
+    private let destinationDirectoryURLProvider: () -> URL?
+
+    init(
+        selectedURLs: [URL],
+        destinationDirectoryURL: URL?,
+        coordinator: FileOperationCoordinator
+    ) {
+        self.coordinator = coordinator
+        selectedURLsProvider = { selectedURLs }
+        destinationDirectoryURLProvider = { destinationDirectoryURL }
+    }
+
+    init(
+        pane: WorkspacePaneState,
+        coordinator: FileOperationCoordinator
+    ) {
+        self.coordinator = coordinator
+        selectedURLsProvider = { pane.selectedCommandURLs }
+        destinationDirectoryURLProvider = { pane.displayedDirectory }
+    }
+
+    private var selectedURLs: [URL] {
+        selectedURLsProvider()
+    }
+
+    private var destinationDirectoryURL: URL? {
+        destinationDirectoryURLProvider()
+    }
 
     var canCopy: Bool {
         selectedURLs.isEmpty == false
@@ -519,6 +718,10 @@ struct FileCommandContext {
 
     var canPaste: Bool {
         destinationDirectoryURL != nil && coordinator.canPaste
+    }
+
+    var canRename: Bool {
+        selectedURLs.count == 1 && coordinator.isPerforming == false
     }
 
     func copySelection() {
@@ -534,6 +737,11 @@ struct FileCommandContext {
     func paste() {
         guard canPaste else { return }
         coordinator.paste(into: destinationDirectoryURL)
+    }
+
+    func renameSelection() {
+        guard canRename else { return }
+        coordinator.requestRename(selectedURLs.first)
     }
 }
 

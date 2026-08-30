@@ -411,6 +411,58 @@ final class WorkspaceModel {
         targetPane.pendingRevealURL = item.url
     }
 
+    func applyRename(_ result: FileRenameResult) {
+        for pane in panes.values {
+            if let favorite = pane.place.favorite,
+               let relocatedURL = FileURLRelocation.rebase(
+                   favorite.directoryURL,
+                   from: result.sourceURL,
+                   to: result.destinationURL
+               ) {
+                let usedAutomaticTitle = favorite.title
+                    == result.sourceURL.lastPathComponent
+                pane.place = .favorite(
+                    SidebarFavorite(
+                        id: favorite.id,
+                        itemURL: relocatedURL,
+                        isDirectory: favorite.isDirectory,
+                        title: usedAutomaticTitle
+                            ? result.destinationURL.lastPathComponent
+                            : favorite.title
+                    )
+                )
+            } else if pane.place.favorite == nil,
+                      let placeURL = pane.place.url,
+                      let relocatedURL = FileURLRelocation.rebase(
+                          placeURL,
+                          from: result.sourceURL,
+                          to: result.destinationURL
+                      ) {
+                pane.place = .location(
+                    relocatedURL,
+                    title: relocatedURL.lastPathComponent,
+                    systemImage: pane.place.systemImage
+                )
+            }
+
+            pane.navigation.applyRename(result)
+            pane.selectedURL = pane.selectedURL.flatMap { selectedURL in
+                FileURLRelocation.rebase(
+                    selectedURL,
+                    from: result.sourceURL,
+                    to: result.destinationURL
+                ) ?? selectedURL
+            }
+            pane.pendingRevealURL = pane.pendingRevealURL.flatMap { pendingURL in
+                FileURLRelocation.rebase(
+                    pendingURL,
+                    from: result.sourceURL,
+                    to: result.destinationURL
+                ) ?? pendingURL
+            }
+        }
+    }
+
     @discardableResult
     func split(_ direction: WorkspaceSplitDirection) -> UUID? {
         split(paneID: activePaneID, direction: direction)

@@ -39,6 +39,44 @@ struct FileOperationCoordinatorTests {
         #expect(await service.operationCount() == 0)
     }
 
+    @Test("Only the newest file-operation notice may dismiss itself")
+    func transientNoticeReplacementIsRaceSafe() async {
+        let gate = FileOperationNoticeDelayGate()
+        let coordinator = FileOperationCoordinator(
+            service: ScriptedFileOperationService(),
+            noticeDelay: {
+                await gate.suspend()
+                try Task.checkCancellation()
+            }
+        )
+
+        coordinator.copy([URL(filePath: "/tmp/first.txt")])
+        await gate.waitUntilBlockedRequestCount(1)
+        let copiedNoticeID = coordinator.notice?.id
+        #expect(coordinator.notice?.message == "Copied")
+
+        coordinator.cut([URL(filePath: "/tmp/second.txt")])
+        await gate.waitUntilBlockedRequestCount(2)
+        #expect(coordinator.notice?.message == "Cut")
+        #expect(coordinator.notice?.id != copiedNoticeID)
+
+        await gate.resumeRequest(at: 0)
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+        #expect(
+            coordinator.notice?.message == "Cut",
+            "A canceled older dismissal must not erase newer feedback"
+        )
+
+        await gate.resumeRequest(at: 1)
+        for _ in 0..<1_000 {
+            if coordinator.notice == nil { break }
+            await Task.yield()
+        }
+        #expect(coordinator.notice == nil)
+    }
+
     @Test("Hiding a folder refreshes its parent and preserves request intent")
     func hideFolderRefreshesParent() async throws {
         let service = ScriptedFileOperationService()
@@ -61,6 +99,30 @@ struct FileOperationCoordinatorTests {
             ) == 1
         )
         #expect(coordinator.directoryRefreshRevision(for: directoryURL) == 0)
+    }
+
+    @Test("Rename publishes its destination and refreshes only the parent")
+    func renameRefreshesParentAndPublishesResult() async throws {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let sourceURL = URL(filePath: "/tmp/Before.txt")
+        let destinationURL = URL(filePath: "/tmp/After.txt")
+
+        coordinator.requestRename(sourceURL)
+        #expect(coordinator.renameRequest?.sourceURL == sourceURL)
+        #expect(coordinator.rename(sourceURL, to: "After.txt"))
+        #expect(coordinator.renameRequest == nil)
+        #expect(coordinator.statusMessage == "Renaming item…")
+
+        await coordinator.waitForCurrentOperation()
+
+        let request = try #require(await service.renames().first)
+        #expect(request.0 == sourceURL)
+        #expect(request.1 == "After.txt")
+        #expect(coordinator.lastRenameResult?.sourceURL == sourceURL)
+        #expect(coordinator.lastRenameResult?.destinationURL == destinationURL)
+        #expect(coordinator.directoryRefreshRevision(for: URL(filePath: "/tmp")) == 1)
+        #expect(coordinator.notice?.message == "Renamed")
     }
 
     @Test("A file-command cut pastes as a move and consumes the completed cut")
@@ -100,6 +162,36 @@ struct FileOperationCoordinatorTests {
         #expect(coordinator.directoryRefreshRevision(for: destination) == 1)
     }
 
+    @Test("A focused file command resolves selection and destination at action time")
+    func focusedCommandDoesNotPasteIntoAStaleDirectory() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let root = URL(filePath: "/tmp/root", directoryHint: .isDirectory)
+        let destination = root.appending(
+            path: "Destination",
+            directoryHint: .isDirectory
+        )
+        let source = root.appending(path: "Source.txt")
+        let pane = WorkspacePaneState(
+            id: UUID(),
+            place: .favorite(SidebarFavorite(directoryURL: root))
+        )
+        let context = FileCommandContext(
+            pane: pane,
+            coordinator: coordinator
+        )
+
+        pane.selectedURL = source
+        context.copySelection()
+        pane.navigation.open(destination)
+        context.paste()
+        await coordinator.waitForCurrentOperation()
+
+        #expect(coordinator.clipboardURLs == [source])
+        #expect(await service.copyDestinations() == [destination])
+        #expect(coordinator.notice?.message == "Pasted")
+    }
+
     @Test("Copy paste retains the copy clipboard for another destination")
     func copyPasteRetainsClipboard() async {
         let service = ScriptedFileOperationService()
@@ -113,6 +205,7 @@ struct FileOperationCoordinatorTests {
         coordinator.copy([source])
 
         #expect(coordinator.clipboardOperation == .copy)
+        #expect(coordinator.notice?.message == "Copied")
         #expect(coordinator.paste(into: destination))
         await coordinator.waitForCurrentOperation()
 
@@ -121,6 +214,7 @@ struct FileOperationCoordinatorTests {
         #expect(coordinator.clipboardURLs == [source])
         #expect(coordinator.clipboardOperation == .copy)
         #expect(coordinator.canPaste)
+        #expect(coordinator.notice?.message == "Pasted")
     }
 
     @Test("File changes refresh only affected directory rows and recursive ancestors")
@@ -452,6 +546,30 @@ struct FileOperationCoordinatorTests {
     }
 }
 
+private actor FileOperationNoticeDelayGate {
+    private var nextRequestIndex = 0
+    private var continuations: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    func suspend() async {
+        let requestIndex = nextRequestIndex
+        nextRequestIndex += 1
+
+        await withCheckedContinuation { continuation in
+            continuations[requestIndex] = continuation
+        }
+    }
+
+    func waitUntilBlockedRequestCount(_ expectedCount: Int) async {
+        while continuations.count < expectedCount {
+            await Task.yield()
+        }
+    }
+
+    func resumeRequest(at index: Int) {
+        continuations.removeValue(forKey: index)?.resume()
+    }
+}
+
 private enum ScriptedFileOperationError: LocalizedError, Sendable {
     case rejected(String)
 
@@ -471,9 +589,11 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         ScriptedFileOperationError
     >?
     private var copySourceURLs: [URL] = []
+    private var copyDestinationURLs: [URL] = []
     private var moveSourceURLs: [URL] = []
     private var createFolderCount = 0
     private var hiddenRequests: [(URL, Bool)] = []
+    private var renameRequests: [(URL, String)] = []
 
     init(
         copyResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
@@ -508,6 +628,7 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         to destinationDirectoryURL: URL
     ) async throws -> FileOperationOutcome {
         copySourceURLs.append(sourceURL)
+        copyDestinationURLs.append(destinationDirectoryURL)
 
         if copyResults.isEmpty == false {
             return try copyResults.removeFirst().get()
@@ -528,6 +649,19 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         hiddenRequests.append((directoryURL, hidden))
         return FileOperationOutcome(
             destinationURL: directoryURL,
+            didChange: true
+        )
+    }
+
+    func renameItem(
+        at sourceURL: URL,
+        to newName: String
+    ) async throws -> FileOperationOutcome {
+        renameRequests.append((sourceURL, newName))
+        return FileOperationOutcome(
+            destinationURL: sourceURL
+                .deletingLastPathComponent()
+                .appending(path: newName),
             didChange: true
         )
     }
@@ -555,10 +689,15 @@ private actor ScriptedFileOperationService: FileOperationServicing {
             + moveSourceURLs.count
             + createFolderCount
             + hiddenRequests.count
+            + renameRequests.count
     }
 
     func copiedSources() -> [URL] {
         copySourceURLs
+    }
+
+    func copyDestinations() -> [URL] {
+        copyDestinationURLs
     }
 
     func movedSources() -> [URL] {
@@ -567,6 +706,10 @@ private actor ScriptedFileOperationService: FileOperationServicing {
 
     func visibilityRequests() -> [(URL, Bool)] {
         hiddenRequests
+    }
+
+    func renames() -> [(URL, String)] {
+        renameRequests
     }
 }
 
@@ -608,6 +751,18 @@ private actor BlockingFileOperationService: FileOperationServicing {
     ) async throws -> FileOperationOutcome {
         FileOperationOutcome(
             destinationURL: directoryURL,
+            didChange: true
+        )
+    }
+
+    func renameItem(
+        at sourceURL: URL,
+        to newName: String
+    ) async throws -> FileOperationOutcome {
+        FileOperationOutcome(
+            destinationURL: sourceURL
+                .deletingLastPathComponent()
+                .appending(path: newName),
             didChange: true
         )
     }

@@ -8,6 +8,20 @@ import Testing
 @testable import FinallyExplorer
 
 struct FFFSearchEngineTests {
+    @Test("The filesystem root can initialize a global search index")
+    func fileSystemRootCanInitialize() async throws {
+        let root = URL(filePath: "/", directoryHint: .isDirectory)
+        let engine = FFFSearchEngine(rootURL: root)
+
+        do {
+            try await engine.start()
+            await engine.shutdown()
+        } catch {
+            await engine.shutdown()
+            throw error
+        }
+    }
+
     @Test("The native engine searches paths and file contents in every supported mode")
     func nativeSearchRoundTrip() async throws {
         let root = FileManager.default.temporaryDirectory.appending(
@@ -92,6 +106,53 @@ struct FFFSearchEngineTests {
             FFFSearchValueMapper.byteRange(start: .max, end: .max)
                 == Int(UInt32.max)..<Int(UInt32.max)
         )
+    }
+
+    @Test("Broad scan permissions are enabled only for the filesystem and Home roots")
+    func broadScanPermissionsMatchTheSelectedRoot() {
+        let fileSystemRoot = URL(filePath: "/", directoryHint: .isDirectory)
+        let home = URL(
+            filePath: "/Users/example",
+            directoryHint: .isDirectory
+        )
+        let project = home.appending(path: "Projects/App", directoryHint: .isDirectory)
+
+        #expect(
+            FFFRootScanPolicy.allowsFileSystemRootScanning(for: fileSystemRoot)
+        )
+        #expect(
+            FFFRootScanPolicy.allowsHomeDirectoryScanning(
+                for: fileSystemRoot,
+                homeDirectoryURL: home
+            ) == false
+        )
+        #expect(
+            FFFRootScanPolicy.allowsHomeDirectoryScanning(
+                for: home,
+                homeDirectoryURL: home
+            )
+        )
+        #expect(
+            FFFRootScanPolicy.allowsFileSystemRootScanning(for: project) == false
+        )
+        #expect(
+            FFFRootScanPolicy.allowsHomeDirectoryScanning(
+                for: project,
+                homeDirectoryURL: home
+            ) == false
+        )
+    }
+
+    @Test("User-facing native failures hide the internal engine name")
+    func nativeErrorsUseProductLanguage() throws {
+        let error = FFFSearchError.operationFailed(
+            operation: "create a search index",
+            message: "Cannot run certain FFF features here."
+        )
+        let description = try #require(error.errorDescription)
+
+        #expect(description.localizedCaseInsensitiveContains("FFF") == false)
+        #expect(description.localizedCaseInsensitiveContains("search engine"))
     }
 
     @Test("FFF relative paths normalize directories and cannot escape their root")

@@ -8,6 +8,7 @@ import XCTest
 final class FinallyExplorerUITests: XCTestCase {
     private var app: XCUIApplication!
     private var fixtureRootURL: URL!
+    private var mountedVolumeURL: URL!
     private var defaultsSuiteName: String!
 
     override func setUpWithError() throws {
@@ -19,9 +20,18 @@ final class FinallyExplorerUITests: XCTestCase {
                 directoryHint: .isDirectory
             )
         defaultsSuiteName = "FinallyExplorer.UITests.\(UUID().uuidString)"
+        mountedVolumeURL = FileManager.default.temporaryDirectory
+            .appending(
+                path: "FinallyExplorerUITests-USB-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
 
         try FileManager.default.createDirectory(
             at: fixtureRootURL,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: mountedVolumeURL,
             withIntermediateDirectories: true
         )
         try FileManager.default.createDirectory(
@@ -43,7 +53,9 @@ final class FinallyExplorerUITests: XCTestCase {
         app.launchArguments = ["--ui-testing"]
         app.launchEnvironment = [
             "FINALLY_EXPLORER_UI_FIXTURE_ROOT": fixtureRootURL.path(),
+            "FINALLY_EXPLORER_UI_MOUNTED_VOLUME": mountedVolumeURL.path(),
             "FINALLY_EXPLORER_UI_DEFAULTS_SUITE": defaultsSuiteName,
+            "FINALLY_EXPLORER_UI_NEARBY_PEER": "UI Test Mac",
         ]
         app.launch()
     }
@@ -58,9 +70,13 @@ final class FinallyExplorerUITests: XCTestCase {
         if let fixtureRootURL {
             try? FileManager.default.removeItem(at: fixtureRootURL)
         }
+        if let mountedVolumeURL {
+            try? FileManager.default.removeItem(at: mountedVolumeURL)
+        }
 
         app = nil
         fixtureRootURL = nil
+        mountedVolumeURL = nil
         defaultsSuiteName = nil
     }
 
@@ -100,7 +116,11 @@ final class FinallyExplorerUITests: XCTestCase {
         let rightDestinationCell = try XCTUnwrap(containingCell(for: rightDestination))
 
         XCTAssertLessThan(leftSource.frame.midX, rightDestination.frame.midX)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: copiedFileURL.path()))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: copiedFileURL.path(percentEncoded: false)
+            )
+        )
 
         rightDestinationCell
             .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -130,6 +150,50 @@ final class FinallyExplorerUITests: XCTestCase {
             try Data(contentsOf: copiedFileURL),
             try Data(contentsOf: sourceFileURL)
         )
+    }
+
+    func testCopyAndPasteShowTransientBottomFeedback() throws {
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        let destinationRow = rows(named: "Destination").firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+        XCTAssertTrue(destinationRow.waitForExistence(timeout: 5))
+
+        sourceRow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+        ).click()
+        XCTAssertTrue(try XCTUnwrap(containingCell(for: sourceRow)).isSelected)
+
+        try rightClickRow(sourceRow)
+        let copyCommand = sourceRow.menuItems["Copy"]
+        XCTAssertTrue(copyCommand.waitForExistence(timeout: 3))
+        XCTAssertTrue(copyCommand.isEnabled)
+        copyCommand.click()
+
+        let toast = app.descendants(matching: .any)["file-operation-toast"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 5))
+        XCTAssertEqual(toast.value as? String, "Copied")
+        XCTAssertGreaterThan(
+            toast.frame.midY,
+            app.windows.firstMatch.frame.midY,
+            "File-operation feedback must appear in the bottom half of the window"
+        )
+
+        try rightClickRow(destinationRow)
+        let pasteCommand = app.menuItems["Paste Into Folder"]
+        XCTAssertTrue(pasteCommand.waitForExistence(timeout: 3))
+        XCTAssertTrue(pasteCommand.isEnabled)
+        pasteCommand.click()
+
+        XCTAssertTrue(waitForValue("Pasted", on: toast, timeout: 5))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: copiedFileURL.path(percentEncoded: false)
+            ),
+            "Paste feedback must correspond to a completed copy. "
+                + "Destination: \(destinationContents()); "
+                + "fixture root: \(fixtureContents())"
+        )
+        XCTAssertTrue(toast.waitForNonExistence(timeout: 10))
     }
 
     func testSidebarToolbarButtonAlignsWithSidebarAndOmitsRetiredControls() {
@@ -223,6 +287,14 @@ final class FinallyExplorerUITests: XCTestCase {
         searchField.click()
         searchField.typeText("Source")
 
+        let clearSearch = app.buttons["pane-search-clear-button"]
+        XCTAssertTrue(clearSearch.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(
+            clearSearch.frame.midX,
+            searchField.frame.midX,
+            "The clear control must stay at the trailing edge of the search field"
+        )
+
         let searchInLabel = app.staticTexts["Search in"]
         XCTAssertTrue(searchInLabel.waitForExistence(timeout: 5))
         XCTAssertLessThan(
@@ -246,6 +318,10 @@ final class FinallyExplorerUITests: XCTestCase {
             try XCTUnwrap(containingCell(for: matchingRow)).isSelected,
             "Clicking a search result must visibly select its row"
         )
+
+        clearSearch.click()
+        XCTAssertTrue(clearSearch.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(searchField.value as? String, "")
     }
 
     func testFolderCanBeAddedAndRemovedUsingSidebarFavoriteMenu() throws {
@@ -301,6 +377,64 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(done.exists)
         done.click()
         XCTAssertTrue(infoPanel.waitForNonExistence(timeout: 5))
+    }
+
+    func testFileCanBeRenamedFromItsContextMenu() throws {
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+
+        try rightClickRow(sourceRow)
+        let renameCommand = app.menuItems["Rename"]
+        XCTAssertTrue(renameCommand.waitForExistence(timeout: 3))
+        renameCommand.click()
+
+        let nameField = app.textFields["rename-text-field"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.typeKey("a", modifierFlags: .command)
+        nameField.typeText("Renamed Item.txt")
+
+        let confirmButton = app.buttons["rename-confirm-button"]
+        XCTAssertTrue(confirmButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForEnabled(confirmButton, timeout: 3))
+        confirmButton.click()
+
+        XCTAssertTrue(rows(named: "Renamed Item.txt").firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixtureRootURL
+                    .appending(path: "Renamed Item.txt")
+                    .path(percentEncoded: false)
+            )
+        )
+        let toast = app.descendants(matching: .any)["file-operation-toast"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 5))
+        XCTAssertEqual(toast.value as? String, "Renamed")
+    }
+
+    func testMountedUSBVolumeAppearsInLocationsAndCanBeOpened() {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        let identifier = "sidebar-location-\(mountedVolumeURL.path(percentEncoded: false))"
+        let mountedVolume = app.descendants(matching: .any)[identifier]
+
+        XCTAssertTrue(
+            mountedVolume.waitForExistence(timeout: 5),
+            "A mounted Type-C/USB filesystem volume must appear in Locations"
+        )
+        XCTAssertTrue(mountedVolume.label.contains(mountedVolumeURL.lastPathComponent))
+        mountedVolume.click()
+
+        let locationPaths = app.staticTexts.matching(
+            NSPredicate(format: "identifier == %@", "pane-location-path")
+        )
+        XCTAssertTrue(locationPaths.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForLabelSuffix(
+                mountedVolumeURL.path(percentEncoded: false),
+                on: locationPaths.firstMatch,
+                timeout: 5
+            )
+        )
     }
 
     func testFolderCanBeHiddenAndRecovered() throws {
@@ -391,7 +525,7 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
-    func testGlobalSearchOffersFFFGrepModes() {
+    func testGlobalSearchOffersContentModes() {
         XCTAssertTrue(
             rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
         )
@@ -403,18 +537,28 @@ final class FinallyExplorerUITests: XCTestCase {
         globalSearchField.click()
         globalSearchField.typeText("grep-only-phrase")
 
-        let contents = app.descendants(matching: .any)["Contents"]
+        let searchScope = app.radioGroups["global-search-scope-picker"]
+        XCTAssertTrue(searchScope.waitForExistence(timeout: 5))
+        let contents = searchScope.radioButtons["Contents"]
         XCTAssertTrue(contents.waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.staticTexts["Search In"].exists,
+            "The hidden picker label must not collapse into a vertical text column"
+        )
         contents.click()
 
         XCTAssertTrue(
             app.staticTexts["Global Needle Alpha.txt"]
                 .waitForExistence(timeout: 10),
-            "FFF live grep must surface a file whose name does not contain the query"
+            "Content search must surface a file whose name does not contain the query"
         )
-        XCTAssertTrue(app.descendants(matching: .any)["Plain"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["Regex"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["Fuzzy"].exists)
+        let contentModes = app.radioGroups[
+            "global-search-content-mode-picker"
+        ]
+        XCTAssertTrue(contentModes.waitForExistence(timeout: 5))
+        XCTAssertTrue(contentModes.radioButtons["Plain"].exists)
+        XCTAssertTrue(contentModes.radioButtons["Regex"].exists)
+        XCTAssertTrue(contentModes.radioButtons["Fuzzy"].exists)
     }
 
     func testThemePickerAndTerminalChooserAreAvailableFromToolbars() {
@@ -424,6 +568,15 @@ final class FinallyExplorerUITests: XCTestCase {
 
         let themePicker = app.buttons["theme-picker-button"]
         XCTAssertTrue(themePicker.waitForExistence(timeout: 5))
+        let globalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
+        XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(
+            themePicker.frame.minX,
+            globalSearchField.frame.maxX,
+            "The theme button must be a separate toolbar item to the right of search"
+        )
         themePicker.click()
 
         let midnightTheme = app.buttons["theme-choice-midnight"]
@@ -433,12 +586,48 @@ final class FinallyExplorerUITests: XCTestCase {
 
         let terminalButton = app.buttons["pane-terminal-button"]
         XCTAssertTrue(terminalButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForEnabled(terminalButton, timeout: 5))
         terminalButton.click()
         XCTAssertTrue(
             app.staticTexts["Choose an installed terminal for this folder."]
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.checkBoxes["remember-terminal-choice"].exists)
+    }
+
+    func testNearbyTransferPickerAndPairingFlow() throws {
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+        sourceRow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+        ).click()
+        XCTAssertTrue(try XCTUnwrap(containingCell(for: sourceRow)).isSelected)
+
+        let nearbyButton = app.buttons["nearby-transfer-toolbar-button"]
+        XCTAssertTrue(nearbyButton.waitForExistence(timeout: 5))
+        nearbyButton.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["nearby-device-picker"]
+                .waitForExistence(timeout: 5)
+        )
+        let peer = app.buttons[
+            "nearby-peer-8a1660d1-44d5-4b14-bb7b-a4c73916c671"
+        ]
+        XCTAssertTrue(peer.waitForExistence(timeout: 5))
+        XCTAssertTrue(peer.isEnabled)
+        peer.click()
+
+        let pairingCode = app.staticTexts["nearby-pairing-code"]
+        XCTAssertTrue(pairingCode.waitForExistence(timeout: 5))
+        XCTAssertTrue(pairingCode.label.contains("4827"))
+        let confirm = app.buttons["nearby-pairing-confirm-button"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+
+        let toast = app.descendants(matching: .any)["file-operation-toast"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 5))
+        XCTAssertEqual(toast.value as? String, "Sent to UI Test Mac")
     }
 
     private var sourceFileURL: URL {
@@ -511,7 +700,7 @@ final class FinallyExplorerUITests: XCTestCase {
         at url: URL,
         timeout: TimeInterval
     ) -> Bool {
-        let path = url.path()
+        let path = url.path(percentEncoded: false)
         let predicate = NSPredicate { object, _ in
             guard let path = object as? NSString else { return false }
             let refreshedURL = URL(
@@ -541,6 +730,19 @@ final class FinallyExplorerUITests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
+    private func waitForLabelSuffix(
+        _ suffix: String,
+        on element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate(format: "label ENDSWITH %@", suffix)
+        let expectation = XCTNSPredicateExpectation(
+            predicate: predicate,
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
     private func waitForSelectedStatus(
         _ expectedStatus: Bool,
         on element: XCUIElement,
@@ -548,6 +750,20 @@ final class FinallyExplorerUITests: XCTestCase {
     ) -> Bool {
         let predicate = NSPredicate { object, _ in
             (object as? XCUIElement)?.isSelected == expectedStatus
+        }
+        let expectation = XCTNSPredicateExpectation(
+            predicate: predicate,
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForEnabled(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate { object, _ in
+            (object as? XCUIElement)?.isEnabled == true
         }
         let expectation = XCTNSPredicateExpectation(
             predicate: predicate,
@@ -565,6 +781,13 @@ final class FinallyExplorerUITests: XCTestCase {
     private func destinationContents() -> [String] {
         (try? FileManager.default.contentsOfDirectory(
             at: destinationFolderURL,
+            includingPropertiesForKeys: nil
+        ).map(\.lastPathComponent).sorted()) ?? []
+    }
+
+    private func fixtureContents() -> [String] {
+        (try? FileManager.default.contentsOfDirectory(
+            at: fixtureRootURL,
             includingPropertiesForKeys: nil
         ).map(\.lastPathComponent).sorted()) ?? []
     }

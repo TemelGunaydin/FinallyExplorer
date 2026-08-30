@@ -260,6 +260,39 @@ struct ExplorerSearchModelTests {
     }
 
     @MainActor
+    @Test("Clearing a pane search invalidates an in-flight request immediately")
+    func clearInvalidatesPendingSearch() async throws {
+        let root = try makeExplorerSearchTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try Data("marker".utf8).write(to: root.appending(path: "Marker.txt"))
+        let gate = SearchDebounceGate()
+        let model = ExplorerSearchModel {
+            await gate.suspend()
+        }
+
+        model.query = "Marker"
+        let pendingSearch = Task { await model.search(in: root) }
+        await gate.waitUntilBlockedRequestCount(1)
+        #expect(model.isSearching)
+
+        model.clear()
+        #expect(model.query.isEmpty)
+        #expect(model.results.isEmpty)
+        #expect(model.isSearching == false)
+        #expect(model.errorMessage == nil)
+
+        await gate.resumeRequest(at: 0)
+        await pendingSearch.value
+        #expect(model.query.isEmpty)
+        #expect(model.results.isEmpty)
+        #expect(model.isSearching == false)
+        #expect(model.errorMessage == nil)
+
+        await model.shutdown()
+    }
+
+    @MainActor
     @Test("A remote-host file URL cannot alias an existing local search root")
     func rejectsRemoteFileHostBeforeIndexing() async throws {
         let root = try makeExplorerSearchTemporaryDirectory()

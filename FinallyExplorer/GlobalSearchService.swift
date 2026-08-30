@@ -123,7 +123,7 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
             }
             if let regexFallbackError = page.regexFallbackError {
                 notices.append(
-                    "The regex was invalid (\(regexFallbackError)); FFF searched for it literally."
+                    "The regex was invalid (\(regexFallbackError)); it was searched for literally."
                 )
             }
 

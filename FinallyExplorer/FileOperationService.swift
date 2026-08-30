@@ -59,6 +59,10 @@ nonisolated struct FileOperationOutcome: Equatable, Sendable {
 nonisolated protocol FileOperationServicing: Sendable {
     func createFolder(in destinationDirectoryURL: URL) async throws -> FileOperationOutcome
     func setHidden(_ hidden: Bool, for directoryURL: URL) async throws -> FileOperationOutcome
+    func renameItem(
+        at sourceURL: URL,
+        to newName: String
+    ) async throws -> FileOperationOutcome
     func copyItem(
         at sourceURL: URL,
         to destinationDirectoryURL: URL
@@ -79,8 +83,11 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
     case cannotPlaceDirectoryInsideItself(sourcePath: String, destinationPath: String)
     case sourceIsNotDirectory(path: String)
     case cannotUnhideDotPrefixedDirectory(path: String)
+    case cannotRenameFileSystemRoot
+    case invalidName(reason: String)
     case visibilityChangeFailed(path: String, hidden: Bool, reason: String)
     case createFolderFailed(destinationPath: String, reason: String)
+    case renameFailed(sourcePath: String, destinationPath: String, reason: String)
     case copyFailed(sourcePath: String, destinationPath: String, reason: String)
     case moveFailed(sourcePath: String, destinationPath: String, reason: String)
 
@@ -104,10 +111,16 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
             "Only folders can be hidden with this command.\n\nPath: \(path)"
         case let .cannotUnhideDotPrefixedDirectory(path):
             "This folder stays hidden because its name begins with a period. Rename it before turning off its hidden status.\n\nPath: \(path)"
+        case .cannotRenameFileSystemRoot:
+            "The file-system root cannot be renamed."
+        case let .invalidName(reason):
+            "Unable to use that name: \(reason)"
         case let .visibilityChangeFailed(path, hidden, reason):
             "Unable to \(hidden ? "hide" : "unhide") the folder: \(reason)\n\nPath: \(path)"
         case let .createFolderFailed(destinationPath, reason):
             "Unable to create the folder: \(reason)\n\nPath: \(destinationPath)"
+        case let .renameFailed(sourcePath, destinationPath, reason):
+            "Unable to rename the item: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
         case let .copyFailed(sourcePath, destinationPath, reason):
             "Unable to copy the item: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
         case let .moveFailed(sourcePath, destinationPath, reason):
@@ -195,6 +208,99 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
 
         return FileOperationOutcome(
             destinationURL: directoryURL,
+            didChange: true
+        )
+    }
+
+    /// Renames one local item in place without replacing another directory entry.
+    @concurrent
+    func renameItem(
+        at sourceURL: URL,
+        to newName: String
+    ) async throws -> FileOperationOutcome {
+        try Task.checkCancellation()
+        guard Self.isLocalFileURL(sourceURL) else {
+            throw FileOperationError.sourceMustBeFileURL(
+                value: sourceURL.absoluteString
+            )
+        }
+
+        let sourceURL = sourceURL.standardizedFileURL
+        let parentURL = sourceURL.deletingLastPathComponent().standardizedFileURL
+        guard sourceURL != parentURL else {
+            throw FileOperationError.cannotRenameFileSystemRoot
+        }
+
+        let fileManager = FileManager()
+        guard let sourceAttributes = try? fileManager.attributesOfItem(
+            atPath: sourceURL.path
+        ) else {
+            throw FileOperationError.sourceNotFound(path: sourceURL.path)
+        }
+
+        do {
+            try FileRenameNameValidator.validate(
+                newName,
+                maximumUTF8Length: Self.maximumFileNameLength(in: parentURL)
+            )
+        } catch {
+            throw FileOperationError.invalidName(
+                reason: error.localizedDescription
+            )
+        }
+
+        guard newName != sourceURL.lastPathComponent else {
+            return FileOperationOutcome(
+                destinationURL: sourceURL,
+                didChange: false
+            )
+        }
+
+        let sourceIsDirectory = sourceAttributes[.type] as? FileAttributeType
+            == .typeDirectory
+        let destinationURL = parentURL.appending(
+            path: newName,
+            directoryHint: sourceIsDirectory ? .isDirectory : .notDirectory
+        )
+
+        try Task.checkCancellation()
+
+        do {
+            if Self.itemExists(at: destinationURL, fileManager: fileManager) {
+                guard Self.sameDirectoryEntry(sourceURL, destinationURL) else {
+                    throw FileOperationError.destinationAlreadyExists(
+                        path: destinationURL.path
+                    )
+                }
+
+                try Self.renameCaseOnly(
+                    sourceURL: sourceURL,
+                    destinationURL: destinationURL,
+                    parentURL: parentURL,
+                    fileManager: fileManager
+                )
+            } else {
+                try Self.moveItemExclusively(
+                    at: sourceURL,
+                    to: destinationURL
+                )
+            }
+        } catch let error as FileOperationError {
+            throw error
+        } catch let error where Self.isDestinationCollision(error) {
+            throw FileOperationError.destinationAlreadyExists(
+                path: destinationURL.path
+            )
+        } catch {
+            throw FileOperationError.renameFailed(
+                sourcePath: sourceURL.path,
+                destinationPath: destinationURL.path,
+                reason: error.localizedDescription
+            )
+        }
+
+        return FileOperationOutcome(
+            destinationURL: destinationURL,
             didChange: true
         )
     }
@@ -604,6 +710,76 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
         fileManager: FileManager
     ) -> Bool {
         (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    /// Compares directory entries without following symbolic links. This is
+    /// required for case-only renames on case-insensitive volumes, where the
+    /// destination spelling already resolves to the source entry.
+    private static func sameDirectoryEntry(_ lhs: URL, _ rhs: URL) -> Bool {
+        var lhsStatus = stat()
+        var rhsStatus = stat()
+
+        let lhsResult = lhs.path.withCString { lstat($0, &lhsStatus) }
+        let rhsResult = rhs.path.withCString { lstat($0, &rhsStatus) }
+
+        return lhsResult == 0
+            && rhsResult == 0
+            && lhsStatus.st_dev == rhsStatus.st_dev
+            && lhsStatus.st_ino == rhsStatus.st_ino
+    }
+
+    /// A case-only rename needs an intermediate directory entry on the usual
+    /// case-insensitive macOS volumes. Both moves are exclusive, so neither
+    /// step can replace another item created by a racing process.
+    private static func renameCaseOnly(
+        sourceURL: URL,
+        destinationURL: URL,
+        parentURL: URL,
+        fileManager: FileManager
+    ) throws {
+        let stagingURL = Self.uniqueRenameStagingURL(
+            in: parentURL,
+            fileManager: fileManager
+        )
+
+        try Self.moveItemExclusively(at: sourceURL, to: stagingURL)
+
+        do {
+            try Self.moveItemExclusively(at: stagingURL, to: destinationURL)
+        } catch {
+            do {
+                try Self.moveItemExclusively(at: stagingURL, to: sourceURL)
+            } catch let rollbackError {
+                throw NSError(
+                    domain: "FinallyExplorer.FileRename",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "The rename failed and the original name could not be restored. "
+                            + "The item remains at \(stagingURL.path). "
+                            + "Rename error: \(error.localizedDescription). "
+                            + "Restore error: \(rollbackError.localizedDescription).",
+                        NSFilePathErrorKey: stagingURL.path,
+                    ]
+                )
+            }
+
+            throw error
+        }
+    }
+
+    private static func uniqueRenameStagingURL(
+        in parentURL: URL,
+        fileManager: FileManager
+    ) -> URL {
+        while true {
+            let candidateURL = parentURL.appending(
+                path: ".finallyexplorer-rename-\(UUID().uuidString)"
+            )
+            if Self.itemExists(at: candidateURL, fileManager: fileManager) == false {
+                return candidateURL
+            }
+        }
     }
 
     private static func isDestinationCollision(_ error: any Error) -> Bool {

@@ -116,7 +116,8 @@ private struct GlobalSearchResultsPopover: View {
             Divider()
                 .overlay(theme.divider)
 
-            if let message = model.message {
+            if let message = model.message,
+               message.isError == false || model.results.isEmpty == false {
                 GlobalSearchMessageBanner(message: message)
             }
 
@@ -125,7 +126,6 @@ private struct GlobalSearchResultsPopover: View {
         }
         .frame(width: 680, height: 470)
         .background(theme.panel)
-        .accessibilityIdentifier("global-search-results")
     }
 
     @ViewBuilder
@@ -187,7 +187,9 @@ private struct GlobalSearchScopeBar: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .frame(width: 180)
+            .accessibilityIdentifier("global-search-scope-picker")
 
             if scope == .contents {
                 Picker("Content Match", selection: $contentMode) {
@@ -196,7 +198,9 @@ private struct GlobalSearchScopeBar: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .frame(width: 230)
+                .accessibilityIdentifier("global-search-content-mode-picker")
             }
 
             Spacer(minLength: 8)

@@ -176,7 +176,7 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
     private enum Storage: Hashable, Sendable {
         case builtIn(SidebarBuiltInPlace)
         case favorite(SidebarFavorite)
-        case location(url: URL, title: String)
+        case location(url: URL, title: String, systemImage: String)
     }
 
     private let storage: Storage
@@ -203,7 +203,11 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
         Self(storage: .favorite(favorite))
     }
 
-    static func location(_ directoryURL: URL, title: String? = nil) -> Self {
+    static func location(
+        _ directoryURL: URL,
+        title: String? = nil,
+        systemImage: String = "folder"
+    ) -> Self {
         let normalizedURL = directoryURL.standardizedFileURL
         let defaultTitle = normalizedURL.lastPathComponent.isEmpty
             ? normalizedURL.path(percentEncoded: false)
@@ -211,7 +215,8 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
         return Self(
             storage: .location(
                 url: normalizedURL,
-                title: title ?? defaultTitle
+                title: title ?? defaultTitle,
+                systemImage: systemImage
             )
         )
     }
@@ -222,7 +227,7 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             .builtIn(place)
         case let .favorite(favorite):
             .favorite(favorite.id)
-        case let .location(url, _):
+        case let .location(url, _, _):
             .location(url)
         }
     }
@@ -233,7 +238,7 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             place.title
         case let .favorite(favorite):
             favorite.title
-        case let .location(_, title):
+        case let .location(_, title, _):
             title
         }
     }
@@ -244,8 +249,8 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             place.systemImage
         case let .favorite(favorite):
             favorite.isDirectory ? "folder" : "doc"
-        case .location:
-            "folder"
+        case let .location(_, _, systemImage):
+            systemImage
         }
     }
 
@@ -264,7 +269,7 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
             place.url
         case let .favorite(favorite):
             favorite.directoryURL
-        case let .location(url, _):
+        case let .location(url, _, _):
             url
         }
     }
@@ -321,15 +326,20 @@ struct UserDefaultsSidebarFavoriteStore: SidebarFavoriteStoring {
 @Observable
 final class SidebarModel {
     private(set) var favorites: [SidebarFavorite]
+    let mountedVolumeMonitor: MountedVolumeMonitor
 
     @ObservationIgnored private let store: any SidebarFavoriteStoring
     private static let builtInURLs = Set(
         SidebarBuiltInPlace.allCases.compactMap(\.url).map(normalizedURL)
     )
 
-    init(store: (any SidebarFavoriteStoring)? = nil) {
+    init(
+        store: (any SidebarFavoriteStoring)? = nil,
+        mountedVolumeMonitor: MountedVolumeMonitor? = nil
+    ) {
         let store = store ?? UserDefaultsSidebarFavoriteStore()
         self.store = store
+        self.mountedVolumeMonitor = mountedVolumeMonitor ?? MountedVolumeMonitor()
 
         let loadedFavorites = store.loadFavorites()
         let sanitizedFavorites = Self.sanitizedFavorites(loadedFavorites)
@@ -341,7 +351,13 @@ final class SidebarModel {
     }
 
     var allPlaces: [SidebarPlace] {
-        SidebarPlace.standardPlaces + favorites.map(SidebarPlace.favorite)
+        SidebarPlace.standardPlaces
+            + favorites.map(SidebarPlace.favorite)
+            + mountedVolumePlaces
+    }
+
+    var mountedVolumePlaces: [SidebarPlace] {
+        mountedVolumeMonitor.volumes.map(\.sidebarPlace)
     }
 
     func favorite(for itemURL: URL) -> SidebarFavorite? {
@@ -412,6 +428,36 @@ final class SidebarModel {
 
         favorites.remove(at: index)
         store.saveFavorites(favorites)
+    }
+
+    func applyRename(_ result: FileRenameResult) {
+        var didChange = false
+
+        favorites = favorites.map { favorite in
+            guard let relocatedURL = FileURLRelocation.rebase(
+                favorite.directoryURL,
+                from: result.sourceURL,
+                to: result.destinationURL
+            ) else {
+                return favorite
+            }
+
+            didChange = true
+            let usedAutomaticTitle = favorite.title
+                == result.sourceURL.lastPathComponent
+            return SidebarFavorite(
+                id: favorite.id,
+                itemURL: relocatedURL,
+                isDirectory: favorite.isDirectory,
+                title: usedAutomaticTitle
+                    ? result.destinationURL.lastPathComponent
+                    : favorite.title
+            )
+        }
+
+        if didChange {
+            store.saveFavorites(favorites)
+        }
     }
 
     private static func sanitizedFavorites(

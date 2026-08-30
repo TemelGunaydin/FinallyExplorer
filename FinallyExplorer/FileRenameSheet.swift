@@ -1,0 +1,83 @@
+//
+//  FileRenameSheet.swift
+//  FinallyExplorer
+//
+
+import SwiftUI
+
+struct FileRenameSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.explorerTheme) private var theme
+    @FocusState private var isNameFocused: Bool
+
+    let request: FileRenameRequest
+    let coordinator: FileOperationCoordinator
+
+    @State private var name: String
+
+    init(
+        request: FileRenameRequest,
+        coordinator: FileOperationCoordinator
+    ) {
+        self.request = request
+        self.coordinator = coordinator
+        _name = State(initialValue: request.originalName)
+    }
+
+    private var validationMessage: String? {
+        FileRenameNameValidator.validationMessage(for: name)
+    }
+
+    private var canSubmit: Bool {
+        validationMessage == nil
+            && name != request.originalName
+            && coordinator.isPerforming == false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Rename Item")
+                .font(ExplorerTheme.paneTitleFont)
+                .foregroundStyle(theme.textPrimary)
+
+            TextField("Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .focused($isNameFocused)
+                .onSubmit(submit)
+                .accessibilityIdentifier("rename-text-field")
+
+            if let validationMessage {
+                Label(validationMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(theme.accent)
+            }
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", role: .cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+
+                Button("Rename", action: submit)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(canSubmit == false)
+                    .accessibilityIdentifier("rename-confirm-button")
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .background(theme.elevatedPanel)
+        .task {
+            isNameFocused = true
+        }
+    }
+
+    private func submit() {
+        guard canSubmit,
+              coordinator.rename(request.sourceURL, to: name) else {
+            return
+        }
+
+        dismiss()
+    }
+}

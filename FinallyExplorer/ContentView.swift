@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var workspace = WorkspaceModel()
     @State private var fileOperations = FileOperationCoordinator()
     @State private var terminalApplications = TerminalApplicationCoordinator()
+    @State private var nearbyTransfers = NearbyTransferCoordinator()
     @State private var sidebar = SidebarModel()
     @State private var themeController = ExplorerThemeController()
     @State private var globalSearch = GlobalSearchModel()
@@ -36,6 +37,7 @@ struct ContentView: View {
         workspace: WorkspaceModel,
         fileOperations: FileOperationCoordinator,
         terminalApplications: TerminalApplicationCoordinator,
+        nearbyTransfers: NearbyTransferCoordinator? = nil,
         sidebar: SidebarModel? = nil,
         themeController: ExplorerThemeController? = nil,
         globalSearch: GlobalSearchModel? = nil,
@@ -48,6 +50,9 @@ struct ContentView: View {
         _workspace = State(initialValue: workspace)
         _fileOperations = State(initialValue: fileOperations)
         _terminalApplications = State(initialValue: terminalApplications)
+        if let nearbyTransfers {
+            _nearbyTransfers = State(initialValue: nearbyTransfers)
+        }
 
         if let sidebar {
             _sidebar = State(initialValue: sidebar)
@@ -80,16 +85,13 @@ struct ContentView: View {
     private var fileCommandContext: FileCommandContext? {
         guard let pane = workspace.activePane else { return nil }
 
-        return FileCommandContext(
-            selectedURLs: pane.selectedCommandURLs,
-            destinationDirectoryURL: pane.displayedDirectory,
-            coordinator: fileOperations
-        )
+        return FileCommandContext(pane: pane, coordinator: fileOperations)
     }
 
     var body: some View {
         @Bindable var fileOperations = fileOperations
         @Bindable var terminalApplications = terminalApplications
+        @Bindable var nearbyTransfers = nearbyTransfers
         let theme = themeController.activeTheme
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -107,32 +109,55 @@ struct ContentView: View {
                 )
 
                 if workspace.paneCount == 1 {
-                    Divider()
-                        .overlay(theme.divider)
-                        .frame(width: isPreviewVisible ? 1 : 0)
-                        .opacity(isPreviewVisible ? 1 : 0)
-
                     inspectorContent
-                        .frame(width: isPreviewVisible ? 340 : 0)
-                        .frame(maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(theme.inspector)
-                        .clipped()
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: 18,
+                                style: .continuous
+                            )
+                        )
+                        .overlay {
+                            RoundedRectangle(
+                                cornerRadius: 18,
+                                style: .continuous
+                            )
+                            .stroke(theme.divider, lineWidth: 0.75)
+                        }
+                        .padding(6)
+                        .frame(width: isPreviewVisible ? 340 : 0)
                         .opacity(isPreviewVisible ? 1 : 0)
                         .allowsHitTesting(isPreviewVisible)
+                        .accessibilityIdentifier("preview-inspector")
                 }
             }
             .background(theme.canvas)
-            .overlay(alignment: .topLeading) {
-                TopLeadingCornerCutout(radius: 18)
-                    .fill(theme.sidebarBackground)
-                    .frame(width: 18, height: 18)
-                    .allowsHitTesting(false)
-            }
+            .clipShape(.rect(topLeadingRadius: 18))
             .transaction { transaction in
                 transaction.animation = nil
             }
         }
         .background(theme.sidebarBackground)
+        .overlay(alignment: .bottom) {
+            if let notice = fileOperations.notice {
+                FileOperationToastView(notice: notice)
+                    .id(notice.id)
+                    .padding(.bottom, 22)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let progress = nearbyTransfers.progress {
+                NearbyTransferActivityView(
+                    progress: progress,
+                    onCancel: nearbyTransfers.cancelActiveTransfer
+                )
+                .padding(.trailing, 22)
+                .padding(.bottom, 22)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: fileOperations.notice?.id)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(
@@ -145,18 +170,20 @@ struct ContentView: View {
                 .help("Show or hide the sidebar")
                 .accessibilityIdentifier("window-sidebar-toggle")
             }
+            .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 8) {
-                    GlobalSearchToolbar(
-                        model: globalSearch,
-                        rootURL: globalSearchRootURL,
-                        onReveal: revealGlobalSearchResult
-                    )
-
-                    ExplorerThemePicker(controller: themeController)
-                }
+                GlobalSearchToolbar(
+                    model: globalSearch,
+                    rootURL: globalSearchRootURL,
+                    onReveal: revealGlobalSearchResult
+                )
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                ExplorerThemePicker(controller: themeController)
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         .toolbarBackground(theme.windowChrome, for: .windowToolbar)
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
@@ -167,6 +194,7 @@ struct ContentView: View {
         .environment(\.explorerTheme, theme)
         .environment(fileOperations)
         .environment(terminalApplications)
+        .environment(nearbyTransfers)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
         .onChange(of: scenePhase, initial: true) {
             guard scenePhase == .active else { return }
@@ -175,6 +203,35 @@ struct ContentView: View {
         .onChange(of: focusedPaneID) {
             guard let focusedPaneID else { return }
             workspace.activate(focusedPaneID)
+        }
+        .onChange(of: fileOperations.lastRenameResult) {
+            guard let result = fileOperations.lastRenameResult else { return }
+            sidebar.applyRename(result)
+            workspace.applyRename(result)
+        }
+        .onChange(of: nearbyTransfers.lastCompletion) {
+            guard let completion = nearbyTransfers.lastCompletion else { return }
+            Task {
+                switch completion.direction {
+                case .received:
+                    if let destination = completion.destinationDirectoryURL {
+                        await fileOperations.recordExternalChange(
+                            directlyAffecting: destination,
+                            message: completion.itemCount == 1
+                                ? "Received from \(completion.peerName)"
+                                : "Received \(completion.itemCount) items from \(completion.peerName)",
+                            systemImage: "arrow.down.circle.fill"
+                        )
+                    }
+                case .sent:
+                    fileOperations.presentExternalNotice(
+                        message: completion.itemCount == 1
+                            ? "Sent to \(completion.peerName)"
+                            : "Sent \(completion.itemCount) items to \(completion.peerName)",
+                        systemImage: "arrow.up.circle.fill"
+                    )
+                }
+            }
         }
         .alert("File Operation Failed", isPresented: $fileOperations.isErrorPresented) {
             Button("OK", role: .cancel) {}
@@ -188,6 +245,32 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(terminalApplications.errorMessage)
+        }
+        .alert("Nearby Transfer Failed", isPresented: $nearbyTransfers.isErrorPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(nearbyTransfers.errorMessage)
+        }
+        .sheet(item: $fileOperations.renameRequest) { request in
+            FileRenameSheet(
+                request: request,
+                coordinator: fileOperations
+            )
+            .environment(\.explorerTheme, theme)
+        }
+        .sheet(item: $nearbyTransfers.presentation) { presentation in
+            NearbyTransferSheet(
+                presentation: presentation,
+                coordinator: nearbyTransfers,
+                defaultDestinationURL: workspace.activePane?.displayedDirectory
+                    ?? FileManager.default.urls(
+                        for: .downloadsDirectory,
+                        in: .userDomainMask
+                    ).first
+                    ?? URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory)
+            )
+            .environment(\.explorerTheme, theme)
+            .interactiveDismissDisabled()
         }
     }
 
@@ -233,6 +316,10 @@ struct ContentView: View {
                 ForEach(SidebarBuiltInPlace.locationPlaces) { place in
                     sidebarRow(.builtIn(place))
                 }
+
+                ForEach(sidebar.mountedVolumePlaces) { place in
+                    sidebarRow(place)
+                }
             } header: {
                 sidebarSectionHeader("Locations")
             }
@@ -240,7 +327,7 @@ struct ContentView: View {
         .listStyle(.sidebar)
         .headerProminence(.increased)
         .scrollContentBackground(.hidden)
-        .background(themeController.activeTheme.sidebarBackground)
+        .background(Color.clear)
         .safeAreaInset(edge: .bottom) {
             Button {
                 isSidebarFolderPickerPresented = true
@@ -251,7 +338,7 @@ struct ContentView: View {
             .help("Add Folder to Sidebar")
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(themeController.activeTheme.sidebarFooter)
+            .background(Color.clear)
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(themeController.activeTheme.chromeDivider)
@@ -276,17 +363,13 @@ struct ContentView: View {
     @ViewBuilder
     private func sidebarRow(_ place: SidebarPlace) -> some View {
         Label(place.title, systemImage: place.systemImage)
-            .font(ExplorerTheme.navigationFont)
+            .font(ExplorerTheme.sidebarNavigationFont)
             .labelStyle(ExplorerSidebarLabelStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
             .contentShape(Rectangle())
             .tag(place)
-            .accessibilityIdentifier(
-                place.favorite.map {
-                    "sidebar-favorite-\($0.id.uuidString)"
-                } ?? "sidebar-built-in-\(place.title)"
-            )
+            .accessibilityIdentifier(sidebarIdentifier(for: place))
             .internalFolderDropTarget(
                 destinationDirectoryURL: place.isDirectory ? place.url : nil,
                 paneID: workspace.activePaneID,
@@ -303,6 +386,17 @@ struct ContentView: View {
                     }
                 }
             }
+    }
+
+    private func sidebarIdentifier(for place: SidebarPlace) -> String {
+        switch place.id {
+        case let .builtIn(builtInPlace):
+            "sidebar-built-in-\(builtInPlace.rawValue)"
+        case let .favorite(identifier):
+            "sidebar-favorite-\(identifier.uuidString)"
+        case let .location(url):
+            "sidebar-location-\(url.path(percentEncoded: false))"
+        }
     }
 
     private func sidebarSectionHeader(_ title: String) -> some View {
@@ -332,32 +426,6 @@ struct ContentView: View {
         } else {
             EmptyPreviewInspector()
         }
-    }
-}
-
-private struct TopLeadingCornerCutout: Shape {
-    let radius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let resolvedRadius = min(radius, rect.width, rect.height)
-        let arcControlOffset = resolvedRadius * 0.552_284_75
-        var path = Path()
-
-        path.move(to: .zero)
-        path.addLine(to: CGPoint(x: resolvedRadius, y: 0))
-        path.addCurve(
-            to: CGPoint(x: 0, y: resolvedRadius),
-            control1: CGPoint(
-                x: resolvedRadius - arcControlOffset,
-                y: 0
-            ),
-            control2: CGPoint(
-                x: 0,
-                y: resolvedRadius - arcControlOffset
-            )
-        )
-        path.closeSubpath()
-        return path
     }
 }
 
@@ -481,11 +549,7 @@ private struct DestinationView: View {
     }
 
     private var fileCommandContext: FileCommandContext {
-        FileCommandContext(
-            selectedURLs: pane.selectedCommandURLs,
-            destinationDirectoryURL: pane.displayedDirectory,
-            coordinator: fileOperations
-        )
+        FileCommandContext(pane: pane, coordinator: fileOperations)
     }
 
     var body: some View {
@@ -692,6 +756,8 @@ private struct DestinationView: View {
 
                 TerminalToolbarButton(directoryURL: pane.displayedDirectory)
 
+                NearbyTransferToolbarButton(sourceURLs: pane.selectedCommandURLs)
+
                 Button("Split Right", systemImage: "rectangle.split.2x1") {
                     _ = workspace.split(paneID: pane.id, direction: .right)
                 }
@@ -782,6 +848,19 @@ private struct DestinationView: View {
                     .textFieldStyle(.plain)
                     .accessibilityLabel("Search in \(pane.place.title)")
                     .accessibilityIdentifier("pane-search-field")
+
+                if searchModel.isSearchActive {
+                    Button(
+                        "Clear Search",
+                        systemImage: "xmark.circle.fill",
+                        action: searchModel.clear
+                    )
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.textSecondary)
+                    .help("Clear this folder search")
+                    .accessibilityIdentifier("pane-search-clear-button")
+                }
             }
                 .padding(.horizontal, 12)
                 .frame(height: 38)
