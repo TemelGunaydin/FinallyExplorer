@@ -108,11 +108,56 @@ nonisolated struct SidebarFavorite: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     let directoryURL: URL
     let title: String
+    let isDirectory: Bool
 
     init(id: UUID = UUID(), directoryURL: URL, title: String? = nil) {
+        self.init(
+            id: id,
+            itemURL: directoryURL,
+            isDirectory: true,
+            title: title
+        )
+    }
+
+    init(
+        id: UUID = UUID(),
+        itemURL: URL,
+        isDirectory: Bool,
+        title: String? = nil
+    ) {
         self.id = id
-        self.directoryURL = directoryURL.standardizedFileURL
-        self.title = title ?? Self.defaultTitle(for: directoryURL)
+        directoryURL = itemURL.standardizedFileURL
+        self.title = title ?? Self.defaultTitle(for: itemURL)
+        self.isDirectory = isDirectory
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case directoryURL
+        case title
+        case isDirectory
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        directoryURL = try container.decode(URL.self, forKey: .directoryURL)
+            .standardizedFileURL
+        title = try container.decode(String.self, forKey: .title)
+
+        // Favorites created before file pinning was introduced were folders.
+        isDirectory = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .isDirectory
+        ) ?? true
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(directoryURL, forKey: .directoryURL)
+        try container.encode(title, forKey: .title)
+        try container.encode(isDirectory, forKey: .isDirectory)
     }
 
     private static func defaultTitle(for url: URL) -> String {
@@ -178,8 +223,17 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
         switch storage {
         case let .builtIn(place):
             place.systemImage
-        case .favorite:
-            "folder"
+        case let .favorite(favorite):
+            favorite.isDirectory ? "folder" : "doc"
+        }
+    }
+
+    var isDirectory: Bool {
+        switch storage {
+        case .builtIn:
+            true
+        case let .favorite(favorite):
+            favorite.isDirectory
         }
     }
 
@@ -195,6 +249,21 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
     var favorite: SidebarFavorite? {
         guard case let .favorite(favorite) = storage else { return nil }
         return favorite
+    }
+}
+
+nonisolated enum SidebarFavoriteStatus: Equatable, Sendable {
+    case custom(SidebarFavorite)
+    case builtIn
+    case available
+
+    var isFavorite: Bool {
+        switch self {
+        case .custom, .builtIn:
+            true
+        case .available:
+            false
+        }
     }
 }
 
@@ -231,6 +300,9 @@ final class SidebarModel {
     private(set) var favorites: [SidebarFavorite]
 
     @ObservationIgnored private let store: any SidebarFavoriteStoring
+    private static let builtInURLs = Set(
+        SidebarBuiltInPlace.allCases.compactMap(\.url).map(normalizedURL)
+    )
 
     init(store: (any SidebarFavoriteStoring)? = nil) {
         let store = store ?? UserDefaultsSidebarFavoriteStore()
@@ -249,33 +321,62 @@ final class SidebarModel {
         SidebarPlace.standardPlaces + favorites.map(SidebarPlace.favorite)
     }
 
-    func favorite(for directoryURL: URL) -> SidebarFavorite? {
-        let normalizedURL = Self.normalizedURL(directoryURL)
+    func favorite(for itemURL: URL) -> SidebarFavorite? {
+        let normalizedURL = Self.normalizedURL(itemURL)
         return favorites.first { $0.directoryURL == normalizedURL }
     }
 
+    func isFavorite(_ itemURL: URL) -> Bool {
+        favoriteStatus(for: itemURL).isFavorite
+    }
+
+    func favoriteStatus(for itemURL: URL) -> SidebarFavoriteStatus {
+        let normalizedURL = Self.normalizedURL(itemURL)
+        if let favorite = favorites.first(where: {
+            $0.directoryURL == normalizedURL
+        }) {
+            return .custom(favorite)
+        }
+        return Self.isBuiltIn(normalizedURL) ? .builtIn : .available
+    }
+
     func canAdd(directoryURL: URL) -> Bool {
-        guard let directoryURL = Self.existingDirectoryURL(directoryURL) else {
+        canAdd(itemURL: directoryURL, isDirectory: true)
+    }
+
+    func canAdd(itemURL: URL, isDirectory: Bool) -> Bool {
+        guard let item = Self.existingItem(itemURL),
+              item.isDirectory == isDirectory else {
             return false
         }
 
-        return Self.isBuiltIn(directoryURL) == false
-            && favorite(for: directoryURL) == nil
+        return (isDirectory == false || Self.isBuiltIn(item.url) == false)
+            && favorite(for: item.url) == nil
     }
 
     /// Adds a local folder to the sidebar, or returns its existing favorite.
     @discardableResult
     func add(directoryURL: URL) -> SidebarFavorite? {
-        guard let directoryURL = Self.existingDirectoryURL(directoryURL),
-              Self.isBuiltIn(directoryURL) == false else {
+        add(itemURL: directoryURL, isDirectory: true)
+    }
+
+    /// Pins a local file or folder, or returns its existing favorite.
+    @discardableResult
+    func add(itemURL: URL, isDirectory: Bool) -> SidebarFavorite? {
+        guard let item = Self.existingItem(itemURL),
+              item.isDirectory == isDirectory,
+              isDirectory == false || Self.isBuiltIn(item.url) == false else {
             return nil
         }
 
-        if let existingFavorite = favorite(for: directoryURL) {
+        if let existingFavorite = favorite(for: item.url) {
             return existingFavorite
         }
 
-        let favorite = SidebarFavorite(directoryURL: directoryURL)
+        let favorite = SidebarFavorite(
+            itemURL: item.url,
+            isDirectory: item.isDirectory
+        )
         favorites.append(favorite)
         store.saveFavorites(favorites)
         return favorite
@@ -310,13 +411,16 @@ final class SidebarModel {
 
             return SidebarFavorite(
                 id: favorite.id,
-                directoryURL: directoryURL,
+                itemURL: directoryURL,
+                isDirectory: favorite.isDirectory,
                 title: title
             )
         }
     }
 
-    private static func existingDirectoryURL(_ url: URL) -> URL? {
+    private static func existingItem(
+        _ url: URL
+    ) -> (url: URL, isDirectory: Bool)? {
         let normalizedURL = normalizedURL(url)
         guard normalizedURL.isFileURL else { return nil }
 
@@ -324,11 +428,11 @@ final class SidebarModel {
         guard FileManager.default.fileExists(
             atPath: normalizedURL.path,
             isDirectory: &isDirectory
-        ), isDirectory.boolValue else {
+        ) else {
             return nil
         }
 
-        return normalizedURL
+        return (normalizedURL, isDirectory.boolValue)
     }
 
     private static func normalizedURL(_ url: URL) -> URL {
@@ -336,9 +440,6 @@ final class SidebarModel {
     }
 
     private static func isBuiltIn(_ url: URL) -> Bool {
-        SidebarBuiltInPlace.allCases.contains {
-            guard let builtInURL = $0.url else { return false }
-            return normalizedURL(builtInURL) == url
-        }
+        builtInURLs.contains(url)
     }
 }

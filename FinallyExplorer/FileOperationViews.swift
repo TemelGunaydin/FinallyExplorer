@@ -3,6 +3,7 @@
 //  FinallyExplorer
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -119,6 +120,8 @@ private struct InternalFileInteractionModifier: ViewModifier {
     let paneID: UUID
     let sidebar: SidebarModel
 
+    @State private var isInfoPresented = false
+
     func body(content: Content) -> some View {
         content
             .contentShape(.interaction, Rectangle())
@@ -147,6 +150,20 @@ private struct InternalFileInteractionModifier: ViewModifier {
                     fileOperations.copy([item.url])
                 }
 
+                Divider()
+
+                ShareLink(item: item.url) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+
+                Button("Get Info", systemImage: "info.circle") {
+                    isInfoPresented = true
+                }
+
+                Button("Show in Finder", systemImage: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                }
+
                 if item.isDirectory {
                     Divider()
 
@@ -154,9 +171,12 @@ private struct InternalFileInteractionModifier: ViewModifier {
                         Button("Remove from Favorites", systemImage: "star.slash") {
                             sidebar.remove(favorite)
                         }
-                    } else if sidebar.canAdd(directoryURL: item.url) {
+                    } else if sidebar.canAdd(
+                        itemURL: item.url,
+                        isDirectory: true
+                    ) {
                         Button("Add to Favorites", systemImage: "star") {
-                            sidebar.add(directoryURL: item.url)
+                            sidebar.add(itemURL: item.url, isDirectory: true)
                         }
                     }
 
@@ -177,7 +197,25 @@ private struct InternalFileInteractionModifier: ViewModifier {
                     .disabled(fileOperations.canPaste == false)
 
                     TerminalContextMenuCommands(directoryURL: item.url)
+                } else {
+                    Divider()
+
+                    if let favorite = sidebar.favorite(for: item.url) {
+                        Button("Remove from Favorites", systemImage: "star.slash") {
+                            sidebar.remove(favorite)
+                        }
+                    } else if sidebar.canAdd(
+                        itemURL: item.url,
+                        isDirectory: false
+                    ) {
+                        Button("Add to Favorites", systemImage: "star") {
+                            sidebar.add(itemURL: item.url, isDirectory: false)
+                        }
+                    }
                 }
+            }
+            .sheet(isPresented: $isInfoPresented) {
+                FileInformationView(item: item)
             }
             .accessibilityAction(named: "Copy") {
                 fileOperations.copy([item.url])

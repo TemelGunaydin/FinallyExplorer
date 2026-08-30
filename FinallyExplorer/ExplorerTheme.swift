@@ -34,8 +34,8 @@ enum ExplorerTheme {
     static let elevatedPanel = Color.adaptive(light: 0xFFFFFF, dark: 0x293A47)
     static let control = Color.adaptive(light: 0xEEEAE4, dark: 0x30414C)
     static let row = Color.adaptive(light: 0xFCFBF7, dark: 0x21303E)
-    static let selectedRow = Color.adaptive(light: 0xF5C8BA, dark: 0x704741)
-    static let inspector = Color.adaptive(light: 0xF7F3EE, dark: 0x1D2B36)
+    static let selectedRow = Color.adaptive(light: 0xF8E4DC, dark: 0x4B3639)
+    static let inspector = Color.adaptive(light: 0xFCFBF7, dark: 0x21303E)
 
     static let textPrimary = Color.adaptive(light: 0x21303E, dark: 0xF4F4F0)
     static let textSecondary = Color.adaptive(light: 0x65717A, dark: 0xC1C6BF)
@@ -150,26 +150,22 @@ struct ExplorerToolbarButtonStyle: ButtonStyle {
     }
 }
 
-struct ExplorerChromeActionButtonStyle: ButtonStyle {
+struct ExplorerChromeIconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(ExplorerTheme.actionFont)
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(ExplorerTheme.chromeText)
-            .padding(.horizontal, 12)
-            .frame(height: 34)
+            .frame(width: 34, height: 32)
             .background(
                 configuration.isPressed
-                    ? ExplorerTheme.accent.opacity(0.34)
-                    : Color.white.opacity(0.08),
+                    ? Color.black.opacity(0.28)
+                    : Color.black.opacity(0.16),
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.13), lineWidth: 0.75)
+                    .stroke(Color.white.opacity(0.16), lineWidth: 0.75)
             }
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

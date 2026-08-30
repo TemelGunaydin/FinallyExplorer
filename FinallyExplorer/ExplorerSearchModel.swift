@@ -206,6 +206,7 @@ final class ExplorerSearchModel {
                 // folder supplement may still be building its cache on the
                 // first query in a large tree.
                 results = Self.makeNameResults(
+                    query: searchQuery,
                     files: filePage.hits,
                     directories: []
                 )
@@ -225,6 +226,7 @@ final class ExplorerSearchModel {
                     }
 
                     newResults = Self.makeNameResults(
+                        query: searchQuery,
                         files: filePage.hits,
                         directories: page.results
                     )
@@ -539,6 +541,7 @@ final class ExplorerSearchModel {
     }
 
     private nonisolated static func makeNameResults(
+        query: String,
         files: [FFFFileSearchHit],
         directories: [DirectorySearchResult]
     ) -> [ExplorerSearchResult] {
@@ -572,7 +575,35 @@ final class ExplorerSearchModel {
                 )
             }
 
-        return directoryResults + Array(fileResults)
+        return (directoryResults + Array(fileResults)).sorted { lhs, rhs in
+            let leftQuality = SearchTextMatch.match(
+                in: lhs.item.name,
+                matching: query
+            )?.quality
+            let rightQuality = SearchTextMatch.match(
+                in: rhs.item.name,
+                matching: query
+            )?.quality
+
+            if leftQuality != rightQuality {
+                if let leftQuality, let rightQuality {
+                    return leftQuality < rightQuality
+                }
+                return leftQuality != nil
+            }
+
+            if lhs.item.isDirectory != rhs.item.isDirectory {
+                return lhs.item.isDirectory
+            }
+
+            let comparison = lhs.relativePath.localizedCaseInsensitiveCompare(
+                rhs.relativePath
+            )
+            if comparison != .orderedSame {
+                return comparison == .orderedAscending
+            }
+            return lhs.relativePath < rhs.relativePath
+        }
     }
 
     private nonisolated static func makeContentResults(

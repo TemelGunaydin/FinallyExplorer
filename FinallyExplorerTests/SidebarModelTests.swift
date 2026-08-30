@@ -50,6 +50,54 @@ struct SidebarModelTests {
         #expect(model.add(directoryURL: downloadsURL) == nil)
     }
 
+    @Test("Removing a favorite updates the sidebar and persisted storage")
+    func removingFavoritePersistsTheChange() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = SidebarFavoriteStoreSpy()
+        let model = SidebarModel(store: store)
+        let favorite = try #require(model.add(directoryURL: directoryURL))
+
+        model.remove(favorite)
+
+        #expect(model.favorites.isEmpty)
+        #expect(model.favorite(for: directoryURL) == nil)
+        #expect(store.savedFavorites.isEmpty)
+        #expect(store.saveCount == 2)
+
+        model.remove(favorite)
+        #expect(store.saveCount == 2)
+    }
+
+    @Test("Files can be pinned, restored, and removed as favorites")
+    func fileFavoritesRoundTrip() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        let fileURL = directoryURL.appending(path: "favorite.swift")
+        try Data("struct Favorite {}".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let store = SidebarFavoriteStoreSpy()
+        let model = SidebarModel(store: store)
+
+        #expect(model.canAdd(itemURL: fileURL, isDirectory: false))
+        let favorite = try #require(
+            model.add(itemURL: fileURL, isDirectory: false)
+        )
+        #expect(favorite.isDirectory == false)
+        #expect(model.isFavorite(fileURL))
+        #expect(model.favoriteStatus(for: fileURL) == .custom(favorite))
+        #expect(model.canAdd(itemURL: fileURL, isDirectory: false) == false)
+
+        let restoredModel = SidebarModel(store: store)
+        #expect(restoredModel.favorite(for: fileURL) == favorite)
+        #expect(restoredModel.allPlaces.contains(.favorite(favorite)))
+
+        restoredModel.remove(favorite)
+        #expect(restoredModel.isFavorite(fileURL) == false)
+        #expect(restoredModel.favoriteStatus(for: fileURL) == .available)
+    }
+
     @Test("UserDefaults storage survives an encoded round trip")
     func userDefaultsStoreRoundTripsFavorites() throws {
         let suiteName = "FinallyExplorer.SidebarTests.\(UUID().uuidString)"
@@ -72,6 +120,23 @@ struct SidebarModelTests {
         store.saveFavorites([favorite])
 
         #expect(store.loadFavorites() == [favorite])
+    }
+
+    @Test("Favorites saved before file pinning still decode as folders")
+    func legacyFavoriteDecodingDefaultsToFolder() throws {
+        let directoryURL = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let legacyFavorite = LegacySidebarFavorite(
+            id: UUID(),
+            directoryURL: directoryURL,
+            title: "Legacy"
+        )
+        let data = try JSONEncoder().encode(legacyFavorite)
+        let decoded = try JSONDecoder().decode(SidebarFavorite.self, from: data)
+
+        #expect(decoded.directoryURL == directoryURL.standardizedFileURL)
+        #expect(decoded.isDirectory)
     }
 
     @Test("Restoring favorites removes malformed and duplicate records")
@@ -109,6 +174,12 @@ struct SidebarModelTests {
         #expect(model.favorites == [valid])
         #expect(store.savedFavorites == [valid])
     }
+}
+
+private struct LegacySidebarFavorite: Codable {
+    let id: UUID
+    let directoryURL: URL
+    let title: String
 }
 
 @MainActor

@@ -31,7 +31,12 @@ struct ExplorerSearchControlBar: View {
     }
 
     private var wideControls: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            Text("Search in")
+                .font(.caption)
+                .foregroundStyle(ExplorerTheme.textSecondary)
+                .fixedSize()
+
             Picker("Search In", selection: $scope) {
                 ForEach(ExplorerSearchScope.allCases) { scope in
                     Text(scope.title)
@@ -39,9 +44,15 @@ struct ExplorerSearchControlBar: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 190)
+            .labelsHidden()
+            .frame(width: 150)
 
             if scope == .contents {
+                Text("Match")
+                    .font(.caption)
+                    .foregroundStyle(ExplorerTheme.textSecondary)
+                    .fixedSize()
+
                 Picker("Match Type", selection: $contentMode) {
                     ForEach(FFFContentSearchMode.allCases) { mode in
                         Text(mode.title)
@@ -49,7 +60,8 @@ struct ExplorerSearchControlBar: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 240)
+                .labelsHidden()
+                .frame(width: 210)
             }
 
             Spacer()
@@ -67,6 +79,7 @@ struct ExplorerSearchControlBar: View {
                 }
             }
             .pickerStyle(.menu)
+            .fixedSize()
 
             if scope == .contents {
                 Picker("Match Type", selection: $contentMode) {
@@ -76,6 +89,7 @@ struct ExplorerSearchControlBar: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .fixedSize()
             }
 
             Spacer(minLength: 4)
@@ -93,6 +107,7 @@ struct ExplorerSearchControlBar: View {
             Text("\(resultCount) results")
                 .font(.caption)
                 .foregroundStyle(ExplorerTheme.textSecondary)
+                .fixedSize()
         }
     }
 }
@@ -132,16 +147,18 @@ struct ExplorerSearchResultsView: View {
                     ExplorerSearchRowView(
                         paneID: paneID,
                         sidebar: sidebar,
+                        query: query,
                         result: result,
                         onSelect: { onSelect(result) },
                         onOpen: { onOpen(result) }
                     )
                     .tag(result.id)
-                    .listRowBackground(
-                        selection == result.id
-                            ? ExplorerTheme.selectedRow
-                            : ExplorerTheme.row
+                    .background(
+                        ExplorerRowBackground(
+                            isSelected: selection == result.id
+                        )
                     )
+                    .listRowBackground(ExplorerTheme.row)
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -176,55 +193,62 @@ private struct ExplorerSearchMessageBanner: View {
 private struct ExplorerSearchRowView: View {
     let paneID: UUID
     let sidebar: SidebarModel
+    let query: String
     let result: ExplorerSearchResult
     let onSelect: () -> Void
     let onOpen: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            FileItemIconView(item: result.item)
+        HStack(alignment: .top, spacing: 2) {
+            FavoriteToggleButton(item: result.item, sidebar: sidebar)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(result.item.name)
-                        .font(.body)
-                        .foregroundStyle(ExplorerTheme.textPrimary)
+            HStack(alignment: .top, spacing: 10) {
+                FileItemIconView(item: result.item)
 
-                    if result.contentMatch?.isDefinition == true {
-                        Text("Definition")
-                            .font(.caption)
-                            .foregroundStyle(ExplorerTheme.textPrimary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(ExplorerTheme.accentSoft, in: .capsule)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        HighlightedSearchName(
+                            text: result.item.name,
+                            query: query
+                        )
+
+                        if result.contentMatch?.isDefinition == true {
+                            Text("Definition")
+                                .font(.caption)
+                                .foregroundStyle(ExplorerTheme.textPrimary)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(ExplorerTheme.accentSoft, in: .capsule)
+                        }
                     }
-                }
 
-                Text(result.relativePath)
-                    .font(.caption)
-                    .foregroundStyle(ExplorerTheme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                if let match = result.contentMatch {
-                    Text("Line \(match.lineNumber), column \(match.column + 1)")
+                    Text(result.relativePath)
                         .font(.caption)
-                        .foregroundStyle(ExplorerTheme.textTertiary)
+                        .foregroundStyle(ExplorerTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-                    HighlightedSearchLine(
-                        text: match.lineContent,
-                        matchByteRanges: match.matchByteRanges
-                    )
+                    if let match = result.contentMatch {
+                        Text("Line \(match.lineNumber), column \(match.column + 1)")
+                            .font(.caption)
+                            .foregroundStyle(ExplorerTheme.textTertiary)
+
+                        HighlightedSearchLine(
+                            text: match.lineContent,
+                            matchByteRanges: match.matchByteRanges
+                        )
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(2)
                         .textSelection(.enabled)
+                    }
                 }
+
+                Spacer(minLength: 12)
+
+                FileSizeLabel(item: result.item)
+                    .frame(minWidth: 72, alignment: .trailing)
             }
-
-            Spacer(minLength: 12)
-
-            FileSizeLabel(item: result.item)
-                .frame(minWidth: 72, alignment: .trailing)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
@@ -238,7 +262,7 @@ private struct ExplorerSearchRowView: View {
             TapGesture(count: 2)
                 .onEnded { onOpen() }
         )
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(result.item.name)
         .accessibilityHint(
             result.item.isDirectory
@@ -254,6 +278,42 @@ private struct ExplorerSearchRowView: View {
         .accessibilityIdentifier("file-row-\(paneID)-\(result.item.name)")
     }
 
+}
+
+private struct HighlightedSearchName: View {
+    let text: String
+    let query: String
+
+    var body: some View {
+        Text(highlightedText)
+            .font(ExplorerTheme.fileNameFont)
+            .foregroundStyle(ExplorerTheme.textPrimary)
+    }
+
+    private var highlightedText: AttributedString {
+        let ranges = SearchTextMatch.ranges(in: text, matching: query)
+        var output = AttributedString()
+        var cursor = text.startIndex
+
+        for range in ranges where range.lowerBound >= cursor {
+            if cursor < range.lowerBound {
+                output.append(AttributedString(String(text[cursor..<range.lowerBound])))
+            }
+
+            var matchedText = AttributedString(String(text[range]))
+            matchedText.font = ExplorerTheme.fileNameFont.bold()
+            matchedText.foregroundColor = ExplorerTheme.textPrimary
+            matchedText.backgroundColor = ExplorerTheme.warmHighlight.opacity(0.74)
+            output.append(matchedText)
+            cursor = range.upperBound
+        }
+
+        if cursor < text.endIndex {
+            output.append(AttributedString(String(text[cursor...])))
+        }
+
+        return output
+    }
 }
 
 private struct HighlightedSearchLine: View {

@@ -45,6 +45,13 @@ struct ContentView: View {
             get: { workspace.activePane?.place },
             set: { newPlace in
                 guard let newPlace else { return }
+
+                if let favorite = newPlace.favorite,
+                   favorite.isDirectory == false {
+                    _ = NSWorkspace.shared.open(favorite.directoryURL)
+                    return
+                }
+
                 workspace.select(newPlace, in: workspace.activePaneID)
             }
         )
@@ -70,7 +77,13 @@ struct ContentView: View {
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             HStack(spacing: 0) {
-                WorkspaceRootView(workspace: workspace, sidebar: sidebar)
+                WorkspaceRootView(
+                    workspace: workspace,
+                    sidebar: sidebar,
+                    isPreviewVisible: isPreviewVisible,
+                    onTogglePreview: togglePreview,
+                    onResetView: resetWorkspaceView
+                )
 
                 if workspace.paneCount == 1 {
                     Divider()
@@ -100,17 +113,17 @@ struct ContentView: View {
         }
         .background(ExplorerTheme.sidebarBackground)
         .toolbar {
-            ExplorerWindowToolbar(
-                activeFolderTitle: workspace.activePane?.place.title ?? "Files",
-                paneCount: workspace.paneCount,
-                isPreviewVisible: isPreviewVisible,
-                onTogglePreview: togglePreview,
-                onResetView: resetWorkspaceView
-            )
-        }
-        .background {
-            WindowSidebarTitlebarButton(action: toggleSidebar)
-                .frame(width: 0, height: 0)
+            ToolbarItem(placement: .navigation) {
+                Button(
+                    "Toggle Sidebar",
+                    systemImage: "sidebar.leading",
+                    action: toggleSidebar
+                )
+                .labelStyle(.iconOnly)
+                .buttonStyle(ExplorerChromeIconButtonStyle())
+                .help("Show or hide the sidebar")
+                .accessibilityIdentifier("window-sidebar-toggle")
+            }
         }
         .toolbarBackground(ExplorerTheme.windowChrome, for: .windowToolbar)
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
@@ -231,14 +244,23 @@ struct ContentView: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
             .tag(place)
+            .accessibilityIdentifier(
+                place.favorite.map {
+                    "sidebar-favorite-\($0.id.uuidString)"
+                } ?? "sidebar-built-in-\(place.title)"
+            )
             .internalFolderDropTarget(
-                destinationDirectoryURL: place.url,
+                destinationDirectoryURL: place.isDirectory ? place.url : nil,
                 paneID: workspace.activePaneID,
-                showsTerminalCommands: true
+                showsTerminalCommands: place.isDirectory
             )
             .contextMenu {
                 if let favorite = place.favorite {
-                    Button("Remove from Sidebar", role: .destructive) {
+                    Button(
+                        "Remove from Favorites",
+                        systemImage: "star.slash",
+                        role: .destructive
+                    ) {
                         sidebar.remove(favorite)
                     }
                 }
@@ -304,12 +326,18 @@ private struct TopLeadingCornerCutout: Shape {
 private struct WorkspaceRootView: View {
     let workspace: WorkspaceModel
     let sidebar: SidebarModel
+    let isPreviewVisible: Bool
+    let onTogglePreview: () -> Void
+    let onResetView: () -> Void
 
     var body: some View {
         WorkspaceNodeView(
             node: workspace.layoutRoot,
             workspace: workspace,
-            sidebar: sidebar
+            sidebar: sidebar,
+            isPreviewVisible: isPreviewVisible,
+            onTogglePreview: onTogglePreview,
+            onResetView: onResetView
         )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(ExplorerTheme.canvas)
@@ -320,13 +348,23 @@ private struct WorkspaceNodeView: View {
     let node: WorkspaceLayoutNode
     let workspace: WorkspaceModel
     let sidebar: SidebarModel
+    let isPreviewVisible: Bool
+    let onTogglePreview: () -> Void
+    let onResetView: () -> Void
 
     @ViewBuilder
     var body: some View {
         switch node {
         case let .pane(paneID):
             if let pane = workspace.pane(paneID) {
-                DestinationView(pane: pane, workspace: workspace, sidebar: sidebar)
+                DestinationView(
+                    pane: pane,
+                    workspace: workspace,
+                    sidebar: sidebar,
+                    isPreviewVisible: isPreviewVisible,
+                    onTogglePreview: onTogglePreview,
+                    onResetView: onResetView
+                )
                     .id(paneID)
             }
 
@@ -334,19 +372,30 @@ private struct WorkspaceNodeView: View {
             switch axis {
             case .sideBySide:
                 HSplitView {
-                    WorkspaceNodeView(node: first, workspace: workspace, sidebar: sidebar)
-                    WorkspaceNodeView(node: second, workspace: workspace, sidebar: sidebar)
+                    workspaceNode(first)
+                    workspaceNode(second)
                 }
                 .id(splitID)
 
             case .stacked:
                 VSplitView {
-                    WorkspaceNodeView(node: first, workspace: workspace, sidebar: sidebar)
-                    WorkspaceNodeView(node: second, workspace: workspace, sidebar: sidebar)
+                    workspaceNode(first)
+                    workspaceNode(second)
                 }
                 .id(splitID)
             }
         }
+    }
+
+    private func workspaceNode(_ node: WorkspaceLayoutNode) -> WorkspaceNodeView {
+        WorkspaceNodeView(
+            node: node,
+            workspace: workspace,
+            sidebar: sidebar,
+            isPreviewVisible: isPreviewVisible,
+            onTogglePreview: onTogglePreview,
+            onResetView: onResetView
+        )
     }
 }
 
@@ -367,6 +416,9 @@ private struct DestinationView: View {
     let pane: WorkspacePaneState
     let workspace: WorkspaceModel
     let sidebar: SidebarModel
+    let isPreviewVisible: Bool
+    let onTogglePreview: () -> Void
+    let onResetView: () -> Void
 
     private var directoryLoadRequest: DirectoryLoadRequest {
         DirectoryLoadRequest(
@@ -403,7 +455,7 @@ private struct DestinationView: View {
             paneToolbar
 
             if let displayedDirectory = pane.displayedDirectory {
-                directoryPathHeader(displayedDirectory)
+                fileOperationStatus
 
                 if pane.searchModel.isSearchActive {
                     ExplorerSearchControlBar(
@@ -532,7 +584,23 @@ private struct DestinationView: View {
 
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
-                Menu {
+                if pane.navigation.canGoBack {
+                    Button("Back", systemImage: "chevron.left") {
+                        workspace.activate(pane.id)
+                        pane.navigation.goBack()
+                        pane.selectedURL = nil
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .help("Go to the previous folder")
+                }
+
+                PaneLocationMenu(
+                    title: pane.place.title,
+                    systemImage: pane.place.systemImage,
+                    directoryURL: pane.displayedDirectory,
+                    isCompact: workspace.paneCount > 1
+                ) {
                     ForEach(sidebar.allPlaces) { place in
                         Button {
                             workspace.select(place, in: pane.id)
@@ -544,28 +612,7 @@ private struct DestinationView: View {
                             }
                         }
                     }
-                } label: {
-                    Label(pane.place.title, systemImage: pane.place.systemImage)
-                        .font(ExplorerTheme.paneTitleFont)
-                        .foregroundStyle(ExplorerTheme.textPrimary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: workspace.paneCount == 1 ? 280 : 132)
-                        .frame(height: 36)
-                        .background(
-                            ExplorerTheme.accentSoft,
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                .stroke(
-                                    ExplorerTheme.accent.opacity(0.22),
-                                    lineWidth: 0.75
-                                )
-                        }
                 }
-                .menuStyle(.borderlessButton)
                 .help("Choose the folder shown in this pane")
 
                 Spacer(minLength: 4)
@@ -617,6 +664,21 @@ private struct DestinationView: View {
                         : "Show hidden files and folders in this pane"
                 )
 
+                if workspace.paneCount == 1 {
+                    Button(
+                        isPreviewVisible ? "Hide Preview" : "Show Preview",
+                        systemImage: "sidebar.trailing",
+                        action: onTogglePreview
+                    )
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .help(
+                        isPreviewVisible
+                            ? "Hide the preview area"
+                            : "Show the preview area"
+                    )
+                }
+
                 Button("Split Below", systemImage: "rectangle.split.1x2") {
                     _ = workspace.split(paneID: pane.id, direction: .below)
                 }
@@ -626,6 +688,17 @@ private struct DestinationView: View {
                 .help("Split this pane below")
 
                 if workspace.paneCount > 1 {
+                    if workspace.activePaneID == pane.id {
+                        Button(
+                            "Reset View",
+                            systemImage: "rectangle",
+                            action: onResetView
+                        )
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(ExplorerToolbarButtonStyle())
+                        .help("Keep the active pane and close the other panes")
+                    }
+
                     Button("Close Pane", systemImage: "xmark") {
                         _ = workspace.close(pane.id)
                     }
@@ -657,6 +730,8 @@ private struct DestinationView: View {
 
                 TextField("Search this folder", text: $searchModel.query)
                     .textFieldStyle(.plain)
+                    .accessibilityLabel("Search in \(pane.place.title)")
+                    .accessibilityIdentifier("pane-search-field")
             }
                 .padding(.horizontal, 12)
                 .frame(height: 38)
@@ -668,7 +743,6 @@ private struct DestinationView: View {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .stroke(ExplorerTheme.divider, lineWidth: 0.75)
                 }
-                .accessibilityLabel("Search in \(pane.place.title)")
                 .help("Search file names or contents in this pane")
         }
     }
@@ -686,29 +760,10 @@ private struct DestinationView: View {
         pane.isInspectorPresented = false
     }
 
-    private func directoryPathHeader(_ url: URL) -> some View {
-        HStack {
-            if pane.navigation.canGoBack {
-                Button("Back", systemImage: "chevron.left") {
-                    workspace.activate(pane.id)
-                    pane.navigation.goBack()
-                    pane.selectedURL = nil
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(ExplorerTheme.accent)
-                .help("Go to the previous folder")
-            }
-
-            Text(url.path(percentEncoded: false))
-                .font(.caption)
-                .foregroundStyle(ExplorerTheme.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-
-            Spacer()
-
-            if fileOperations.isPerforming {
+    @ViewBuilder
+    private var fileOperationStatus: some View {
+        if fileOperations.isPerforming {
+            HStack {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel(fileOperations.statusMessage ?? "Working")
@@ -718,7 +773,10 @@ private struct DestinationView: View {
                         .font(.caption)
                         .foregroundStyle(ExplorerTheme.textSecondary)
                 }
+
+                Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -756,6 +814,7 @@ private struct DestinationView: View {
             List(pane.directoryContents, selection: $pane.selectedURL) { item in
                 FileRowView(
                     item: item,
+                    sidebar: sidebar,
                     onSelect: {
                         select(item)
                     },
@@ -764,11 +823,12 @@ private struct DestinationView: View {
                     }
                 )
                 .tag(item.url)
-                .listRowBackground(
-                    pane.selectedURL == item.url
-                        ? ExplorerTheme.selectedRow
-                        : ExplorerTheme.row
+                .background(
+                    ExplorerRowBackground(
+                        isSelected: pane.selectedURL == item.url
+                    )
                 )
+                .listRowBackground(ExplorerTheme.row)
                 .internalFileInteraction(
                     for: item,
                     paneID: pane.id,
@@ -957,7 +1017,11 @@ struct FolderContentsInspector: View {
             )
         } else {
             List(directoryContents) { item in
-                FileRowContent(item: item)
+                HStack(spacing: 2) {
+                    FavoriteToggleButton(item: item, sidebar: sidebar)
+
+                    FileRowContent(item: item)
+                }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .listRowBackground(ExplorerTheme.row)
@@ -1076,27 +1140,37 @@ private struct QuickLookPreview: NSViewRepresentable {
 
 private struct FileRowView: View {
     let item: FileItem
+    let sidebar: SidebarModel
     let onSelect: () -> Void
     let onOpen: () -> Void
 
     var body: some View {
-        FileRowContent(item: item)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 8)
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture(count: 1)
-                    .onEnded { onSelect() }
-            )
-            .simultaneousGesture(
-                TapGesture(count: 2)
-                    .onEnded { onOpen() }
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(item.name)
-            .accessibilityHint(item.isDirectory ? "Double-click to open folder" : "Double-click to open file")
-            .accessibilityAction(named: "Open", onOpen)
+        HStack(spacing: 2) {
+            FavoriteToggleButton(item: item, sidebar: sidebar)
+
+            FileRowContent(item: item)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture(count: 1)
+                .onEnded { onSelect() }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded { onOpen() }
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(item.name)
+        .accessibilityHint(
+            item.isDirectory
+                ? "Double-click to open folder"
+                : "Double-click to open file"
+        )
+        .accessibilityAction(named: "Open", onOpen)
     }
 }
 

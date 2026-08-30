@@ -124,7 +124,7 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
-    func testNativeToolbarTogglesSidebarAndOmitsRetiredControls() {
+    func testSidebarToolbarButtonAlignsWithSidebarAndOmitsRetiredControls() {
         XCTAssertTrue(
             rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
         )
@@ -136,15 +136,32 @@ final class FinallyExplorerUITests: XCTestCase {
         )
         let window = app.windows.firstMatch
         XCTAssertTrue(window.exists)
-        XCTAssertLessThan(
-            sidebarToggle.frame.minX - window.frame.minX,
-            160,
-            "The sidebar control must stay beside the traffic lights, not at the sidebar divider"
+        let sidebarToggleLeadingOffset = sidebarToggle.frame.minX - window.frame.minX
+        XCTAssertGreaterThan(
+            sidebarToggleLeadingOffset,
+            180,
+            "The sidebar control must align with the sidebar's trailing edge"
         )
-        XCTAssertGreaterThanOrEqual(sidebarToggle.frame.width, 32)
-        XCTAssertGreaterThanOrEqual(sidebarToggle.frame.height, 27)
+        XCTAssertLessThan(
+            sidebarToggleLeadingOffset,
+            360,
+            "The sidebar control must not drift into the content toolbar"
+        )
         XCTAssertFalse(app.buttons["Ask Explorer"].exists)
         XCTAssertFalse(app.staticTexts["Your files. Your workspace."].exists)
+
+        let hidePreview = app.buttons["Hide Preview"]
+        XCTAssertTrue(hidePreview.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(
+            hidePreview.frame.midY,
+            sidebarToggle.frame.midY + 30,
+            "Preview controls belong in the pane toolbar, not the window titlebar"
+        )
+        hidePreview.click()
+        let showPreview = app.buttons["Show Preview"]
+        XCTAssertTrue(showPreview.waitForExistence(timeout: 5))
+        showPreview.click()
+        XCTAssertTrue(hidePreview.waitForExistence(timeout: 5))
 
         let favoritesHeader = app.staticTexts["FAVORITES"]
         XCTAssertTrue(favoritesHeader.waitForExistence(timeout: 5))
@@ -168,28 +185,109 @@ final class FinallyExplorerUITests: XCTestCase {
         let resetView = app.buttons["Reset View"]
         XCTAssertTrue(resetView.waitForExistence(timeout: 3))
         resetView.click()
-        XCTAssertTrue(resetView.waitForNonExistence(timeout: 10))
         XCTAssertTrue(
             waitForElementCount(rows(named: "Source Item.txt"), toEqual: 1, timeout: 10)
         )
     }
 
-    func testFolderCanBeAddedAndRemovedFromFavorites() throws {
+    func testSearchControlsStaySingleLineAndLocationAppearsInHeader() throws {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let locationMenu = app.descendants(matching: .any)["pane-location-menu"]
+        let locationPath = app.staticTexts["pane-location-path"]
+        let searchField = app.textFields["pane-search-field"]
+        XCTAssertTrue(locationMenu.waitForExistence(timeout: 5))
+        XCTAssertTrue(locationPath.waitForExistence(timeout: 5))
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        XCTAssertLessThan(
+            locationPath.frame.midY,
+            searchField.frame.midY,
+            "The current path belongs in the folder header above search"
+        )
+
+        searchField.click()
+        searchField.typeText("Source")
+
+        let searchInLabel = app.staticTexts["Search in"]
+        XCTAssertTrue(searchInLabel.waitForExistence(timeout: 5))
+        XCTAssertLessThan(
+            searchInLabel.frame.height,
+            24,
+            "The Search in label must remain on one line"
+        )
+        XCTAssertGreaterThan(
+            searchInLabel.frame.width,
+            searchInLabel.frame.height * 2,
+            "The Search in label must not collapse vertically"
+        )
+
+        let matchingRows = rows(named: "Source Item.txt")
+        XCTAssertTrue(matchingRows.firstMatch.waitForExistence(timeout: 5))
+        let matchingRow = matchingRows.firstMatch
+        matchingRow.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+        ).click()
+        XCTAssertTrue(
+            try XCTUnwrap(containingCell(for: matchingRow)).isSelected,
+            "Clicking a search result must visibly select its row"
+        )
+    }
+
+    func testFolderCanBeAddedAndRemovedUsingSidebarFavoriteMenu() throws {
         let destinationRows = rows(named: "Destination")
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 10))
 
-        try rightClickRow(destinationRows.firstMatch)
-        let addFavorite = app.menuItems["Add to Favorites"]
+        let addFavorite = app.buttons["Add Destination to Favorites"]
         XCTAssertTrue(addFavorite.waitForExistence(timeout: 3))
         addFavorite.click()
+        XCTAssertTrue(
+            app.buttons["Remove Destination from Favorites"]
+                .waitForExistence(timeout: 3)
+        )
 
-        try rightClickRow(destinationRows.firstMatch)
+        let sidebarFavorites = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@",
+                "sidebar-favorite-"
+            )
+        )
+        XCTAssertTrue(
+            waitForElementCount(sidebarFavorites, toEqual: 1, timeout: 5)
+        )
+
+        try rightClickRow(sidebarFavorites.firstMatch)
         let removeFavorite = app.menuItems["Remove from Favorites"]
         XCTAssertTrue(removeFavorite.waitForExistence(timeout: 3))
         removeFavorite.click()
+        XCTAssertTrue(
+            waitForElementCount(sidebarFavorites, toEqual: 0, timeout: 5)
+        )
 
         try rightClickRow(destinationRows.firstMatch)
         XCTAssertTrue(app.menuItems["Add to Favorites"].waitForExistence(timeout: 3))
+    }
+
+    func testFileContextMenuOffersSharingAndInformation() throws {
+        let sourceRows = rows(named: "Source Item.txt")
+        XCTAssertTrue(sourceRows.firstMatch.waitForExistence(timeout: 10))
+
+        try rightClickRow(sourceRows.firstMatch)
+        XCTAssertTrue(app.menuItems["Share"].waitForExistence(timeout: 3))
+
+        let getInfo = app.menuItems["Get Info"]
+        XCTAssertTrue(getInfo.waitForExistence(timeout: 3))
+        getInfo.click()
+
+        let infoPanel = app.descendants(matching: .any)["file-info-panel"]
+        XCTAssertTrue(infoPanel.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Source Item.txt"].exists)
+
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.exists)
+        done.click()
+        XCTAssertTrue(infoPanel.waitForNonExistence(timeout: 5))
     }
 
     func testFolderCanBeHiddenAndRecovered() throws {
