@@ -137,7 +137,11 @@ struct ExplorerSearchResultsView: View {
                         onOpen: { onOpen(result) }
                     )
                     .tag(result.id)
-                    .listRowBackground(ExplorerTheme.row)
+                    .listRowBackground(
+                        selection == result.id
+                            ? ExplorerTheme.selectedRow
+                            : ExplorerTheme.row
+                    )
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -178,10 +182,7 @@ private struct ExplorerSearchRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: systemImage)
-                .foregroundStyle(iconColor)
-                .frame(width: 24)
-                .accessibilityHidden(true)
+            FileItemIconView(item: result.item)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -253,27 +254,6 @@ private struct ExplorerSearchRowView: View {
         .accessibilityIdentifier("file-row-\(paneID)-\(result.item.name)")
     }
 
-    private var systemImage: String {
-        if result.item.isDirectory {
-            "folder.fill"
-        } else if result.item.isImage {
-            "photo.fill"
-        } else if result.isContentMatch {
-            "doc.text.magnifyingglass"
-        } else {
-            "doc.fill"
-        }
-    }
-
-    private var iconColor: Color {
-        if result.item.isDirectory {
-            ExplorerTheme.folderIcon
-        } else if result.item.isImage {
-            ExplorerTheme.imageIcon
-        } else {
-            ExplorerTheme.documentIcon
-        }
-    }
 }
 
 private struct HighlightedSearchLine: View {

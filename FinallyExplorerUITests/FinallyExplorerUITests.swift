@@ -124,6 +124,38 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
+    func testNativeToolbarTogglesSidebarAndOmitsRetiredControls() {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let sidebarToggle = app.buttons["window-sidebar-toggle"]
+        XCTAssertTrue(
+            sidebarToggle.waitForExistence(timeout: 5),
+            "The sidebar control must remain in the native window toolbar"
+        )
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.exists)
+        XCTAssertLessThan(
+            sidebarToggle.frame.minX - window.frame.minX,
+            160,
+            "The sidebar control must stay beside the traffic lights, not at the sidebar divider"
+        )
+        XCTAssertGreaterThanOrEqual(sidebarToggle.frame.width, 32)
+        XCTAssertGreaterThanOrEqual(sidebarToggle.frame.height, 27)
+        XCTAssertFalse(app.buttons["Ask Explorer"].exists)
+        XCTAssertFalse(app.staticTexts["Your files. Your workspace."].exists)
+
+        let favoritesHeader = app.staticTexts["FAVORITES"]
+        XCTAssertTrue(favoritesHeader.waitForExistence(timeout: 5))
+
+        sidebarToggle.click()
+        XCTAssertTrue(favoritesHeader.waitForNonExistence(timeout: 5))
+
+        sidebarToggle.click()
+        XCTAssertTrue(favoritesHeader.waitForExistence(timeout: 5))
+    }
+
     func testResetViewCollapsesSplitPane() {
         let sourceRows = rows(named: "Source Item.txt")
         XCTAssertTrue(sourceRows.firstMatch.waitForExistence(timeout: 10))

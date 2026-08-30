@@ -64,47 +64,56 @@ struct ContentView: View {
         @Bindable var fileOperations = fileOperations
         @Bindable var terminalApplications = terminalApplications
 
-        VStack(spacing: 0) {
-            ExplorerWindowHeader(
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            explorerSidebar
+                .navigationSplitViewColumnWidth(min: 210, ideal: 232)
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
+            HStack(spacing: 0) {
+                WorkspaceRootView(workspace: workspace, sidebar: sidebar)
+
+                if workspace.paneCount == 1 {
+                    Divider()
+                        .overlay(ExplorerTheme.divider)
+                        .frame(width: isPreviewVisible ? 1 : 0)
+                        .opacity(isPreviewVisible ? 1 : 0)
+
+                    inspectorContent
+                        .frame(width: isPreviewVisible ? 340 : 0)
+                        .frame(maxHeight: .infinity)
+                        .background(ExplorerTheme.inspector)
+                        .clipped()
+                        .opacity(isPreviewVisible ? 1 : 0)
+                        .allowsHitTesting(isPreviewVisible)
+                }
+            }
+            .background(ExplorerTheme.canvas)
+            .overlay(alignment: .topLeading) {
+                TopLeadingCornerCutout(radius: 18)
+                    .fill(ExplorerTheme.sidebarBackground)
+                    .frame(width: 18, height: 18)
+                    .allowsHitTesting(false)
+            }
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+        }
+        .background(ExplorerTheme.sidebarBackground)
+        .toolbar {
+            ExplorerWindowToolbar(
                 activeFolderTitle: workspace.activePane?.place.title ?? "Files",
                 paneCount: workspace.paneCount,
                 isPreviewVisible: isPreviewVisible,
-                onToggleSidebar: toggleSidebar,
                 onTogglePreview: togglePreview,
                 onResetView: resetWorkspaceView
             )
-
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                explorerSidebar
-                    .navigationSplitViewColumnWidth(min: 210, ideal: 232)
-                    .toolbar(removing: .sidebarToggle)
-            } detail: {
-                HStack(spacing: 0) {
-                    WorkspaceRootView(workspace: workspace, sidebar: sidebar)
-
-                    if workspace.paneCount == 1 {
-                        Divider()
-                            .overlay(ExplorerTheme.divider)
-                            .frame(width: isPreviewVisible ? 1 : 0)
-                            .opacity(isPreviewVisible ? 1 : 0)
-
-                        inspectorContent
-                            .frame(width: isPreviewVisible ? 340 : 0)
-                            .frame(maxHeight: .infinity)
-                            .background(ExplorerTheme.inspector)
-                            .clipped()
-                            .opacity(isPreviewVisible ? 1 : 0)
-                            .allowsHitTesting(isPreviewVisible)
-                    }
-                }
-                .background(ExplorerTheme.canvas)
-                .transaction { transaction in
-                    transaction.animation = nil
-                }
-            }
         }
-        .ignoresSafeArea(.container, edges: .top)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .background {
+            WindowSidebarTitlebarButton(action: toggleSidebar)
+                .frame(width: 0, height: 0)
+        }
+        .toolbarBackground(ExplorerTheme.windowChrome, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .toolbar(removing: .title)
         .tint(ExplorerTheme.accent)
         .foregroundStyle(ExplorerTheme.textPrimary)
@@ -266,6 +275,32 @@ struct ContentView: View {
     }
 }
 
+private struct TopLeadingCornerCutout: Shape {
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let resolvedRadius = min(radius, rect.width, rect.height)
+        let arcControlOffset = resolvedRadius * 0.552_284_75
+        var path = Path()
+
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: resolvedRadius, y: 0))
+        path.addCurve(
+            to: CGPoint(x: 0, y: resolvedRadius),
+            control1: CGPoint(
+                x: resolvedRadius - arcControlOffset,
+                y: 0
+            ),
+            control2: CGPoint(
+                x: 0,
+                y: resolvedRadius - arcControlOffset
+            )
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
 private struct WorkspaceRootView: View {
     let workspace: WorkspaceModel
     let sidebar: SidebarModel
@@ -332,9 +367,6 @@ private struct DestinationView: View {
     let pane: WorkspacePaneState
     let workspace: WorkspaceModel
     let sidebar: SidebarModel
-
-    @State private var assistantModel = ExplorerAssistantModel()
-    @State private var isAssistantPresented = false
 
     private var directoryLoadRequest: DirectoryLoadRequest {
         DirectoryLoadRequest(
@@ -481,9 +513,6 @@ private struct DestinationView: View {
             pane.selectedSearchResultID = nil
             pane.selectedURL = nil
         }
-        .onChange(of: pane.displayedDirectory) {
-            assistantModel.reset()
-        }
         .onChange(of: directoryLoadRequest.operationRevision) {
             guard directoryLoadRequest.operationRevision > 0 else { return }
             pane.selectedSearchResultID = nil
@@ -496,15 +525,6 @@ private struct DestinationView: View {
                 workspace: workspace
             )
         )
-        .sheet(isPresented: $isAssistantPresented) {
-            if let displayedDirectory = pane.displayedDirectory {
-                ExplorerAssistantSheet(
-                    folderURL: displayedDirectory,
-                    items: pane.directoryContents,
-                    model: assistantModel
-                )
-            }
-        }
     }
 
     private var paneToolbar: some View {
@@ -554,23 +574,13 @@ private struct DestinationView: View {
                     Button("New Folder", systemImage: "folder.badge.plus") {
                         createFolder()
                     }
-                    .buttonStyle(
-                        ExplorerActionButtonStyle(kind: .secondary)
-                    )
+                    .buttonStyle(ExplorerActionButtonStyle())
                     .disabled(
                         pane.displayedDirectory == nil
                             || fileOperations.isPerforming
                     )
                     .help("Create a new folder in this pane")
 
-                    Button("Ask Explorer", systemImage: "sparkles") {
-                        presentAssistant()
-                    }
-                    .buttonStyle(
-                        ExplorerActionButtonStyle(kind: .primary)
-                    )
-                    .disabled(pane.displayedDirectory == nil)
-                    .help("Ask on-device AI about this folder")
                 } else {
                     Button("New Folder", systemImage: "folder.badge.plus") {
                         createFolder()
@@ -583,13 +593,6 @@ private struct DestinationView: View {
                     )
                     .help("Create a new folder in this pane")
 
-                    Button("Ask Explorer", systemImage: "sparkles") {
-                        presentAssistant()
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerToolbarButtonStyle())
-                    .disabled(pane.displayedDirectory == nil)
-                    .help("Ask on-device AI about this folder")
                 }
 
                 Button("Split Right", systemImage: "rectangle.split.2x1") {
@@ -673,11 +676,6 @@ private struct DestinationView: View {
     private func createFolder() {
         workspace.activate(pane.id)
         fileOperations.createFolder(in: pane.displayedDirectory)
-    }
-
-    private func presentAssistant() {
-        workspace.activate(pane.id)
-        isAssistantPresented = true
     }
 
     private func toggleHiddenItems() {
@@ -766,7 +764,11 @@ private struct DestinationView: View {
                     }
                 )
                 .tag(item.url)
-                .listRowBackground(ExplorerTheme.row)
+                .listRowBackground(
+                    pane.selectedURL == item.url
+                        ? ExplorerTheme.selectedRow
+                        : ExplorerTheme.row
+                )
                 .internalFileInteraction(
                     for: item,
                     paneID: pane.id,
@@ -1103,15 +1105,7 @@ private struct FileRowContent: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(
-                systemName: item.isDirectory
-                    ? "folder.fill"
-                    : (item.isImage ? "photo.fill" : "doc.fill")
-            )
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(iconColor)
-                .frame(width: 24)
-                .accessibilityHidden(true)
+            FileItemIconView(item: item)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
@@ -1134,15 +1128,6 @@ private struct FileRowContent: View {
         }
     }
 
-    private var iconColor: Color {
-        if item.isDirectory {
-            ExplorerTheme.folderIcon
-        } else if item.isImage {
-            ExplorerTheme.imageIcon
-        } else {
-            ExplorerTheme.documentIcon
-        }
-    }
 }
 
 struct FileSizeLabel: View {
