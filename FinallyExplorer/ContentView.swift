@@ -497,6 +497,19 @@ private struct WorkspaceRootView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let leadingInset = workspace.paneCount > 1
+                ? proxy.safeAreaInsets.leading
+                : 0
+            let trailingInset = workspace.paneCount > 1
+                ? proxy.safeAreaInsets.trailing
+                : 0
+            let topInset = workspace.paneCount > 1
+                ? proxy.safeAreaInsets.top
+                : 0
+            let bottomInset = workspace.paneCount > 1
+                ? proxy.safeAreaInsets.bottom
+                : 0
+
             WorkspaceNodeView(
                 node: workspace.layoutRoot,
                 workspace: workspace,
@@ -505,15 +518,22 @@ private struct WorkspaceRootView: View {
                 onTogglePreview: onTogglePreview,
                 onResetView: onResetView
             )
-            // AppKit's resizable split views don't propagate the unified
-            // titlebar safe area to their hosted children. Preserve that inset
-            // once a workspace becomes a grid so pane headers cannot slide
-            // underneath the window toolbar.
-            .padding(
-                .top,
-                workspace.paneCount > 1 ? proxy.safeAreaInsets.top : 0
+            // `HSplitView` is AppKit-backed and otherwise escapes the detail
+            // column's proposal, using the whole window (including sidebar).
+            // Offset instead of padding so measuring the safe area cannot feed
+            // back into the split view's AppKit layout proposal.
+            .frame(
+                width: max(
+                    0,
+                    proxy.size.width - leadingInset - trailingInset
+                ),
+                height: max(
+                    0,
+                    proxy.size.height - topInset - bottomInset
+                ),
+                alignment: .topLeading
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .offset(x: leadingInset, y: topInset)
         }
         .background(theme.canvas)
     }
@@ -640,15 +660,18 @@ private struct DestinationView: View {
 
                 Divider()
                     .overlay(theme.divider)
-                ZStack(alignment: .topLeading) {
+                ZStack {
                     theme.panel
+
                     directoryBody
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                     .frame(
                         maxWidth: .infinity,
-                        maxHeight: .infinity,
-                        alignment: .topLeading
+                        maxHeight: .infinity
                     )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("pane-directory-body")
                     .internalFolderDropTarget(
                         destinationDirectoryURL: displayedDirectory,
                         paneID: pane.id,
@@ -1022,6 +1045,7 @@ private struct DestinationView: View {
                 "Folder Is Empty",
                 systemImage: "folder"
             )
+            .accessibilityIdentifier("pane-empty-folder-state")
         } else {
             List(pane.directoryContents, selection: $pane.selectedURL) { item in
                 FileRowView(
@@ -1176,6 +1200,7 @@ private struct WorkspacePaneAccessibilityModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("workspace-pane-\(pane.id)")
             .accessibilityLabel("\(pane.place.title) file pane")
             .accessibilityValue(isActive ? "Active pane" : "Inactive pane")
             .accessibilityAddTraits(isActive ? .isSelected : [])
@@ -1208,8 +1233,7 @@ struct FolderContentsInspector: View {
             inspectorBody
                 .frame(
                     maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .topLeading
+                    maxHeight: .infinity
                 )
                 .internalFolderDropTarget(
                     destinationDirectoryURL: folder.url,

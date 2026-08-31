@@ -261,7 +261,10 @@ final class FinallyExplorerUITests: XCTestCase {
 
     func testResetViewCollapsesSplitPane() {
         let sourceRows = rows(named: "Source Item.txt")
-        XCTAssertTrue(sourceRows.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            sourceRows.firstMatch.waitForExistence(timeout: 10),
+            "The file fixture did not appear after launch"
+        )
 
         let splitRightButton = app.buttons["Split Right"]
         XCTAssertTrue(splitRightButton.waitForExistence(timeout: 3))
@@ -272,15 +275,33 @@ final class FinallyExplorerUITests: XCTestCase {
             NSPredicate(format: "identifier == %@", "pane-location-menu")
         )
         XCTAssertTrue(waitForElementCount(locationMenus, toEqual: 2, timeout: 5))
+        let workspacePanes = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "workspace-pane-")
+        )
+        XCTAssertTrue(waitForElementCount(workspacePanes, toEqual: 2, timeout: 5))
         let globalSearchField = app.descendants(matching: .any)[
             "global-search-text-field"
         ]
         XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
-        for locationMenu in existingElements(in: locationMenus) {
+        let visibleMenus = existingElements(in: locationMenus).sorted(by: leftToRight)
+        let visiblePanes = existingElements(in: workspacePanes).sorted(by: leftToRight)
+        XCTAssertEqual(visibleMenus.count, visiblePanes.count)
+
+        for (locationMenu, workspacePane) in zip(visibleMenus, visiblePanes) {
             XCTAssertGreaterThan(
                 locationMenu.frame.minY,
                 globalSearchField.frame.maxY,
                 "Split pane headers must remain below the unified window toolbar"
+            )
+            XCTAssertGreaterThanOrEqual(
+                locationMenu.frame.minX,
+                workspacePane.frame.minX,
+                "Split pane headers must not slide underneath the sidebar"
+            )
+            XCTAssertLessThanOrEqual(
+                locationMenu.frame.maxX,
+                workspacePane.frame.maxX,
+                "Split pane headers must remain inside their pane"
             )
         }
 
@@ -289,6 +310,34 @@ final class FinallyExplorerUITests: XCTestCase {
         resetView.click()
         XCTAssertTrue(
             waitForElementCount(rows(named: "Source Item.txt"), toEqual: 1, timeout: 10)
+        )
+    }
+
+    func testEmptyFolderStateIsCenteredInPane() throws {
+        let destinationRow = rows(named: "Destination").firstMatch
+        XCTAssertTrue(destinationRow.waitForExistence(timeout: 10))
+
+        let destinationCell = try XCTUnwrap(containingCell(for: destinationRow))
+        destinationCell
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .doubleClick()
+
+        let directoryBody = app.descendants(matching: .any)["pane-directory-body"]
+        let emptyState = app.descendants(matching: .any)["pane-empty-folder-state"]
+        XCTAssertTrue(directoryBody.waitForExistence(timeout: 5))
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 5))
+
+        XCTAssertEqual(
+            emptyState.frame.midX,
+            directoryBody.frame.midX,
+            accuracy: max(24, directoryBody.frame.width * 0.05),
+            "The empty-folder state should remain horizontally centered"
+        )
+        XCTAssertEqual(
+            emptyState.frame.midY,
+            directoryBody.frame.midY,
+            accuracy: max(40, directoryBody.frame.height * 0.08),
+            "The empty-folder state should remain vertically centered"
         )
     }
 

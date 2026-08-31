@@ -16,6 +16,83 @@ struct WorkspacePreviewLayoutRegressionTests {
             await exerciseGridSelectionInARealWindow()
         }
     }
+
+    @MainActor
+    @Test("Workspace split remains inside the navigation detail column")
+    func workspaceSplitStaysInsideDetailColumn() async {
+        await #expect(processExitsWith: .success) {
+            await exerciseNestedSplitFramesInARealWindow()
+        }
+    }
+}
+
+@MainActor
+private func exerciseNestedSplitFramesInARealWindow() async {
+    let firstPaneID = layoutUUID(20)
+    var generatedIDs = (21...24).map(layoutUUID)
+    let workspace = WorkspaceModel(
+        initialPlace: .downloads,
+        initialPaneID: firstPaneID,
+        idGenerator: { generatedIDs.removeFirst() }
+    )
+    precondition(
+        workspace.split(paneID: firstPaneID, direction: .right) != nil
+    )
+
+    let contentView = ContentView(
+        workspace: workspace,
+        fileOperations: FileOperationCoordinator(),
+        terminalApplications: TerminalApplicationCoordinator(
+            workspace: PreviewLayoutTerminalWorkspace()
+        )
+    )
+    let hostingView = NSHostingView(rootView: contentView)
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 1_496, height: 939),
+        styleMask: [.titled, .closable, .resizable],
+        backing: .buffered,
+        defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.alphaValue = 0.01
+    window.contentView = hostingView
+    window.orderFront(nil)
+    defer { window.close() }
+
+    try? await Task.sleep(for: .milliseconds(500))
+    hostingView.layoutSubtreeIfNeeded()
+
+    let splitViews = nestedSplitViews(in: hostingView)
+    precondition(splitViews.count >= 2)
+
+    let navigationSplit = splitViews.min { $0.depth < $1.depth }!.view
+    let workspaceSplit = splitViews.max { $0.depth < $1.depth }!.view
+    let detailView = navigationSplit.subviews
+        .filter { $0.frame.width >= navigationSplit.bounds.width * 0.25 }
+        .max { $0.frame.minX < $1.frame.minX }!
+    let detailFrame = detailView.convert(detailView.bounds, to: hostingView)
+    let workspaceFrame = workspaceSplit.convert(
+        workspaceSplit.bounds,
+        to: hostingView
+    )
+    let tolerance: CGFloat = 2
+
+    precondition(
+        workspaceFrame.minX >= detailFrame.minX - tolerance,
+        "Workspace split must not extend underneath the sidebar."
+    )
+    precondition(
+        workspaceFrame.maxX <= detailFrame.maxX + tolerance,
+        "Workspace split must not extend beyond the detail trailing edge."
+    )
+    precondition(
+        workspaceFrame.minY >= detailFrame.minY - tolerance,
+        "Workspace split must not extend underneath the window toolbar."
+    )
+    precondition(
+        workspaceFrame.maxY <= detailFrame.maxY + tolerance,
+        "Workspace split must not extend below the detail column."
+    )
 }
 
 @MainActor
@@ -149,6 +226,26 @@ private func exerciseGridSelectionInARealWindow() async {
     // Update Constraints loop, which first appeared after repeated pane clicks.
     try? await Task.sleep(for: .seconds(2))
     hostingView.layoutSubtreeIfNeeded()
+}
+
+@MainActor
+private func nestedSplitViews(
+    in root: NSView
+) -> [(view: NSSplitView, depth: Int)] {
+    var result: [(view: NSSplitView, depth: Int)] = []
+
+    func collect(from view: NSView, depth: Int) {
+        if let splitView = view as? NSSplitView {
+            result.append((splitView, depth))
+        }
+
+        for subview in view.subviews {
+            collect(from: subview, depth: depth + 1)
+        }
+    }
+
+    collect(from: root, depth: 0)
+    return result
 }
 
 @MainActor
