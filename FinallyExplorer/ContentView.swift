@@ -362,7 +362,10 @@ struct ContentView: View {
         .listStyle(.sidebar)
         .headerProminence(.increased)
         .scrollContentBackground(.hidden)
-        .background(Color.clear)
+        .background {
+            themeController.activeTheme.sidebarBackground
+                .ignoresSafeArea()
+        }
         .safeAreaInset(edge: .bottom) {
             Button {
                 isSidebarFolderPickerPresented = true
