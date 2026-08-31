@@ -446,12 +446,17 @@ final class WorkspaceModel {
             }
 
             pane.navigation.applyRename(result)
-            pane.selectedURL = pane.selectedURL.flatMap { selectedURL in
-                FileURLRelocation.rebase(
-                    selectedURL,
-                    from: result.sourceURL,
-                    to: result.destinationURL
-                ) ?? selectedURL
+            if let selectedURL = pane.selectedURL,
+               let relocatedSelection = FileURLRelocation.rebase(
+                   selectedURL,
+                   from: result.sourceURL,
+                   to: result.destinationURL
+               ) {
+                pane.selectedURL = relocatedSelection
+                // Directory reloads can briefly clear a List selection while
+                // the renamed row is being replaced. Reveal it again once the
+                // destination entry is present so focus is never lost.
+                pane.pendingRevealURL = relocatedSelection
             }
             pane.pendingRevealURL = pane.pendingRevealURL.flatMap { pendingURL in
                 FileURLRelocation.rebase(

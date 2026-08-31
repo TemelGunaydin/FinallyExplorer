@@ -33,10 +33,32 @@ struct FileOperationCoordinatorTests {
             ) == false
         )
         #expect(coordinator.createFolder(in: nil) == false)
+        #expect(coordinator.moveToTrash(nil) == false)
         #expect(coordinator.setHidden(true, for: nil) == false)
         #expect(coordinator.cancelCurrentOperation() == false)
         #expect(coordinator.isPerforming == false)
         #expect(await service.operationCount() == 0)
+    }
+
+    @Test("Moving an item to Trash refreshes its parent and reports completion")
+    func trashRefreshesParent() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let sourceURL = URL(filePath: "/tmp/Discard Me.txt")
+
+        #expect(coordinator.moveToTrash(sourceURL))
+        #expect(coordinator.statusMessage == "Moving item to Trash…")
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.trashedSources() == [sourceURL])
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: sourceURL.deletingLastPathComponent()
+            ) == 1
+        )
+        #expect(coordinator.notice?.message == "Moved to Trash")
+        #expect(coordinator.isPerforming == false)
+        #expect(coordinator.isErrorPresented == false)
     }
 
     @Test("Only the newest file-operation notice may dismiss itself")
@@ -355,6 +377,14 @@ struct FileOperationCoordinatorTests {
         #expect(successfulCoordinator.completedOperationCount == 1)
         #expect(successfulCoordinator.isPerforming == false)
         #expect(successfulCoordinator.isErrorPresented == false)
+        #expect(
+            successfulCoordinator.lastCreatedFolderURL
+                == createdFolder.standardizedFileURL
+        )
+        #expect(
+            successfulCoordinator.renameRequest?.sourceURL
+                == createdFolder.standardizedFileURL
+        )
 
         let failingService = ScriptedFileOperationService(
             createFolderResult: .failure(.rejected("creation rejected"))
@@ -367,6 +397,8 @@ struct FileOperationCoordinatorTests {
         #expect(failingCoordinator.isPerforming == false)
         #expect(failingCoordinator.isErrorPresented)
         #expect(failingCoordinator.errorMessage == "creation rejected")
+        #expect(failingCoordinator.lastCreatedFolderURL == nil)
+        #expect(failingCoordinator.renameRequest == nil)
     }
 
     @Test("An active batch is immutable and rejects reentrant operations")
@@ -592,6 +624,7 @@ private actor ScriptedFileOperationService: FileOperationServicing {
     private var copyDestinationURLs: [URL] = []
     private var moveSourceURLs: [URL] = []
     private var createFolderCount = 0
+    private var trashedSourceURLs: [URL] = []
     private var hiddenRequests: [(URL, Bool)] = []
     private var renameRequests: [(URL, String)] = []
 
@@ -642,6 +675,15 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         )
     }
 
+    func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome {
+        trashedSourceURLs.append(sourceURL)
+        return FileOperationOutcome(
+            destinationURL: URL(filePath: "/tmp/.Trash")
+                .appending(path: sourceURL.lastPathComponent),
+            didChange: true
+        )
+    }
+
     func setHidden(
         _ hidden: Bool,
         for directoryURL: URL
@@ -688,6 +730,7 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         copySourceURLs.count
             + moveSourceURLs.count
             + createFolderCount
+            + trashedSourceURLs.count
             + hiddenRequests.count
             + renameRequests.count
     }
@@ -702,6 +745,10 @@ private actor ScriptedFileOperationService: FileOperationServicing {
 
     func movedSources() -> [URL] {
         moveSourceURLs
+    }
+
+    func trashedSources() -> [URL] {
+        trashedSourceURLs
     }
 
     func visibilityRequests() -> [(URL, Bool)] {
@@ -741,6 +788,14 @@ private actor BlockingFileOperationService: FileOperationServicing {
             destinationURL: destinationDirectoryURL.appending(
                 path: sourceURL.lastPathComponent
             ),
+            didChange: true
+        )
+    }
+
+    func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome {
+        FileOperationOutcome(
+            destinationURL: URL(filePath: "/tmp/.Trash")
+                .appending(path: sourceURL.lastPathComponent),
             didChange: true
         )
     }

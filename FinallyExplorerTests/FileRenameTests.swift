@@ -198,6 +198,10 @@ struct FileRenameTests {
                 == destination.appending(path: "Nested", directoryHint: .isDirectory)
         )
         #expect(pane.selectedURL == destination.appending(path: "Nested/file.txt"))
+        #expect(
+            pane.pendingRevealURL
+                == destination.appending(path: "Nested/file.txt")
+        )
     }
 
     private func makeRenameTemporaryDirectory() throws -> URL {

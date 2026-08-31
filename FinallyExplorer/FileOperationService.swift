@@ -58,6 +58,7 @@ nonisolated struct FileOperationOutcome: Equatable, Sendable {
 
 nonisolated protocol FileOperationServicing: Sendable {
     func createFolder(in destinationDirectoryURL: URL) async throws -> FileOperationOutcome
+    func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome
     func setHidden(_ hidden: Bool, for directoryURL: URL) async throws -> FileOperationOutcome
     func renameItem(
         at sourceURL: URL,
@@ -84,10 +85,12 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
     case sourceIsNotDirectory(path: String)
     case cannotUnhideDotPrefixedDirectory(path: String)
     case cannotRenameFileSystemRoot
+    case cannotTrashFileSystemRoot
     case invalidName(reason: String)
     case visibilityChangeFailed(path: String, hidden: Bool, reason: String)
     case createFolderFailed(destinationPath: String, reason: String)
     case renameFailed(sourcePath: String, destinationPath: String, reason: String)
+    case trashFailed(sourcePath: String, reason: String)
     case copyFailed(sourcePath: String, destinationPath: String, reason: String)
     case moveFailed(sourcePath: String, destinationPath: String, reason: String)
 
@@ -113,6 +116,8 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
             "This folder stays hidden because its name begins with a period. Rename it before turning off its hidden status.\n\nPath: \(path)"
         case .cannotRenameFileSystemRoot:
             "The file-system root cannot be renamed."
+        case .cannotTrashFileSystemRoot:
+            "The file-system root cannot be moved to Trash."
         case let .invalidName(reason):
             "Unable to use that name: \(reason)"
         case let .visibilityChangeFailed(path, hidden, reason):
@@ -121,6 +126,8 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
             "Unable to create the folder: \(reason)\n\nPath: \(destinationPath)"
         case let .renameFailed(sourcePath, destinationPath, reason):
             "Unable to rename the item: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
+        case let .trashFailed(sourcePath, reason):
+            "Unable to move the item to Trash: \(reason)\n\nPath: \(sourcePath)"
         case let .copyFailed(sourcePath, destinationPath, reason):
             "Unable to copy the item: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
         case let .moveFailed(sourcePath, destinationPath, reason):
@@ -131,6 +138,47 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
 
 /// Performs non-destructive file operations away from the caller's executor.
 nonisolated struct FileOperationService: FileOperationServicing, Sendable {
+    /// Moves an item to the current volume's Trash without deleting it permanently.
+    @concurrent
+    func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome {
+        try Task.checkCancellation()
+        guard Self.isLocalFileURL(sourceURL) else {
+            throw FileOperationError.sourceMustBeFileURL(
+                value: sourceURL.absoluteString
+            )
+        }
+
+        let sourceURL = sourceURL.standardizedFileURL
+        guard sourceURL != sourceURL.deletingLastPathComponent() else {
+            throw FileOperationError.cannotTrashFileSystemRoot
+        }
+
+        let fileManager = FileManager()
+        guard Self.itemExists(at: sourceURL, fileManager: fileManager) else {
+            throw FileOperationError.sourceNotFound(path: sourceURL.path)
+        }
+
+        try Task.checkCancellation()
+        var resultingURL: NSURL?
+
+        do {
+            try fileManager.trashItem(
+                at: sourceURL,
+                resultingItemURL: &resultingURL
+            )
+        } catch {
+            throw FileOperationError.trashFailed(
+                sourcePath: sourceURL.path,
+                reason: error.localizedDescription
+            )
+        }
+
+        return FileOperationOutcome(
+            destinationURL: (resultingURL as URL?) ?? sourceURL,
+            didChange: true
+        )
+    }
+
     /// Changes a folder's Finder-compatible hidden resource flag.
     @concurrent
     func setHidden(

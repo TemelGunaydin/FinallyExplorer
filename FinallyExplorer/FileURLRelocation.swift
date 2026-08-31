@@ -27,10 +27,16 @@ nonisolated enum FileURLRelocation {
             return nil
         }
 
-        return candidateComponents.dropFirst(sourceComponents.count).reduce(
+        let relocatedURL = candidateComponents.dropFirst(sourceComponents.count).reduce(
             destinationURL
         ) { partialURL, component in
             partialURL.appending(path: component)
         }.standardizedFileURL
+
+        guard candidateURL.hasDirectoryPath else { return relocatedURL }
+        return URL(
+            filePath: relocatedURL.path(percentEncoded: false),
+            directoryHint: .isDirectory
+        ).standardizedFileURL
     }
 }

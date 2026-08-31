@@ -12,6 +12,10 @@ struct FileInformationView: View {
 
     let item: FileItem
 
+    @State private var folderSize: Int64?
+    @State private var isCalculatingFolderSize = false
+    @State private var didFailToCalculateFolderSize = false
+
     private var kindDescription: String {
         if item.isDirectory { return "Folder" }
 
@@ -22,7 +26,15 @@ struct FileInformationView: View {
     }
 
     private var sizeDescription: String {
-        guard let fileSize = item.fileSize else { return "—" }
+        let fileSize = item.isDirectory ? folderSize : item.fileSize
+
+        guard let fileSize else {
+            if item.isDirectory, isCalculatingFolderSize {
+                return "Calculating…"
+            }
+            return didFailToCalculateFolderSize ? "Unavailable" : "—"
+        }
+
         return ByteCountFormatter.string(
             fromByteCount: fileSize,
             countStyle: .file
@@ -79,6 +91,9 @@ struct FileInformationView: View {
         .frame(width: 460)
         .background(theme.elevatedPanel)
         .accessibilityIdentifier("file-info-panel")
+        .task(id: item.url) {
+            await calculateFolderSizeIfNeeded()
+        }
     }
 
     private func informationRow(_ title: String, value: String) -> some View {
@@ -93,6 +108,29 @@ struct FileInformationView: View {
                 .lineLimit(2)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .accessibilityIdentifier(
+                    "file-info-\(title.lowercased())-value"
+                )
         }
+    }
+
+    private func calculateFolderSizeIfNeeded() async {
+        guard item.isDirectory else { return }
+
+        folderSize = nil
+        didFailToCalculateFolderSize = false
+        isCalculatingFolderSize = true
+
+        do {
+            let size = try await FolderSizeCache.shared.size(of: item.url)
+            try Task.checkCancellation()
+            folderSize = size
+        } catch is CancellationError {
+            return
+        } catch {
+            didFailToCalculateFolderSize = true
+        }
+
+        isCalculatingFolderSize = false
     }
 }

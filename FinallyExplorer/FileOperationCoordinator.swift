@@ -36,6 +36,7 @@ final class FileOperationCoordinator {
     private(set) var completedOperationCount = 0
     var renameRequest: FileRenameRequest?
     private(set) var lastRenameResult: FileRenameResult?
+    private(set) var lastCreatedFolderURL: URL?
     private var latestFileSystemChange = FileSystemChange(
         revision: 0,
         directlyAffectedDirectoryURLs: []
@@ -76,9 +77,10 @@ final class FileOperationCoordinator {
         guard let directoryURL else { return 0 }
         let normalizedDirectoryURL = Self.standardizedURL(directoryURL)
 
-        return latestFileSystemChange.directlyAffectedDirectoryURLs.contains(
-            normalizedDirectoryURL
-        )
+        return latestFileSystemChange.directlyAffectedDirectoryURLs.contains {
+            Self.normalizedPath(of: $0)
+                == Self.normalizedPath(of: normalizedDirectoryURL)
+        }
             ? latestFileSystemChange.revision
             : 0
     }
@@ -232,6 +234,22 @@ final class FileOperationCoordinator {
     }
 
     @discardableResult
+    func moveToTrash(_ sourceURL: URL?) -> Bool {
+        guard let sourceURL else { return false }
+        let standardizedSourceURL = sourceURL.standardizedFileURL
+
+        return start(
+            operation: .trash,
+            sources: [standardizedSourceURL],
+            destinationDirectoryURL: standardizedSourceURL
+                .deletingLastPathComponent(),
+            cutClipboardSnapshot: nil,
+            completionMessage: "Moved to Trash",
+            completionSystemImage: "trash.fill"
+        )
+    }
+
+    @discardableResult
     func setHidden(_ hidden: Bool, for directoryURL: URL?) -> Bool {
         guard let directoryURL else { return false }
 
@@ -309,6 +327,10 @@ final class FileOperationCoordinator {
         isErrorPresented = false
         errorMessage = ""
 
+        if case .createFolder = operation {
+            lastCreatedFolderURL = nil
+        }
+
         operationTask = Task(name: operation.taskName) { [weak self] in
             guard let self else { return }
             await perform(
@@ -336,6 +358,7 @@ final class FileOperationCoordinator {
         var successfullyMovedCutSources: Set<URL> = []
         var directlyAffectedDirectoryURLs: Set<URL> = []
         var completedRenameResult: FileRenameResult?
+        var completedCreatedFolderURL: URL?
 
         defer {
             if let cutClipboardSnapshot {
@@ -348,6 +371,13 @@ final class FileOperationCoordinator {
             isPerforming = false
             statusMessage = nil
             operationTask = nil
+
+            if let completedCreatedFolderURL {
+                lastCreatedFolderURL = completedCreatedFolderURL
+                renameRequest = FileRenameRequest(
+                    sourceURL: completedCreatedFolderURL
+                )
+            }
         }
 
         do {
@@ -359,8 +389,23 @@ final class FileOperationCoordinator {
                 didChange = outcome.didChange
 
                 if outcome.didChange {
+                    completedCreatedFolderURL = Self.standardizedURL(
+                        outcome.destinationURL
+                    )
                     directlyAffectedDirectoryURLs.insert(
                         Self.standardizedURL(destinationDirectoryURL)
+                    )
+                }
+            case .trash:
+                guard let sourceURL = sources.first else { return }
+                let outcome = try await service.trashItem(at: sourceURL)
+                didChange = outcome.didChange
+
+                if outcome.didChange {
+                    directlyAffectedDirectoryURLs.insert(
+                        Self.standardizedURL(
+                            sourceURL.deletingLastPathComponent()
+                        )
                     )
                 }
             case let .setHidden(hidden):
@@ -416,7 +461,7 @@ final class FileOperationCoordinator {
                                 at: sourceURL,
                                 to: destinationDirectoryURL
                             )
-                        case .createFolder, .setHidden, .rename:
+                        case .createFolder, .trash, .setHidden, .rename:
                             preconditionFailure(
                                 "This operation does not process copy or move sources."
                             )
@@ -612,6 +657,7 @@ final class FileOperationCoordinator {
         case copy
         case move
         case createFolder
+        case trash
         case setHidden(Bool)
         case rename(String)
 
@@ -625,7 +671,7 @@ final class FileOperationCoordinator {
 
         var requiresSources: Bool {
             switch self {
-            case .copy, .move, .setHidden, .rename:
+            case .copy, .move, .trash, .setHidden, .rename:
                 true
             case .createFolder:
                 false
@@ -640,6 +686,8 @@ final class FileOperationCoordinator {
                 "Move files"
             case .createFolder:
                 "Create folder"
+            case .trash:
+                "Move item to Trash"
             case let .setHidden(hidden):
                 hidden ? "Hide folder" : "Unhide folder"
             case .rename:
@@ -659,6 +707,8 @@ final class FileOperationCoordinator {
                 "Moving \(itemCount) items…"
             case (.createFolder, _):
                 "Creating folder…"
+            case (.trash, _):
+                "Moving item to Trash…"
             case let (.setHidden(hidden), _):
                 hidden ? "Hiding folder…" : "Unhiding folder…"
             case (.rename, _):

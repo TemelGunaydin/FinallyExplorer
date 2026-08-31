@@ -224,6 +224,20 @@ final class FinallyExplorerUITests: XCTestCase {
 
         let hidePreview = app.buttons["Hide Preview"]
         XCTAssertTrue(hidePreview.waitForExistence(timeout: 5))
+        let splitRight = app.buttons["Split Right"]
+        let splitBelow = app.buttons["Split Below"]
+        XCTAssertTrue(splitRight.waitForExistence(timeout: 5))
+        XCTAssertTrue(splitBelow.waitForExistence(timeout: 5))
+        XCTAssertLessThan(
+            splitRight.frame.maxX,
+            splitBelow.frame.minX,
+            "Horizontal and vertical split controls must stay adjacent and ordered"
+        )
+        XCTAssertLessThan(
+            splitBelow.frame.maxX,
+            hidePreview.frame.minX,
+            "The preview toggle belongs at the trailing edge of the pane toolbar"
+        )
         XCTAssertGreaterThan(
             hidePreview.frame.midY,
             sidebarToggle.frame.midY + 30,
@@ -253,6 +267,22 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(splitRightButton.waitForExistence(timeout: 3))
         splitRightButton.click()
         XCTAssertTrue(waitForElementCount(sourceRows, toEqual: 2, timeout: 5))
+
+        let locationMenus = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@", "pane-location-menu")
+        )
+        XCTAssertTrue(waitForElementCount(locationMenus, toEqual: 2, timeout: 5))
+        let globalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
+        XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
+        for locationMenu in existingElements(in: locationMenus) {
+            XCTAssertGreaterThan(
+                locationMenu.frame.minY,
+                globalSearchField.frame.maxY,
+                "Split pane headers must remain below the unified window toolbar"
+            )
+        }
 
         let resetView = app.buttons["Reset View"]
         XCTAssertTrue(resetView.waitForExistence(timeout: 3))
@@ -379,6 +409,28 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(infoPanel.waitForNonExistence(timeout: 5))
     }
 
+    func testFolderInformationCalculatesItsRecursiveSize() throws {
+        let folderRow = rows(named: "Global Results").firstMatch
+        XCTAssertTrue(folderRow.waitForExistence(timeout: 10))
+
+        try rightClickRow(folderRow)
+        let getInfo = app.menuItems["Get Info"]
+        XCTAssertTrue(getInfo.waitForExistence(timeout: 3))
+        getInfo.click()
+
+        let sizeValue = app.staticTexts["file-info-size-value"]
+        XCTAssertTrue(sizeValue.waitForExistence(timeout: 5))
+        let expectedSize = try folderContentsByteCount(at: globalSearchFolderURL)
+        let expectedText = ByteCountFormatter.string(
+            fromByteCount: expectedSize,
+            countStyle: .file
+        )
+        XCTAssertTrue(
+            waitForLabel(expectedText, on: sizeValue, timeout: 10),
+            "Folder Get Info should replace the placeholder with its recursive size"
+        )
+    }
+
     func testFileCanBeRenamedFromItsContextMenu() throws {
         let sourceRow = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
@@ -410,6 +462,71 @@ final class FinallyExplorerUITests: XCTestCase {
         let toast = app.descendants(matching: .any)["file-operation-toast"]
         XCTAssertTrue(toast.waitForExistence(timeout: 5))
         XCTAssertEqual(toast.value as? String, "Renamed")
+    }
+
+    func testNewFolderIsSelectedAndImmediatelyReadyForNaming() throws {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let newFolderButton = app.buttons["New Folder"]
+        XCTAssertTrue(newFolderButton.waitForExistence(timeout: 5))
+        newFolderButton.click()
+
+        let nameField = app.textFields["rename-text-field"]
+        XCTAssertTrue(
+            nameField.waitForExistence(timeout: 5),
+            "Creating a folder should immediately enter naming mode"
+        )
+
+        // Do not click the field: typing successfully here proves that the
+        // automatic naming field owns keyboard focus and selected the default name.
+        nameField.typeKey("x", modifierFlags: [])
+        XCTAssertTrue(
+            waitForValue("x", on: nameField, timeout: 3),
+            "The naming field contained \(String(describing: nameField.value))"
+        )
+        nameField.typeKey(.return, modifierFlags: [])
+
+        let renamedRow = rows(named: "x").firstMatch
+        XCTAssertTrue(renamedRow.waitForExistence(timeout: 10))
+        let renamedCell = try XCTUnwrap(containingCell(for: renamedRow))
+        XCTAssertTrue(
+            waitForSelectedStatus(true, on: renamedCell, timeout: 5),
+            "The newly created and named folder should remain the active row"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixtureRootURL
+                    .appending(path: "x", directoryHint: .isDirectory)
+                    .path(percentEncoded: false)
+            )
+        )
+    }
+
+    func testRowTrashButtonRequiresConfirmation() {
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+
+        let trashButton = app.buttons["trash-item-Source Item.txt"]
+        XCTAssertTrue(trashButton.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(
+            trashButton.frame.minX,
+            sourceRow.frame.midX,
+            "The Trash shortcut should stay at the trailing side of the row"
+        )
+        trashButton.click()
+
+        let confirmation = app.staticTexts["Move to Trash?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Move to Trash"].waitForExistence(timeout: 3))
+
+        let cancelButton = app.buttons["Cancel"]
+        XCTAssertTrue(cancelButton.waitForExistence(timeout: 3))
+        cancelButton.click()
+
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 3))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path()))
     }
 
     func testMountedUSBVolumeAppearsInLocationsAndCanBeOpened() throws {
@@ -778,6 +895,19 @@ final class FinallyExplorerUITests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 
+    private func waitForLabel(
+        _ expectedLabel: String,
+        on element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate(format: "label == %@", expectedLabel)
+        let expectation = XCTNSPredicateExpectation(
+            predicate: predicate,
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
     private func waitForLabelSuffix(
         _ suffix: String,
         on element: XCUIElement,
@@ -858,5 +988,16 @@ final class FinallyExplorerUITests: XCTestCase {
             at: fixtureRootURL,
             includingPropertiesForKeys: nil
         ).map(\.lastPathComponent).sorted()) ?? []
+    }
+
+    private func folderContentsByteCount(at directoryURL: URL) throws -> Int64 {
+        let urls = try FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )
+        return try urls.reduce(into: 0) { total, url in
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            total += Int64(size)
+        }
     }
 }

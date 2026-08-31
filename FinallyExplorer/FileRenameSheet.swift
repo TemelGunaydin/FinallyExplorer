@@ -14,6 +14,7 @@ struct FileRenameSheet: View {
     let coordinator: FileOperationCoordinator
 
     @State private var name: String
+    @State private var nameSelection: TextSelection?
 
     init(
         request: FileRenameRequest,
@@ -21,7 +22,9 @@ struct FileRenameSheet: View {
     ) {
         self.request = request
         self.coordinator = coordinator
-        _name = State(initialValue: request.originalName)
+        let originalName = request.originalName
+        _name = State(initialValue: originalName)
+        _nameSelection = State(initialValue: nil)
     }
 
     private var validationMessage: String? {
@@ -40,7 +43,11 @@ struct FileRenameSheet: View {
                 .font(ExplorerTheme.paneTitleFont)
                 .foregroundStyle(theme.textPrimary)
 
-            TextField("Name", text: $name)
+            TextField(
+                "Name",
+                text: $name,
+                selection: $nameSelection
+            )
                 .textFieldStyle(.roundedBorder)
                 .focused($isNameFocused)
                 .onSubmit(submit)
@@ -69,6 +76,8 @@ struct FileRenameSheet: View {
         .background(theme.elevatedPanel)
         .task {
             isNameFocused = true
+            await Task.yield()
+            nameSelection = TextSelection(range: name.startIndex..<name.endIndex)
         }
     }
 

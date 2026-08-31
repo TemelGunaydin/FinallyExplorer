@@ -310,23 +310,32 @@ struct ExplorerToolbarButtonStyle: ButtonStyle {
                 isEnabled ? theme.textPrimary : theme.textTertiary
             )
             .frame(width: 34, height: 34)
-            .background(
-                configuration.isPressed
-                    ? theme.accentSoft
-                    : theme.elevatedPanel,
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
+            .background {
+                ExplorerRaisedButtonSurface(
+                    cornerRadius: 11,
+                    pressedOverlay: configuration.isPressed
+                        ? theme.accentSoft.opacity(0.72)
+                        : .clear
+                )
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(theme.divider.opacity(0.72), lineWidth: 0.75)
             }
             .shadow(
-                color: theme.imperialPrimer.opacity(0.08),
-                radius: 3,
+                color: Color.black.opacity(0.16),
+                radius: 1,
                 x: 0,
                 y: 1
             )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .shadow(
+                color: theme.imperialPrimer.opacity(0.13),
+                radius: 4,
+                x: 0,
+                y: 2
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .offset(y: configuration.isPressed ? 1 : 0)
             .opacity(isEnabled ? 1 : 0.55)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -387,25 +396,53 @@ struct ExplorerActionButtonStyle: ButtonStyle {
             .foregroundStyle(theme.textPrimary)
             .padding(.horizontal, 13)
             .frame(height: 36)
-            .background(
-                configuration.isPressed
-                    ? theme.accentSoft
-                    : theme.elevatedPanel,
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
+            .background {
+                ExplorerRaisedButtonSurface(
+                    cornerRadius: 11,
+                    pressedOverlay: configuration.isPressed
+                        ? theme.accentSoft.opacity(0.72)
+                        : .clear
+                )
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(theme.divider.opacity(0.82), lineWidth: 0.75)
             }
             .shadow(
-                color: theme.imperialPrimer.opacity(0.08),
-                radius: configuration.isPressed ? 2 : 5,
+                color: Color.black.opacity(0.16),
+                radius: 1,
                 x: 0,
-                y: configuration.isPressed ? 1 : 2
+                y: 1
             )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .shadow(
+                color: theme.imperialPrimer.opacity(0.14),
+                radius: 5,
+                x: 0,
+                y: 2
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .offset(y: configuration.isPressed ? 1 : 0)
             .opacity(isEnabled ? 1 : 0.52)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct ExplorerRaisedButtonSurface: View {
+    @Environment(\.explorerTheme) private var theme
+
+    let cornerRadius: CGFloat
+    let pressedOverlay: Color
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
+    var body: some View {
+        shape
+            .fill(theme.elevatedPanel)
+            .overlay {
+                shape.fill(pressedOverlay)
+            }
     }
 }
 

@@ -228,7 +228,7 @@ private struct GlobalSearchMessageBanner: View {
                 : "info.circle.fill"
         )
         .font(.callout)
-        .foregroundStyle(message.isError ? Color.red : theme.supportAccent)
+        .foregroundStyle(message.isError ? Color.red : theme.textPrimary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

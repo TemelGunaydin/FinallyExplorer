@@ -190,6 +190,7 @@ struct ContentView: View {
                     onReveal: revealGlobalSearchResult
                 )
             }
+            .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
                 ExplorerThemePicker(controller: themeController)
@@ -495,16 +496,26 @@ private struct WorkspaceRootView: View {
     let onResetView: () -> Void
 
     var body: some View {
-        WorkspaceNodeView(
-            node: workspace.layoutRoot,
-            workspace: workspace,
-            sidebar: sidebar,
-            isPreviewVisible: isPreviewVisible,
-            onTogglePreview: onTogglePreview,
-            onResetView: onResetView
-        )
+        GeometryReader { proxy in
+            WorkspaceNodeView(
+                node: workspace.layoutRoot,
+                workspace: workspace,
+                sidebar: sidebar,
+                isPreviewVisible: isPreviewVisible,
+                onTogglePreview: onTogglePreview,
+                onResetView: onResetView
+            )
+            // AppKit's resizable split views don't propagate the unified
+            // titlebar safe area to their hosted children. Preserve that inset
+            // once a workspace becomes a grid so pane headers cannot slide
+            // underneath the window toolbar.
+            .padding(
+                .top,
+                workspace.paneCount > 1 ? proxy.safeAreaInsets.top : 0
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.canvas)
+        }
+        .background(theme.canvas)
     }
 }
 
@@ -738,6 +749,22 @@ private struct DestinationView: View {
             pane.selectedURL = nil
             pane.isInspectorPresented = false
         }
+        .onChange(of: fileOperations.lastCreatedFolderURL) {
+            guard let createdFolderURL = fileOperations.lastCreatedFolderURL,
+                  workspace.activePaneID == pane.id,
+                  let displayedDirectory = pane.displayedDirectory,
+                  urlsReferToSameItem(
+                      createdFolderURL.deletingLastPathComponent(),
+                      displayedDirectory
+                  ) else {
+                return
+            }
+
+            pane.pendingRevealURL = createdFolderURL
+            pane.selectedSearchResultID = nil
+            pane.selectedURL = createdFolderURL
+            pane.isInspectorPresented = false
+        }
         .modifier(
             WorkspacePaneAccessibilityModifier(
                 pane: pane,
@@ -814,14 +841,6 @@ private struct DestinationView: View {
 
                 NearbyTransferToolbarButton(sourceURLs: pane.selectedCommandURLs)
 
-                Button("Split Right", systemImage: "rectangle.split.2x1") {
-                    _ = workspace.split(paneID: pane.id, direction: .right)
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
-                .disabled(workspace.canSplit == false)
-                .help("Split this pane to the right")
-
                 Button(
                     pane.showsHiddenItems ? "Hide Hidden Items" : "Show Hidden Items",
                     systemImage: pane.showsHiddenItems ? "eye.slash" : "eye"
@@ -836,20 +855,13 @@ private struct DestinationView: View {
                         : "Show hidden files and folders in this pane"
                 )
 
-                if workspace.paneCount == 1 {
-                    Button(
-                        isPreviewVisible ? "Hide Preview" : "Show Preview",
-                        systemImage: "sidebar.trailing",
-                        action: onTogglePreview
-                    )
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerToolbarButtonStyle())
-                    .help(
-                        isPreviewVisible
-                            ? "Hide the preview area"
-                            : "Show the preview area"
-                    )
+                Button("Split Right", systemImage: "rectangle.split.2x1") {
+                    _ = workspace.split(paneID: pane.id, direction: .right)
                 }
+                .labelStyle(.iconOnly)
+                .buttonStyle(ExplorerToolbarButtonStyle())
+                .disabled(workspace.canSplit == false)
+                .help("Split this pane to the right")
 
                 Button("Split Below", systemImage: "rectangle.split.1x2") {
                     _ = workspace.split(paneID: pane.id, direction: .below)
@@ -877,6 +889,21 @@ private struct DestinationView: View {
                     .labelStyle(.iconOnly)
                     .buttonStyle(ExplorerToolbarButtonStyle())
                     .help("Close this pane")
+                }
+
+                if workspace.paneCount == 1 {
+                    Button(
+                        isPreviewVisible ? "Hide Preview" : "Show Preview",
+                        systemImage: "sidebar.trailing",
+                        action: onTogglePreview
+                    )
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .help(
+                        isPreviewVisible
+                            ? "Hide the preview area"
+                            : "Show the preview area"
+                    )
                 }
             }
             .padding(7)
@@ -1410,9 +1437,45 @@ private struct FileRowContent: View {
 
             FileSizeLabel(item: item)
                 .frame(minWidth: 72, alignment: .trailing)
+
+            TrashItemButton(item: item)
         }
     }
 
+}
+
+private struct TrashItemButton: View {
+    @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(\.explorerTheme) private var theme
+
+    let item: FileItem
+
+    @State private var isConfirmationPresented = false
+
+    var body: some View {
+        Button {
+            isConfirmationPresented = true
+        } label: {
+            Image(systemName: "trash")
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(theme.textSecondary)
+        .disabled(fileOperations.isPerforming)
+        .help("Move \(item.name) to Trash")
+        .accessibilityLabel("Move \(item.name) to Trash")
+        .accessibilityIdentifier("trash-item-\(item.name)")
+        .alert("Move to Trash?", isPresented: $isConfirmationPresented) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move to Trash", role: .destructive) {
+                fileOperations.moveToTrash(item.url)
+            }
+        } message: {
+            Text("“\(item.name)” will be moved to Trash.")
+        }
+    }
 }
 
 struct FileSizeLabel: View {

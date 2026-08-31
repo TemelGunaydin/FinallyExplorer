@@ -9,6 +9,33 @@ import UniformTypeIdentifiers
 @testable import FinallyExplorer
 
 struct FileOperationServiceTests {
+    @Test("Trash rejects unsafe roots, remote URLs, and missing items")
+    func trashValidatesSourceBeforeMutation() async {
+        let service = FileOperationService()
+        let remoteURL = URL(string: "https://example.com/file.txt")!
+        let missingURL = FileManager.default.temporaryDirectory.appending(
+            path: "finally-explorer-missing-trash-item-\(UUID().uuidString)"
+        )
+
+        await #expect(
+            throws: FileOperationError.sourceMustBeFileURL(
+                value: remoteURL.absoluteString
+            )
+        ) {
+            try await service.trashItem(at: remoteURL)
+        }
+        await #expect(throws: FileOperationError.cannotTrashFileSystemRoot) {
+            try await service.trashItem(
+                at: URL(filePath: "/", directoryHint: .isDirectory)
+            )
+        }
+        await #expect(
+            throws: FileOperationError.sourceNotFound(path: missingURL.path)
+        ) {
+            try await service.trashItem(at: missingURL)
+        }
+    }
+
     @Test("A file is copied into an empty destination")
     func copiesFile() async throws {
         let root = try makeFileOperationTemporaryDirectory()

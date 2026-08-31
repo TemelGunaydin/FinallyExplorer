@@ -32,14 +32,23 @@ struct NearbyDevicePickerView: View {
             }
 
             if coordinator.pendingSourceURLs.isEmpty {
-                Label(
-                    "Nearby receiving is active. Select a file or folder to send.",
-                    systemImage: "checkmark.circle.fill"
-                )
-                .foregroundStyle(theme.supportAccent)
+                HStack(spacing: 9) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(theme.supportAccent)
+
+                    Text(
+                        "Nearby receiving is active. Select a file or folder to send."
+                    )
+                    .foregroundStyle(theme.textPrimary)
+                }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.control, in: RoundedRectangle(cornerRadius: 12))
+                .background(
+                    theme.supportAccent.opacity(0.14),
+                    in: RoundedRectangle(cornerRadius: 12)
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("nearby-receiving-status")
             } else {
                 Text(selectionSummary)
                     .font(.callout.weight(.semibold))
@@ -98,7 +107,12 @@ struct NearbyDevicePickerView: View {
                     }
                 }
             }
-            .frame(minHeight: 210)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: 210,
+                maxHeight: .infinity,
+                alignment: .center
+            )
 
             HStack {
                 Button("Stop Nearby Sharing") {
