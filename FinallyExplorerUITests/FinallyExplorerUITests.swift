@@ -412,10 +412,10 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertEqual(toast.value as? String, "Renamed")
     }
 
-    func testMountedUSBVolumeAppearsInLocationsAndCanBeOpened() {
+    func testMountedUSBVolumeAppearsInLocationsAndCanBeOpened() throws {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let identifier = "sidebar-location-\(mountedVolumeURL.path(percentEncoded: false))"
-        let mountedVolume = app.descendants(matching: .any)[identifier]
+        let mountedVolume = element(withIdentifier: identifier)
 
         XCTAssertTrue(
             mountedVolume.waitForExistence(timeout: 5),
@@ -423,6 +423,12 @@ final class FinallyExplorerUITests: XCTestCase {
         )
         XCTAssertTrue(mountedVolume.label.contains(mountedVolumeURL.lastPathComponent))
         mountedVolume.click()
+
+        let mountedVolumeCell = try XCTUnwrap(containingCell(for: mountedVolume))
+        XCTAssertTrue(
+            waitForSelectedStatus(true, on: mountedVolumeCell, timeout: 5),
+            "A selected mounted volume must use the same List selection state as other sidebar locations"
+        )
 
         let locationPaths = app.staticTexts.matching(
             NSPredicate(format: "identifier == %@", "pane-location-path")
@@ -433,7 +439,8 @@ final class FinallyExplorerUITests: XCTestCase {
                 mountedVolumeURL.path(percentEncoded: false),
                 on: locationPaths.firstMatch,
                 timeout: 5
-            )
+            ),
+            "Expected mounted path \(mountedVolumeURL.path(percentEncoded: false)); actual label/value: \(locationPaths.firstMatch.label) / \(String(describing: locationPaths.firstMatch.value))"
         )
     }
 
@@ -441,8 +448,10 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let rowIdentifier = "sidebar-location-\(mountedVolumeURL.path(percentEncoded: false))"
         let ejectIdentifier = "sidebar-eject-\(mountedVolumeURL.path(percentEncoded: false))"
-        let mountedVolume = app.descendants(matching: .any)[rowIdentifier]
-        let ejectButton = app.buttons[ejectIdentifier]
+        let mountedVolume = element(withIdentifier: rowIdentifier)
+        let ejectButton = app.buttons.matching(
+            NSPredicate(format: "identifier == %@", ejectIdentifier)
+        ).firstMatch
         let locationPath = app.staticTexts["pane-location-path"]
 
         XCTAssertTrue(mountedVolume.waitForExistence(timeout: 5))
@@ -453,7 +462,8 @@ final class FinallyExplorerUITests: XCTestCase {
                 fixtureRootURL.path(percentEncoded: false),
                 on: locationPath,
                 timeout: 5
-            )
+            ),
+            "Expected fixture path \(fixtureRootURL.path(percentEncoded: false)); actual label/value: \(locationPath.label) / \(String(describing: locationPath.value))"
         )
 
         ejectButton.click()
@@ -698,6 +708,12 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
+    private func element(withIdentifier identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@", identifier)
+        ).firstMatch
+    }
+
     private func existingElements(in query: XCUIElementQuery) -> [XCUIElement] {
         (0..<query.count)
             .map(query.element(boundBy:))
@@ -767,7 +783,27 @@ final class FinallyExplorerUITests: XCTestCase {
         on element: XCUIElement,
         timeout: TimeInterval
     ) -> Bool {
-        let predicate = NSPredicate(format: "label ENDSWITH %@", suffix)
+        let normalizedSuffix = suffix.trimmingCharacters(
+            in: CharacterSet(charactersIn: "/")
+        )
+        let predicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            let displayedValues = [element.label, element.value as? String]
+                .compactMap { $0 }
+
+            return displayedValues.contains { displayedValue in
+                let normalizedValue = displayedValue.trimmingCharacters(
+                    in: CharacterSet(charactersIn: "/")
+                )
+                if normalizedValue.hasSuffix(normalizedSuffix) {
+                    return true
+                }
+
+                guard normalizedValue.hasPrefix("~") else { return false }
+                let homeRelativeValue = String(normalizedValue.dropFirst())
+                return normalizedSuffix.hasSuffix(homeRelativeValue)
+            }
+        }
         let expectation = XCTNSPredicateExpectation(
             predicate: predicate,
             object: element

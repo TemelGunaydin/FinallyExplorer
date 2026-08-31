@@ -247,8 +247,8 @@ struct ExplorerTheme {
             ),
             sidebarBackground: LinearGradient(
                 colors: [shellStart, shellMiddle, shellEnd],
-                startPoint: .leading,
-                endPoint: .trailing
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             ),
             sidebarFooter: LinearGradient(
                 colors: [shellMiddle, shellEnd],

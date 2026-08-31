@@ -120,6 +120,28 @@ struct MountedVolumeTests {
         #expect(await ejector.requestedURLs == [usb.url])
     }
 
+    @Test("External drives remain ejectable when macOS omits the ejectable flag")
+    func externalDriveWithoutEjectableMetadataCanBeEjected() async {
+        let usb = volume(
+            path: "/Volumes/Metadata-Light USB",
+            title: "Metadata-Light USB",
+            isInternal: false,
+            isRemovable: false,
+            isEjectable: false
+        )
+        let ejector = RecordingMountedVolumeEjector()
+        let monitor = MountedVolumeMonitor(
+            loadVolumes: { [usb] },
+            ejector: ejector,
+            observesWorkspaceChanges: false
+        )
+
+        #expect(usb.supportsUserInitiatedEject)
+        #expect(await monitor.eject(usb))
+        #expect(await ejector.requestedURLs == [usb.url])
+        #expect(monitor.volumes.isEmpty)
+    }
+
     @Test("Failed eject restores the control and keeps the disk visible")
     func failedEjectKeepsVolumeAndPublishesReason() async {
         let usb = volume(
@@ -191,6 +213,14 @@ private actor SuspendedMountedVolumeEjector: MountedVolumeEjecting {
     func succeed() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+private actor RecordingMountedVolumeEjector: MountedVolumeEjecting {
+    private(set) var requestedURLs: [URL] = []
+
+    func eject(_ volumeURL: URL) async throws {
+        requestedURLs.append(volumeURL)
     }
 }
 

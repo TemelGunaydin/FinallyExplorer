@@ -362,10 +362,7 @@ struct ContentView: View {
         .listStyle(.sidebar)
         .headerProminence(.increased)
         .scrollContentBackground(.hidden)
-        .background {
-            themeController.activeTheme.sidebarBackground
-                .ignoresSafeArea()
-        }
+        .background(themeController.activeTheme.sidebarBackground)
         .safeAreaInset(edge: .bottom) {
             Button {
                 isSidebarFolderPickerPresented = true
@@ -376,7 +373,7 @@ struct ContentView: View {
             .help("Add Folder to Sidebar")
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color.clear)
+            .background(themeController.activeTheme.sidebarFooter)
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(themeController.activeTheme.chromeDivider)
@@ -400,7 +397,6 @@ struct ContentView: View {
 
     private func mountedVolumeSidebarRow(_ volume: MountedVolume) -> some View {
         let place = volume.sidebarPlace
-        let isSelected = workspace.activePane?.place.id == place.id
 
         return MountedVolumeSidebarRow(
             volume: volume,
@@ -412,7 +408,7 @@ struct ContentView: View {
                 ejectMountedVolume(volume)
             }
         )
-        .listRowBackground(ExplorerRowBackground(isSelected: isSelected))
+        .tag(place)
         .internalFolderDropTarget(
             destinationDirectoryURL: volume.url,
             paneID: workspace.activePaneID,

@@ -27,14 +27,14 @@ struct MountedVolumeSidebarRow: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier(Self.rowIdentifier(for: volume.url))
 
-            if volume.isEjectable {
+            if volume.supportsUserInitiatedEject {
                 ejectControl
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
         .contextMenu {
-            if volume.isEjectable {
+            if volume.supportsUserInitiatedEject {
                 Button(
                     "Eject “\(volume.title)”",
                     systemImage: "eject",

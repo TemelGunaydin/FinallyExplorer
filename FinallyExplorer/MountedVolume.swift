@@ -22,6 +22,13 @@ nonisolated struct MountedVolume: Identifiable, Hashable, Sendable {
             && (isInternal == false || isRemovable || isEjectable)
     }
 
+    /// Finder offers eject for external volumes even when the optional
+    /// `volumeIsEjectable` resource value is missing or reported as false.
+    var supportsUserInitiatedEject: Bool {
+        url.standardizedFileURL != URL(filePath: "/", directoryHint: .isDirectory)
+            && (isInternal == false || isRemovable || isEjectable)
+    }
+
     var sidebarPlace: SidebarPlace {
         .location(url, title: title, systemImage: "externaldrive")
     }

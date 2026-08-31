@@ -74,7 +74,7 @@ final class MountedVolumeMonitor {
         let volumeURL = requestedVolume.url.standardizedFileURL
         guard let volume = volumes.first(where: {
             $0.url.standardizedFileURL == volumeURL
-        }), volume.isEjectable else {
+        }), volume.supportsUserInitiatedEject else {
             return false
         }
         guard ejectingVolumeURLs.insert(volumeURL).inserted else {
