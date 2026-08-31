@@ -437,6 +437,38 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
+    func testMountedUSBVolumeCanBeEjectedWithoutOpeningIt() {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        let rowIdentifier = "sidebar-location-\(mountedVolumeURL.path(percentEncoded: false))"
+        let ejectIdentifier = "sidebar-eject-\(mountedVolumeURL.path(percentEncoded: false))"
+        let mountedVolume = app.descendants(matching: .any)[rowIdentifier]
+        let ejectButton = app.buttons[ejectIdentifier]
+        let locationPath = app.staticTexts["pane-location-path"]
+
+        XCTAssertTrue(mountedVolume.waitForExistence(timeout: 5))
+        XCTAssertTrue(ejectButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(locationPath.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForLabelSuffix(
+                fixtureRootURL.path(percentEncoded: false),
+                on: locationPath,
+                timeout: 5
+            )
+        )
+
+        ejectButton.click()
+
+        XCTAssertTrue(mountedVolume.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForLabelSuffix(
+                fixtureRootURL.path(percentEncoded: false),
+                on: locationPath,
+                timeout: 5
+            ),
+            "Clicking the eject control must not navigate the active pane to the disk"
+        )
+    }
+
     func testFolderCanBeHiddenAndRecovered() throws {
         let destinationRows = rows(named: "Destination")
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 10))

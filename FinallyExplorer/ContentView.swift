@@ -82,6 +82,17 @@ struct ContentView: View {
         )
     }
 
+    private var isMountedVolumeEjectFailurePresented: Binding<Bool> {
+        Binding(
+            get: { sidebar.mountedVolumeMonitor.ejectFailure != nil },
+            set: { isPresented in
+                if isPresented == false {
+                    sidebar.mountedVolumeMonitor.dismissEjectFailure()
+                }
+            }
+        )
+    }
+
     private var fileCommandContext: FileCommandContext? {
         guard let pane = workspace.activePane else { return nil }
 
@@ -251,6 +262,21 @@ struct ContentView: View {
         } message: {
             Text(nearbyTransfers.errorMessage)
         }
+        .alert(
+            "Couldn’t Eject Disk",
+            isPresented: isMountedVolumeEjectFailurePresented,
+            presenting: sidebar.mountedVolumeMonitor.ejectFailure
+        ) { failure in
+            Button("Try Again") {
+                ejectMountedVolume(failure.volume)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { failure in
+            Text(
+                "“\(failure.volume.title)” could not be ejected.\n\n"
+                    + failure.message
+            )
+        }
         .sheet(item: $fileOperations.renameRequest) { request in
             FileRenameSheet(
                 request: request,
@@ -290,6 +316,15 @@ struct ContentView: View {
         workspace.reveal(result.item)
     }
 
+    private func ejectMountedVolume(_ volume: MountedVolume) {
+        Task {
+            let didEject = await sidebar.mountedVolumeMonitor.eject(volume)
+            if didEject {
+                workspace.handleEjectedVolume(at: volume.url)
+            }
+        }
+    }
+
     private var explorerSidebar: some View {
         List(selection: sidebarSelection) {
             Section {
@@ -317,8 +352,8 @@ struct ContentView: View {
                     sidebarRow(.builtIn(place))
                 }
 
-                ForEach(sidebar.mountedVolumePlaces) { place in
-                    sidebarRow(place)
+                ForEach(sidebar.mountedVolumeMonitor.volumes) { volume in
+                    mountedVolumeSidebarRow(volume)
                 }
             } header: {
                 sidebarSectionHeader("Locations")
@@ -358,6 +393,28 @@ struct ContentView: View {
 
             workspace.select(.favorite(favorite), in: workspace.activePaneID)
         }
+    }
+
+    private func mountedVolumeSidebarRow(_ volume: MountedVolume) -> some View {
+        let place = volume.sidebarPlace
+        let isSelected = workspace.activePane?.place.id == place.id
+
+        return MountedVolumeSidebarRow(
+            volume: volume,
+            isEjecting: sidebar.mountedVolumeMonitor.isEjecting(volume),
+            onOpen: {
+                workspace.select(place, in: workspace.activePaneID)
+            },
+            onEject: {
+                ejectMountedVolume(volume)
+            }
+        )
+        .listRowBackground(ExplorerRowBackground(isSelected: isSelected))
+        .internalFolderDropTarget(
+            destinationDirectoryURL: volume.url,
+            paneID: workspace.activePaneID,
+            showsTerminalCommands: true
+        )
     }
 
     @ViewBuilder

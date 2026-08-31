@@ -122,6 +122,7 @@ struct FinallyExplorerApp: App {
                     )
                 ]
             },
+            ejector: UITestMountedVolumeEjector(),
             observesWorkspaceChanges: false
         )
     }

@@ -463,6 +463,33 @@ final class WorkspaceModel {
         }
     }
 
+    /// Moves panes away from a disk after macOS confirms that it was ejected.
+    /// The split layout is preserved; only panes whose current directory was on
+    /// that volume return to Home.
+    @discardableResult
+    func handleEjectedVolume(at volumeURL: URL) -> Int {
+        let normalizedVolumeURL = volumeURL.standardizedFileURL
+        guard normalizedVolumeURL.isFileURL,
+              normalizedVolumeURL.path(percentEncoded: false) != "/" else {
+            return 0
+        }
+
+        var relocatedPaneCount = 0
+        for pane in panes.values {
+            guard let directoryURL = pane.displayedDirectory,
+                  Self.isSameOrDescendant(
+                      directoryURL,
+                      of: normalizedVolumeURL
+                  ) else {
+                continue
+            }
+
+            pane.select(.home)
+            relocatedPaneCount += 1
+        }
+        return relocatedPaneCount
+    }
+
     @discardableResult
     func split(_ direction: WorkspaceSplitDirection) -> UUID? {
         split(paneID: activePaneID, direction: direction)
@@ -535,5 +562,21 @@ final class WorkspaceModel {
         }
 
         return nil
+    }
+
+    private nonisolated static func isSameOrDescendant(
+        _ candidateURL: URL,
+        of ancestorURL: URL
+    ) -> Bool {
+        let candidateURL = candidateURL.standardizedFileURL
+        let ancestorURL = ancestorURL.standardizedFileURL
+        let candidateComponents = candidateURL.pathComponents
+        let ancestorComponents = ancestorURL.pathComponents
+
+        return candidateURL.isFileURL
+            && ancestorURL.isFileURL
+            && candidateComponents.count >= ancestorComponents.count
+            && candidateComponents.prefix(ancestorComponents.count)
+                .elementsEqual(ancestorComponents)
     }
 }

@@ -52,14 +52,14 @@ struct MountedVolumeTests {
     func mountNotificationRefreshesVolumes() async {
         let notificationCenter = NotificationCenter()
         let usb = volume(path: "/Volumes/USB", title: "USB", isInternal: false)
-        var loadedVolumes: [MountedVolume] = []
+        let source = MountedVolumeSource()
         let monitor = MountedVolumeMonitor(
-            loadVolumes: { loadedVolumes },
+            loadVolumes: { source.volumes },
             notificationCenter: notificationCenter
         )
         #expect(monitor.volumes.isEmpty)
 
-        loadedVolumes = [usb]
+        source.volumes = [usb]
         notificationCenter.post(name: NSWorkspace.didMountNotification, object: nil)
 
         for _ in 0..<100 where monitor.volumes.isEmpty {
@@ -87,6 +87,64 @@ struct MountedVolumeTests {
         #expect(sidebar.allPlaces.contains { $0.id == place?.id })
     }
 
+    @Test("Successful eject coalesces duplicate requests and removes the disk")
+    func successfulEjectCoalescesDuplicateRequests() async throws {
+        let usb = volume(
+            path: "/Volumes/Work USB",
+            title: "Work USB",
+            isInternal: false,
+            isRemovable: true,
+            isEjectable: true
+        )
+        let ejector = SuspendedMountedVolumeEjector()
+        let monitor = MountedVolumeMonitor(
+            loadVolumes: { [usb] },
+            ejector: ejector,
+            observesWorkspaceChanges: false
+        )
+
+        let firstRequest = Task {
+            await monitor.eject(usb)
+        }
+        await ejector.waitUntilRequestCount(1)
+
+        #expect(monitor.isEjecting(usb))
+        #expect(await monitor.eject(usb) == false)
+        #expect(await ejector.requestCount == 1)
+
+        await ejector.succeed()
+        #expect(await firstRequest.value)
+        #expect(monitor.isEjecting(usb) == false)
+        #expect(monitor.volumes.isEmpty)
+        #expect(monitor.ejectFailure == nil)
+        #expect(await ejector.requestedURLs == [usb.url])
+    }
+
+    @Test("Failed eject restores the control and keeps the disk visible")
+    func failedEjectKeepsVolumeAndPublishesReason() async {
+        let usb = volume(
+            path: "/Volumes/Busy USB",
+            title: "Busy USB",
+            isInternal: false,
+            isRemovable: true,
+            isEjectable: true
+        )
+        let monitor = MountedVolumeMonitor(
+            loadVolumes: { [usb] },
+            ejector: FailingMountedVolumeEjector(message: "The disk is in use."),
+            observesWorkspaceChanges: false
+        )
+
+        #expect(await monitor.eject(usb) == false)
+        #expect(monitor.isEjecting(usb) == false)
+        #expect(monitor.volumes == [usb])
+        #expect(monitor.ejectFailure?.volume == usb)
+        #expect(monitor.ejectFailure?.message == "The disk is in use.")
+
+        monitor.dismissEjectFailure()
+        #expect(monitor.ejectFailure == nil)
+    }
+
     private func volume(
         path: String,
         title: String,
@@ -104,6 +162,50 @@ struct MountedVolumeTests {
             isBrowsable: isBrowsable
         )
     }
+}
+
+@MainActor
+private final class MountedVolumeSource {
+    var volumes: [MountedVolume] = []
+}
+
+private actor SuspendedMountedVolumeEjector: MountedVolumeEjecting {
+    private var continuation: CheckedContinuation<Void, any Error>?
+    private(set) var requestedURLs: [URL] = []
+
+    var requestCount: Int { requestedURLs.count }
+
+    func eject(_ volumeURL: URL) async throws {
+        requestedURLs.append(volumeURL)
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func waitUntilRequestCount(_ expectedCount: Int) async {
+        while requestedURLs.count < expectedCount {
+            await Task.yield()
+        }
+    }
+
+    func succeed() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private struct FailingMountedVolumeEjector: MountedVolumeEjecting {
+    let message: String
+
+    func eject(_ volumeURL: URL) async throws {
+        throw TestMountedVolumeEjectError(message: message)
+    }
+}
+
+private struct TestMountedVolumeEjectError: LocalizedError, Sendable {
+    let message: String
+
+    var errorDescription: String? { message }
 }
 
 @MainActor

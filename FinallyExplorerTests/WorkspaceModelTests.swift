@@ -411,6 +411,42 @@ struct WorkspaceModelTests {
         #expect(firstPane.navigation.currentDirectory != nil)
     }
 
+    @Test("Ejecting a disk relocates only affected panes and preserves the layout")
+    func ejectedVolumeRelocatesAffectedPanes() throws {
+        let firstID = uuid(63)
+        let secondID = uuid(64)
+        let splitID = uuid(66)
+        let ids = DeterministicWorkspaceIDSequence([secondID, splitID])
+        let volumeURL = URL(
+            filePath: "/Volumes/Work USB",
+            directoryHint: .isDirectory
+        )
+        let model = WorkspaceModel(
+            initialPlace: .location(
+                volumeURL,
+                title: "Work USB",
+                systemImage: "externaldrive"
+            ),
+            initialPaneID: firstID,
+            idGenerator: { ids.next() }
+        )
+        let affectedPane = try #require(model.activePane)
+        affectedPane.navigation.open(
+            volumeURL.appending(path: "Projects", directoryHint: .isDirectory)
+        )
+        _ = try #require(model.split(.right))
+        let unaffectedPane = try #require(model.activePane)
+        model.select(.documents)
+        let originalLayout = model.layoutRoot
+
+        #expect(model.handleEjectedVolume(at: volumeURL) == 1)
+        #expect(affectedPane.place == .home)
+        #expect(affectedPane.navigation == DirectoryNavigationState())
+        #expect(unaffectedPane.place == .documents)
+        #expect(model.layoutRoot == originalLayout)
+        #expect(model.paneCount == 2)
+    }
+
     @Test("Selecting the current place returns that pane to its root")
     func selectingCurrentPlaceReturnsToRoot() throws {
         let model = WorkspaceModel(
