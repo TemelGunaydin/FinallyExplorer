@@ -18,16 +18,16 @@ struct WorkspacePreviewLayoutRegressionTests {
     }
 
     @MainActor
-    @Test("Workspace grid fills the navigation detail column without gaps")
-    func workspaceGridFillsDetailColumn() async {
+    @Test("Workspace grid avoids AppKit split views that escape the detail column")
+    func workspaceGridUsesSwiftUILayout() async {
         await #expect(processExitsWith: .success) {
-            await exerciseNestedSplitFramesInARealWindow()
+            await exerciseWorkspaceGridInARealWindow()
         }
     }
 }
 
 @MainActor
-private func exerciseNestedSplitFramesInARealWindow() async {
+private func exerciseWorkspaceGridInARealWindow() async {
     let firstPaneID = layoutUUID(20)
     var generatedIDs = (21...24).map(layoutUUID)
     let workspace = WorkspaceModel(
@@ -73,31 +73,10 @@ private func exerciseNestedSplitFramesInARealWindow() async {
     let detailView = navigationSplit.subviews
         .filter { $0.frame.width >= navigationSplit.bounds.width * 0.25 }
         .max { $0.frame.minX < $1.frame.minX }!
-    let workspaceSplit = nestedSplitViews(in: detailView)
-        .min { $0.depth < $1.depth }!
-        .view
-    let detailFrame = detailView.convert(detailView.bounds, to: hostingView)
-    let workspaceFrame = workspaceSplit.convert(
-        workspaceSplit.bounds,
-        to: hostingView
-    )
-    let tolerance: CGFloat = 2
-
     precondition(
-        abs(workspaceFrame.minX - detailFrame.minX) <= tolerance,
-        "Workspace grid must start at the detail column's leading edge."
-    )
-    precondition(
-        abs(workspaceFrame.maxX - detailFrame.maxX) <= tolerance,
-        "Workspace grid must end at the detail column's trailing edge."
-    )
-    precondition(
-        abs(workspaceFrame.minY - detailFrame.minY) <= tolerance,
-        "Workspace grid must start at the detail column's top edge."
-    )
-    precondition(
-        abs(workspaceFrame.maxY - detailFrame.maxY) <= tolerance,
-        "Workspace grid must end at the detail column's bottom edge."
+        nestedSplitViews(in: detailView).isEmpty,
+        "The workspace must not add an AppKit split view that can escape "
+            + "the navigation detail column."
     )
 }
 

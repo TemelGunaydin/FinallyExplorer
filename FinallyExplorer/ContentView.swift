@@ -496,26 +496,16 @@ private struct WorkspaceRootView: View {
     let onResetView: () -> Void
 
     var body: some View {
-        GeometryReader { proxy in
-            WorkspaceNodeView(
-                node: workspace.layoutRoot,
-                workspace: workspace,
-                sidebar: sidebar,
-                isPreviewVisible: isPreviewVisible,
-                onTogglePreview: onTogglePreview,
-                onResetView: onResetView
-            )
-            // AppKit-backed split views need a finite proposal. Pinning the
-            // root to the detail container keeps every nested pane inside it;
-            // safe-area offsets are already represented by this container's
-            // position and must not be applied a second time.
-            .frame(
-                width: proxy.size.width,
-                height: proxy.size.height,
-                alignment: .topLeading
-            )
-        }
-        .background(theme.canvas)
+        WorkspaceNodeView(
+            node: workspace.layoutRoot,
+            workspace: workspace,
+            sidebar: sidebar,
+            isPreviewVisible: isPreviewVisible,
+            onTogglePreview: onTogglePreview,
+            onResetView: onResetView
+        )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.canvas)
     }
 }
 
@@ -544,21 +534,12 @@ private struct WorkspaceNodeView: View {
             }
 
         case let .split(splitID, axis, first, second):
-            switch axis {
-            case .sideBySide:
-                HSplitView {
-                    workspaceNode(first)
-                    workspaceNode(second)
-                }
-                .id(splitID)
-
-            case .stacked:
-                VSplitView {
-                    workspaceNode(first)
-                    workspaceNode(second)
-                }
-                .id(splitID)
+            WorkspaceSplitContainer(axis: axis) {
+                workspaceNode(first)
+            } second: {
+                workspaceNode(second)
             }
+            .id(splitID)
         }
     }
 

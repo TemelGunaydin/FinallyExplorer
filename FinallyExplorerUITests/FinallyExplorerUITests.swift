@@ -259,26 +259,56 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(favoritesHeader.waitForExistence(timeout: 5))
     }
 
-    func testResetViewCollapsesSplitPane() {
+    func testResetViewCollapsesSplitPane() throws {
         let sourceRows = rows(named: "Source Item.txt")
         XCTAssertTrue(
             sourceRows.firstMatch.waitForExistence(timeout: 10),
             "The file fixture did not appear after launch"
         )
 
+        let workspacePanes = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "workspace-pane-")
+        )
+        XCTAssertTrue(waitForElementCount(workspacePanes, toEqual: 1, timeout: 5))
+        let initialPane = try XCTUnwrap(existingElements(in: workspacePanes).first)
+        let initialWorkspaceFrame = initialPane.frame
+
         let splitRightButton = app.buttons["Split Right"]
         XCTAssertTrue(splitRightButton.waitForExistence(timeout: 3))
         splitRightButton.click()
         XCTAssertTrue(waitForElementCount(sourceRows, toEqual: 2, timeout: 5))
+        XCTAssertTrue(waitForElementCount(workspacePanes, toEqual: 2, timeout: 5))
+
+        let rightSplitPanes = existingElements(in: workspacePanes)
+        let rightSplitFrame = unionFrame(of: rightSplitPanes)
+        assertSplitFrame(
+            rightSplitFrame,
+            keepsLeadingAndVerticalEdgesOf: initialWorkspaceFrame
+        )
+        XCTAssertGreaterThan(
+            rightSplitFrame.maxX,
+            initialWorkspaceFrame.maxX,
+            "A grid should use the space released by the single-pane preview"
+        )
+
+        let splitBelowButtons = app.buttons.matching(identifier: "Split Below")
+        let rightmostSplitBelow = try XCTUnwrap(
+            existingElements(in: splitBelowButtons).max(by: leftToRight)
+        )
+        rightmostSplitBelow.click()
+        XCTAssertTrue(waitForElementCount(sourceRows, toEqual: 3, timeout: 5))
+        XCTAssertTrue(waitForElementCount(workspacePanes, toEqual: 3, timeout: 5))
+
+        let mixedGridFrame = unionFrame(of: existingElements(in: workspacePanes))
+        XCTAssertEqual(mixedGridFrame.minX, rightSplitFrame.minX, accuracy: 2)
+        XCTAssertEqual(mixedGridFrame.minY, rightSplitFrame.minY, accuracy: 2)
+        XCTAssertEqual(mixedGridFrame.maxX, rightSplitFrame.maxX, accuracy: 2)
+        XCTAssertEqual(mixedGridFrame.maxY, rightSplitFrame.maxY, accuracy: 2)
 
         let locationMenus = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier == %@", "pane-location-menu")
         )
-        XCTAssertTrue(waitForElementCount(locationMenus, toEqual: 2, timeout: 5))
-        let workspacePanes = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH %@", "workspace-pane-")
-        )
-        XCTAssertTrue(waitForElementCount(workspacePanes, toEqual: 2, timeout: 5))
+        XCTAssertTrue(waitForElementCount(locationMenus, toEqual: 3, timeout: 5))
         let globalSearchField = app.descendants(matching: .any)[
             "global-search-text-field"
         ]
@@ -895,6 +925,45 @@ final class FinallyExplorerUITests: XCTestCase {
 
     private func leftToRight(_ lhs: XCUIElement, _ rhs: XCUIElement) -> Bool {
         lhs.frame.minX < rhs.frame.minX
+    }
+
+    private func unionFrame(of elements: [XCUIElement]) -> CGRect {
+        guard let first = elements.first else { return .null }
+        return elements.dropFirst().reduce(first.frame) { frame, element in
+            frame.union(element.frame)
+        }
+    }
+
+    private func assertSplitFrame(
+        _ splitFrame: CGRect,
+        keepsLeadingAndVerticalEdgesOf originalFrame: CGRect,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            splitFrame.minX,
+            originalFrame.minX,
+            accuracy: 2,
+            "Splitting must not move panes underneath or away from the sidebar",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            splitFrame.minY,
+            originalFrame.minY,
+            accuracy: 2,
+            "Splitting must not move panes underneath or away from the toolbar",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            splitFrame.maxY,
+            originalFrame.maxY,
+            accuracy: 2,
+            "Splitting must keep the workspace's bottom edge stable",
+            file: file,
+            line: line
+        )
     }
 
     private func waitForElementCount(
