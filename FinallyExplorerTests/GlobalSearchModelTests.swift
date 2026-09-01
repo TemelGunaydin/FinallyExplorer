@@ -150,6 +150,29 @@ struct GlobalSearchModelTests {
         #expect(model.results == [result])
     }
 
+    @Test("Filename search is immediate while content search remains debounced")
+    func debounceDependsOnScope() async {
+        let result = globalResult(named: "needle.txt")
+        let service = GlobalSearchServiceStub(
+            pages: [
+                "needle": GlobalSearchPage(results: [result], message: nil)
+            ]
+        )
+        let debounceCounter = GlobalSearchDebounceCounter()
+        let model = GlobalSearchModel(service: service) {
+            await debounceCounter.recordCall()
+        }
+        await model.prepare(in: rootURL)
+        model.query = "needle"
+
+        await model.search(in: rootURL)
+        #expect(await debounceCounter.callCount() == 0)
+
+        model.scope = .contents
+        await model.search(in: rootURL)
+        #expect(await debounceCounter.callCount() == 1)
+    }
+
     @Test("A late result from an older query cannot corrupt the newest search")
     func staleCompletionIsDiscarded() async {
         let service = ControlledGlobalSearchService()
@@ -265,6 +288,18 @@ private nonisolated struct GlobalSearchCall: Sendable {
     let query: String
     let scope: ExplorerSearchScope
     let contentMode: FFFContentSearchMode
+}
+
+private actor GlobalSearchDebounceCounter {
+    private var count = 0
+
+    func recordCall() {
+        count += 1
+    }
+
+    func callCount() -> Int {
+        count
+    }
 }
 
 private actor GlobalSearchServiceStub: GlobalSearchServicing {

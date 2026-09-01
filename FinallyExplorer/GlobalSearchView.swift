@@ -249,8 +249,12 @@ private struct GlobalSearchResultsPopover: View {
                     .padding(8)
                 }
                 .scrollIndicators(.visible)
-                .onChange(of: model.selectedResultID) { _, resultID in
+                .onChange(of: model.selectedResultID) { oldResultID, resultID in
                     guard let resultID else { return }
+                    if oldResultID == nil,
+                       resultID == model.results.first?.id {
+                        return
+                    }
                     withAnimation(.easeOut(duration: 0.12)) {
                         proxy.scrollTo(resultID, anchor: .center)
                     }
@@ -389,11 +393,6 @@ private struct GlobalSearchResultRow: View {
         }
         .onTapGesture(count: 2, perform: onReveal)
         .onTapGesture(count: 1, perform: onSelect)
-        .onHover { isHovered in
-            if isHovered {
-                onSelect()
-            }
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(result.item.name)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")

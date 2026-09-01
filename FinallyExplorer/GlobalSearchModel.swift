@@ -188,7 +188,7 @@ final class GlobalSearchModel {
         message = nil
 
         do {
-            if applyingDebounce {
+            if applyingDebounce, requestedScope == .contents {
                 try await debounce()
             }
             try Task.checkCancellation()

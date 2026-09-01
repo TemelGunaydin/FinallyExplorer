@@ -34,6 +34,29 @@ struct SearchTextMatchTests {
         #expect(ranges.map { String(text[$0]) } == ["Résumé"])
     }
 
+    @Test("Whitespace-separated queries match and rank compact filenames")
+    func whitespaceSeparatedQueryMatchesCompactName() throws {
+        let compactName = "apidesign.pdf"
+        let compactMatch = try #require(
+            SearchTextMatch.match(
+                in: compactName,
+                matching: "api design"
+            )
+        )
+        let scatteredMatch = try #require(
+            SearchTextMatch.match(
+                in: "a-p-i project design notes.pdf",
+                matching: "api design"
+            )
+        )
+
+        #expect(
+            compactMatch.ranges.map { String(compactName[$0]) }
+                == ["apidesign"]
+        )
+        #expect(compactMatch.quality < scatteredMatch.quality)
+    }
+
     @Test("Exact, prefix, contained, and fuzzy matches rank in that order")
     func matchQualityOrdering() throws {
         let exact = try #require(

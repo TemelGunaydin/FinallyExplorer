@@ -255,14 +255,14 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
         directories: [FFFDirectorySearchHit]
     ) -> [ExplorerSearchResult] {
         var seenURLs = Set<URL>()
-        let directoryResults: [ExplorerSearchResult] = directories.compactMap {
-            hit -> ExplorerSearchResult? in
+        let directoryResults: [RankedGlobalSearchResult] = directories.compactMap {
+            hit -> RankedGlobalSearchResult? in
             guard isVisible(relativePath: hit.relativePath),
                   seenURLs.insert(hit.url.standardizedFileURL).inserted else {
                 return nil
             }
 
-            return ExplorerSearchResult(
+            let result = ExplorerSearchResult(
                 id: "global-directory:\(hit.url.path(percentEncoded: false))",
                 item: FileItem(
                     url: hit.url,
@@ -274,15 +274,23 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
                 relativePath: hit.relativePath,
                 contentMatch: nil
             )
+            return RankedGlobalSearchResult(
+                result: result,
+                quality: SearchTextMatch.match(
+                    in: result.item.name,
+                    matching: query
+                )?.quality,
+                nativeScore: hit.score
+            )
         }
-        let fileResults: [ExplorerSearchResult] = files.compactMap {
-            hit -> ExplorerSearchResult? in
+        let fileResults: [RankedGlobalSearchResult] = files.compactMap {
+            hit -> RankedGlobalSearchResult? in
             guard isVisible(relativePath: hit.relativePath),
                   seenURLs.insert(hit.url.standardizedFileURL).inserted else {
                 return nil
             }
 
-            return ExplorerSearchResult(
+            let result = ExplorerSearchResult(
                 id: "global-file:\(hit.url.path(percentEncoded: false))",
                 item: fileItem(
                     url: hit.url,
@@ -292,14 +300,22 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
                 relativePath: hit.relativePath,
                 contentMatch: nil
             )
+            return RankedGlobalSearchResult(
+                result: result,
+                quality: SearchTextMatch.match(
+                    in: result.item.name,
+                    matching: query
+                )?.quality,
+                nativeScore: hit.score
+            )
         }
 
         return (directoryResults + fileResults)
             .sorted { lhs, rhs in
-                resultPrecedes(lhs, rhs, query: query)
+                resultPrecedes(lhs, rhs)
             }
             .prefix(Self.maximumResultCount)
-            .map { $0 }
+            .map(\.result)
     }
 
     private nonisolated static func contentResults(
@@ -330,34 +346,28 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
     }
 
     private nonisolated static func resultPrecedes(
-        _ lhs: ExplorerSearchResult,
-        _ rhs: ExplorerSearchResult,
-        query: String
+        _ lhs: RankedGlobalSearchResult,
+        _ rhs: RankedGlobalSearchResult
     ) -> Bool {
-        let leftQuality = SearchTextMatch.match(
-            in: lhs.item.name,
-            matching: query
-        )?.quality
-        let rightQuality = SearchTextMatch.match(
-            in: rhs.item.name,
-            matching: query
-        )?.quality
-
-        if leftQuality != rightQuality {
-            if let leftQuality, let rightQuality {
+        if lhs.quality != rhs.quality {
+            if let leftQuality = lhs.quality,
+               let rightQuality = rhs.quality {
                 return leftQuality < rightQuality
             }
-            return leftQuality != nil
+            return lhs.quality != nil
         }
-        if lhs.item.isDirectory != rhs.item.isDirectory {
-            return lhs.item.isDirectory
+        if lhs.nativeScore != rhs.nativeScore {
+            return lhs.nativeScore > rhs.nativeScore
+        }
+        if lhs.result.item.isDirectory != rhs.result.item.isDirectory {
+            return lhs.result.item.isDirectory
         }
 
-        let comparison = lhs.relativePath.localizedCaseInsensitiveCompare(
-            rhs.relativePath
+        let comparison = lhs.result.relativePath.localizedCaseInsensitiveCompare(
+            rhs.result.relativePath
         )
         return comparison == .orderedSame
-            ? lhs.relativePath < rhs.relativePath
+            ? lhs.result.relativePath < rhs.result.relativePath
             : comparison == .orderedAscending
     }
 

@@ -48,6 +48,8 @@ final class FinallyExplorerUITests: XCTestCase {
             .write(to: globalSearchAlphaURL, options: .atomic)
         try Data("A second keyboard-navigation result.".utf8)
             .write(to: globalSearchBetaURL, options: .atomic)
+        try Data().write(to: globalSearchCompactNameURL, options: .atomic)
+        try Data().write(to: globalSearchDistractorURL, options: .atomic)
 
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
@@ -945,6 +947,42 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
+    func testGlobalSearchRanksAndSelectsCompactWhitespaceMatch() throws {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let globalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
+        XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitForEnabled(globalSearchField, timeout: 10),
+            "Global search indexing did not finish"
+        )
+
+        globalSearchField.click()
+        globalSearchField.typeText("api design")
+
+        let resultRows = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@",
+                "global-search-result-"
+            )
+        )
+        let compactResult = resultRows.matching(
+            NSPredicate(format: "label == %@", "apidesign.pdf")
+        ).firstMatch
+        XCTAssertTrue(compactResult.waitForExistence(timeout: 10))
+
+        let visibleResults = existingElements(in: resultRows).sorted {
+            $0.frame.minY < $1.frame.minY
+        }
+        let firstResult = try XCTUnwrap(visibleResults.first)
+        XCTAssertEqual(firstResult.label, "apidesign.pdf")
+        XCTAssertEqual(firstResult.value as? String, "Selected")
+    }
+
     func testGlobalSearchOffersContentModes() {
         XCTAssertTrue(
             rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
@@ -1083,6 +1121,20 @@ final class FinallyExplorerUITests: XCTestCase {
     private var globalSearchBetaURL: URL {
         globalSearchFolderURL.appending(
             path: "Global Needle Beta.txt",
+            directoryHint: .notDirectory
+        )
+    }
+
+    private var globalSearchCompactNameURL: URL {
+        globalSearchFolderURL.appending(
+            path: "apidesign.pdf",
+            directoryHint: .notDirectory
+        )
+    }
+
+    private var globalSearchDistractorURL: URL {
+        globalSearchFolderURL.appending(
+            path: "A Practical Introduction Design Guide.pdf",
             directoryHint: .notDirectory
         )
     }

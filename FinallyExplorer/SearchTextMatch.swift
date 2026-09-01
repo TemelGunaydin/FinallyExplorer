@@ -40,8 +40,35 @@ nonisolated enum SearchTextMatch {
         in text: String,
         matching rawQuery: String
     ) -> Match? {
-        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.isEmpty == false, query.isEmpty == false else { return nil }
+        let trimmedQuery = rawQuery.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard text.isEmpty == false, trimmedQuery.isEmpty == false else {
+            return nil
+        }
+
+        let bestMatch = match(in: text, literalQuery: trimmedQuery)
+        let compactQuery = trimmedQuery.filter { $0.isWhitespace == false }
+
+        if compactQuery != trimmedQuery,
+           let compactMatch = match(in: text, literalQuery: compactQuery) {
+            if let bestMatch {
+                if compactMatch.quality < bestMatch.quality {
+                    return compactMatch
+                }
+            } else {
+                return compactMatch
+            }
+        }
+
+        return bestMatch
+    }
+
+    private static func match(
+        in text: String,
+        literalQuery query: String
+    ) -> Match? {
+        guard query.isEmpty == false else { return nil }
 
         if let contiguousRange = text.range(
             of: query,
