@@ -3,6 +3,7 @@
 //  FinallyExplorer
 //
 
+import AppKit
 import SwiftUI
 
 struct ExplorerSearchControlBar: View {
@@ -116,6 +117,7 @@ struct ExplorerSearchControlBar: View {
 
 struct ExplorerSearchResultsView: View {
     @Environment(\.explorerTheme) private var theme
+    @FocusState private var isListFocused: Bool
 
     let paneID: UUID
     let sidebar: SidebarModel
@@ -124,10 +126,10 @@ struct ExplorerSearchResultsView: View {
     let isSearching: Bool
     let errorMessage: ExplorerSearchMessage?
 
-    @Binding var selection: ExplorerSearchResult.ID?
+    @Binding var selection: Set<ExplorerSearchResult.ID>
 
-    let onSelect: (ExplorerSearchResult) -> Void
     let onOpen: (ExplorerSearchResult) -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -154,13 +156,12 @@ struct ExplorerSearchResultsView: View {
                         sidebar: sidebar,
                         query: query,
                         result: result,
-                        onSelect: { onSelect(result) },
                         onOpen: { onOpen(result) }
                     )
                     .tag(result.id)
                     .background(
                         ExplorerRowBackground(
-                            isSelected: selection == result.id
+                            isSelected: selection.contains(result.id)
                         )
                     )
                     .listRowBackground(theme.row)
@@ -169,9 +170,21 @@ struct ExplorerSearchResultsView: View {
                 .scrollContentBackground(.hidden)
                 .background(theme.panel)
                 .listRowSeparatorTint(theme.divider)
+                .focused($isListFocused)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        if NSApp.currentEvent?.type == .leftMouseUp {
+                            isListFocused = true
+                        }
+                    }
+                )
+                .onDeleteCommand(perform: onDelete)
             }
         }
         .background(theme.panel)
+        .onChange(of: results.map(\.id)) {
+            selection.formIntersection(results.map(\.id))
+        }
     }
 }
 
@@ -204,7 +217,6 @@ private struct ExplorerSearchRowView: View {
     let sidebar: SidebarModel
     let query: String
     let result: ExplorerSearchResult
-    let onSelect: () -> Void
     let onOpen: () -> Void
 
     var body: some View {
@@ -263,10 +275,6 @@ private struct ExplorerSearchRowView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            TapGesture(count: 1)
-                .onEnded { onSelect() }
-        )
         .simultaneousGesture(
             TapGesture(count: 2)
                 .onEnded { onOpen() }

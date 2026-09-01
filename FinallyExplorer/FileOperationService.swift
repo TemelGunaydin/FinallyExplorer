@@ -57,7 +57,10 @@ nonisolated struct FileOperationOutcome: Equatable, Sendable {
 }
 
 nonisolated protocol FileOperationServicing: Sendable {
-    func createFolder(in destinationDirectoryURL: URL) async throws -> FileOperationOutcome
+    func createFolder(
+        in destinationDirectoryURL: URL,
+        named requestedName: String?
+    ) async throws -> FileOperationOutcome
     func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome
     func setHidden(_ hidden: Bool, for directoryURL: URL) async throws -> FileOperationOutcome
     func renameItem(
@@ -353,13 +356,15 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
         )
     }
 
-    /// Creates a uniquely named folder without overwriting an existing item.
+    /// Creates a folder without overwriting an existing item.
     ///
-    /// The first folder is named `New Folder`, followed by `New Folder 2`,
-    /// `New Folder 3`, and so on when a name is already occupied.
+    /// Without an explicit name, the first folder is named `New Folder`,
+    /// followed by `New Folder 2`, `New Folder 3`, and so on. An explicit
+    /// user-confirmed name is created exactly or rejected on collision.
     @concurrent
     func createFolder(
-        in destinationDirectoryURL: URL
+        in destinationDirectoryURL: URL,
+        named requestedName: String? = nil
     ) async throws -> FileOperationOutcome {
         try Task.checkCancellation()
 
@@ -368,20 +373,41 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
             destinationDirectoryURL,
             fileManager: fileManager
         )
+
+        if let requestedName {
+            do {
+                try FileRenameNameValidator.validate(
+                    requestedName,
+                    maximumUTF8Length: Self.maximumFileNameLength(
+                        in: destinationDirectoryURL
+                    )
+                )
+            } catch {
+                throw FileOperationError.invalidName(
+                    reason: error.localizedDescription
+                )
+            }
+        }
+
         var folderNumber = 1
 
         while true {
             try Task.checkCancellation()
 
-            let folderName = folderNumber == 1
+            let folderName = requestedName ?? (folderNumber == 1
                 ? "New Folder"
-                : "New Folder \(folderNumber)"
+                : "New Folder \(folderNumber)")
             let folderURL = destinationDirectoryURL.appending(
                 path: folderName,
                 directoryHint: .isDirectory
             )
 
             guard Self.itemExists(at: folderURL, fileManager: fileManager) == false else {
+                if requestedName != nil {
+                    throw FileOperationError.destinationAlreadyExists(
+                        path: folderURL.path
+                    )
+                }
                 folderNumber += 1
                 continue
             }
@@ -397,6 +423,11 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
                 // Another process may have claimed this name after our check.
                 // In that case, continue the Finder-style numbering sequence.
                 if Self.itemExists(at: folderURL, fileManager: fileManager) {
+                    if requestedName != nil {
+                        throw FileOperationError.destinationAlreadyExists(
+                            path: folderURL.path
+                        )
+                    }
                     folderNumber += 1
                     continue
                 }

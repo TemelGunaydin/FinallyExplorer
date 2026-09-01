@@ -16,15 +16,6 @@ nonisolated enum FileClipboardOperation: Equatable, Sendable {
     case cut
 }
 
-/// A scoped file-system change published after an operation completes.
-///
-/// Directory rows only need a reload when their direct children changed, while
-/// recursive folder-size and search indexes need to observe descendants too.
-private nonisolated struct FileSystemChange: Hashable, Sendable {
-    let revision: Int
-    let directlyAffectedDirectoryURLs: Set<URL>
-}
-
 @MainActor
 @Observable
 final class FileOperationCoordinator {
@@ -35,12 +26,10 @@ final class FileOperationCoordinator {
     private(set) var notice: FileOperationNotice?
     private(set) var completedOperationCount = 0
     var renameRequest: FileRenameRequest?
+    private(set) var trashConfirmationURLs: [URL] = []
     private(set) var lastRenameResult: FileRenameResult?
     private(set) var lastCreatedFolderURL: URL?
-    private var latestFileSystemChange = FileSystemChange(
-        revision: 0,
-        directlyAffectedDirectoryURLs: []
-    )
+    private var directoryRevisionByPath: [String: Int] = [:]
 
     var isErrorPresented = false
     private(set) var errorMessage = ""
@@ -75,25 +64,29 @@ final class FileOperationCoordinator {
     /// A revision for views showing this directory's *direct* children.
     func directoryRefreshRevision(for directoryURL: URL?) -> Int {
         guard let directoryURL else { return 0 }
-        let normalizedDirectoryURL = Self.standardizedURL(directoryURL)
-
-        return latestFileSystemChange.directlyAffectedDirectoryURLs.contains {
-            Self.normalizedPath(of: $0)
-                == Self.normalizedPath(of: normalizedDirectoryURL)
-        }
-            ? latestFileSystemChange.revision
-            : 0
+        return directoryRevisionByPath[
+            Self.normalizedPath(of: Self.standardizedURL(directoryURL))
+        ] ?? 0
     }
 
     /// A revision for data derived recursively from a folder, such as its
     /// total size or its FFF search index.
     func recursiveRefreshRevision(for directoryURL: URL?) -> Int {
         guard let directoryURL else { return 0 }
-        let normalizedDirectoryURL = Self.standardizedURL(directoryURL)
+        let directoryPath = Self.normalizedPath(
+            of: Self.standardizedURL(directoryURL)
+        )
 
-        return latestFileSystemChange.directlyAffectedDirectoryURLs.contains {
-            Self.isSameOrAncestor(normalizedDirectoryURL, of: $0)
-        } ? latestFileSystemChange.revision : 0
+        return directoryRevisionByPath.reduce(into: 0) { revision, change in
+            guard Self.isSameOrAncestorPath(
+                directoryPath,
+                of: change.key
+            ) else {
+                return
+            }
+
+            revision = max(revision, change.value)
+        }
     }
 
     func recordExternalChange(
@@ -220,33 +213,70 @@ final class FileOperationCoordinator {
     }
 
     @discardableResult
-    func createFolder(in destinationDirectoryURL: URL?) -> Bool {
-        guard let destinationDirectoryURL else { return false }
+    func createFolder(
+        in destinationDirectoryURL: URL?,
+        suggestedName: String = "New Folder"
+    ) -> Bool {
+        guard let destinationDirectoryURL,
+              isPerforming == false,
+              renameRequest == nil else {
+            return false
+        }
 
-        return start(
-            operation: .createFolder,
-            sources: [],
-            destinationDirectoryURL: destinationDirectoryURL,
-            cutClipboardSnapshot: nil,
-            completionMessage: "Folder created",
-            completionSystemImage: "folder.badge.plus"
+        lastCreatedFolderURL = nil
+        renameRequest = FileRenameRequest(
+            newFolderIn: destinationDirectoryURL,
+            suggestedName: suggestedName
         )
+        return true
     }
 
     @discardableResult
     func moveToTrash(_ sourceURL: URL?) -> Bool {
         guard let sourceURL else { return false }
-        let standardizedSourceURL = sourceURL.standardizedFileURL
+        return moveToTrash([sourceURL])
+    }
+
+    @discardableResult
+    func moveToTrash(_ sourceURLs: [URL]) -> Bool {
+        let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
+        guard let firstSourceURL = sourceURLs.first else { return false }
 
         return start(
             operation: .trash,
-            sources: [standardizedSourceURL],
-            destinationDirectoryURL: standardizedSourceURL
+            sources: sourceURLs,
+            destinationDirectoryURL: firstSourceURL
                 .deletingLastPathComponent(),
             cutClipboardSnapshot: nil,
-            completionMessage: "Moved to Trash",
+            completionMessage: sourceURLs.count == 1
+                ? "Moved to Trash"
+                : "Moved \(sourceURLs.count) items to Trash",
             completionSystemImage: "trash.fill"
         )
+    }
+
+    @discardableResult
+    func requestTrashConfirmation(for sourceURLs: [URL]) -> Bool {
+        let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
+        guard sourceURLs.isEmpty == false,
+              isPerforming == false,
+              trashConfirmationURLs.isEmpty else {
+            return false
+        }
+
+        trashConfirmationURLs = sourceURLs
+        return true
+    }
+
+    func cancelTrashConfirmation() {
+        trashConfirmationURLs = []
+    }
+
+    @discardableResult
+    func confirmTrash() -> Bool {
+        let sourceURLs = trashConfirmationURLs
+        trashConfirmationURLs = []
+        return moveToTrash(sourceURLs)
     }
 
     @discardableResult
@@ -268,8 +298,35 @@ final class FileOperationCoordinator {
         renameRequest = FileRenameRequest(sourceURL: sourceURL)
     }
 
-    func cancelRename() {
+    func cancelRename(_ request: FileRenameRequest? = nil) {
+        if let request, renameRequest?.id != request.id {
+            return
+        }
         renameRequest = nil
+    }
+
+    @discardableResult
+    func commit(_ request: FileRenameRequest, with name: String) -> Bool {
+        guard renameRequest?.id == request.id else { return false }
+
+        switch request.intent {
+        case .renameExistingItem:
+            return rename(request.sourceURL, to: name)
+
+        case let .createFolder(destinationDirectoryURL):
+            let started = start(
+                operation: .createFolder(name),
+                sources: [],
+                destinationDirectoryURL: destinationDirectoryURL,
+                cutClipboardSnapshot: nil,
+                completionMessage: "Folder created",
+                completionSystemImage: "folder.badge.plus"
+            )
+            if started {
+                renameRequest = nil
+            }
+            return started
+        }
     }
 
     @discardableResult
@@ -374,17 +431,15 @@ final class FileOperationCoordinator {
 
             if let completedCreatedFolderURL {
                 lastCreatedFolderURL = completedCreatedFolderURL
-                renameRequest = FileRenameRequest(
-                    sourceURL: completedCreatedFolderURL
-                )
             }
         }
 
         do {
             switch operation {
-            case .createFolder:
+            case let .createFolder(name):
                 let outcome = try await service.createFolder(
-                    in: destinationDirectoryURL
+                    in: destinationDirectoryURL,
+                    named: name
                 )
                 didChange = outcome.didChange
 
@@ -397,16 +452,32 @@ final class FileOperationCoordinator {
                     )
                 }
             case .trash:
-                guard let sourceURL = sources.first else { return }
-                let outcome = try await service.trashItem(at: sourceURL)
-                didChange = outcome.didChange
+                var failureMessages: [String] = []
 
-                if outcome.didChange {
-                    directlyAffectedDirectoryURLs.insert(
-                        Self.standardizedURL(
-                            sourceURL.deletingLastPathComponent()
-                        )
-                    )
+                for sourceURL in sources {
+                    try Task.checkCancellation()
+
+                    do {
+                        let outcome = try await service.trashItem(at: sourceURL)
+                        didChange = didChange || outcome.didChange
+
+                        if outcome.didChange {
+                            directlyAffectedDirectoryURLs.insert(
+                                Self.standardizedURL(
+                                    sourceURL.deletingLastPathComponent()
+                                )
+                            )
+                        }
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        failureMessages.append(error.localizedDescription)
+                    }
+                }
+
+                if failureMessages.isEmpty == false {
+                    errorMessage = Self.errorMessage(for: failureMessages)
+                    isErrorPresented = true
                 }
             case let .setHidden(hidden):
                 guard let directoryURL = sources.first else { return }
@@ -565,6 +636,19 @@ final class FileOperationCoordinator {
         }
     }
 
+    /// If both a directory and one of its descendants are selected (possible
+    /// in global search), trash only the directory. Processing the descendant
+    /// afterward would report a false failure because its path is already gone.
+    private static func uniqueTrashRootURLs(_ urls: [URL]) -> [URL] {
+        let uniqueURLs = uniqueStandardizedURLs(urls)
+
+        return uniqueURLs.filter { candidate in
+            uniqueURLs.contains { other in
+                other != candidate && isSameOrAncestor(other, of: candidate)
+            } == false
+        }
+    }
+
     private func publishFileSystemChange(
         directlyAffecting directoryURLs: Set<URL>
     ) async {
@@ -572,10 +656,11 @@ final class FileOperationCoordinator {
             affectedBy: directoryURLs
         )
         completedOperationCount += 1
-        latestFileSystemChange = FileSystemChange(
-            revision: completedOperationCount,
-            directlyAffectedDirectoryURLs: directoryURLs
-        )
+        for directoryURL in directoryURLs {
+            directoryRevisionByPath[
+                Self.normalizedPath(of: Self.standardizedURL(directoryURL))
+            ] = completedOperationCount
+        }
     }
 
     private static func standardizedURL(_ url: URL) -> URL {
@@ -583,8 +668,16 @@ final class FileOperationCoordinator {
     }
 
     private static func isSameOrAncestor(_ ancestor: URL, of descendant: URL) -> Bool {
-        let ancestorPath = normalizedPath(of: ancestor)
-        let descendantPath = normalizedPath(of: descendant)
+        isSameOrAncestorPath(
+            normalizedPath(of: ancestor),
+            of: normalizedPath(of: descendant)
+        )
+    }
+
+    private static func isSameOrAncestorPath(
+        _ ancestorPath: String,
+        of descendantPath: String
+    ) -> Bool {
 
         if ancestorPath == "/" {
             return descendantPath.hasPrefix("/")
@@ -656,7 +749,7 @@ final class FileOperationCoordinator {
     private enum Operation: Sendable {
         case copy
         case move
-        case createFolder
+        case createFolder(String)
         case trash
         case setHidden(Bool)
         case rename(String)
@@ -707,8 +800,10 @@ final class FileOperationCoordinator {
                 "Moving \(itemCount) items…"
             case (.createFolder, _):
                 "Creating folder…"
-            case (.trash, _):
+            case (.trash, 1):
                 "Moving item to Trash…"
+            case (.trash, _):
+                "Moving \(itemCount) items to Trash…"
             case let (.setHidden(hidden), _):
                 hidden ? "Hiding folder…" : "Unhiding folder…"
             case (.rename, _):
@@ -774,6 +869,12 @@ struct FileCommandContext {
         selectedURLs.count == 1 && coordinator.isPerforming == false
     }
 
+    var canRequestTrash: Bool {
+        selectedURLs.isEmpty == false
+            && coordinator.isPerforming == false
+            && coordinator.trashConfirmationURLs.isEmpty
+    }
+
     func copySelection() {
         guard canCopy else { return }
         coordinator.copy(selectedURLs)
@@ -792,6 +893,11 @@ struct FileCommandContext {
     func renameSelection() {
         guard canRename else { return }
         coordinator.requestRename(selectedURLs.first)
+    }
+
+    func requestTrashSelection() {
+        guard canRequestTrash else { return }
+        coordinator.requestTrashConfirmation(for: selectedURLs)
     }
 }
 

@@ -49,6 +49,31 @@ struct FileOperationServiceCreateFolderTests {
         #expect(FileManager.default.fileExists(atPath: outcome.destinationURL.path))
     }
 
+    @Test("A confirmed folder name is created exactly and never overwritten")
+    func createsConfirmedNameWithoutOverwriting() async throws {
+        let root = try makeCreateFolderTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let outcome = try await FileOperationService().createFolder(
+            in: root,
+            named: "Project Notes"
+        )
+
+        #expect(outcome.destinationURL.lastPathComponent == "Project Notes")
+        #expect(FileManager.default.fileExists(atPath: outcome.destinationURL.path))
+
+        await #expect(
+            throws: FileOperationError.destinationAlreadyExists(
+                path: outcome.destinationURL.path
+            )
+        ) {
+            try await FileOperationService().createFolder(
+                in: root,
+                named: "Project Notes"
+            )
+        }
+    }
+
     @Test("A missing destination is rejected without creating intermediate folders")
     func rejectsMissingDestination() async throws {
         let root = try makeCreateFolderTemporaryDirectory()

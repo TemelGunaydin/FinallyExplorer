@@ -61,6 +61,117 @@ struct FileOperationCoordinatorTests {
         #expect(coordinator.isErrorPresented == false)
     }
 
+    @Test("A multi-selection moves every unique item and refreshes each parent")
+    func batchTrashRefreshesAllAffectedParents() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let first = URL(filePath: "/tmp/One/First.txt")
+        let second = URL(filePath: "/tmp/Two/Second.txt")
+
+        #expect(coordinator.moveToTrash([first, second, first]))
+        #expect(coordinator.statusMessage == "Moving 2 items to Trash…")
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.trashedSources() == [first, second])
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: first.deletingLastPathComponent()
+            ) == 1
+        )
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: second.deletingLastPathComponent()
+            ) == 1
+        )
+        #expect(coordinator.notice?.message == "Moved 2 items to Trash")
+        #expect(coordinator.isPerforming == false)
+        #expect(coordinator.isErrorPresented == false)
+    }
+
+    @Test("Trash collapses selected descendants beneath a selected folder")
+    func trashCollapsesSelectedDescendants() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let folder = URL(
+            filePath: "/tmp/Project",
+            directoryHint: .isDirectory
+        )
+        let child = folder.appending(path: "Notes.txt")
+
+        #expect(coordinator.requestTrashConfirmation(for: [child, folder]))
+        #expect(coordinator.trashConfirmationURLs == [folder])
+        #expect(coordinator.confirmTrash())
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.trashedSources() == [folder])
+        #expect(coordinator.isErrorPresented == false)
+        #expect(coordinator.notice?.message == "Moved to Trash")
+    }
+
+    @Test("A partially failed trash batch refreshes only successful parents")
+    func partialTrashFailureKeepsSuccessfulRefresh() async {
+        let first = URL(filePath: "/tmp/One/First.txt")
+        let second = URL(filePath: "/tmp/Two/Second.txt")
+        let service = ScriptedFileOperationService(trashResults: [
+            .success(
+                FileOperationOutcome(
+                    destinationURL: URL(filePath: "/tmp/.Trash/First.txt"),
+                    didChange: true
+                )
+            ),
+            .failure(.rejected("Second item could not be trashed")),
+        ])
+        let coordinator = FileOperationCoordinator(service: service)
+
+        #expect(coordinator.moveToTrash([first, second]))
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.trashedSources() == [first, second])
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: first.deletingLastPathComponent()
+            ) == 1
+        )
+        #expect(
+            coordinator.directoryRefreshRevision(
+                for: second.deletingLastPathComponent()
+            ) == 0
+        )
+        #expect(coordinator.isErrorPresented)
+        #expect(coordinator.errorMessage == "Second item could not be trashed")
+    }
+
+    @Test("The Delete command waits for confirmation before trashing a selection")
+    func deleteCommandUsesTransactionalTrashConfirmation() async {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let first = URL(filePath: "/tmp/First.txt")
+        let second = URL(filePath: "/tmp/Second.txt")
+        let context = FileCommandContext(
+            selectedURLs: [first, second, first],
+            destinationDirectoryURL: URL(filePath: "/tmp"),
+            coordinator: coordinator
+        )
+
+        #expect(context.canRequestTrash)
+        context.requestTrashSelection()
+
+        #expect(coordinator.trashConfirmationURLs == [first, second])
+        #expect(context.canRequestTrash == false)
+        #expect(await service.operationCount() == 0)
+
+        coordinator.cancelTrashConfirmation()
+        #expect(coordinator.trashConfirmationURLs.isEmpty)
+        #expect(await service.operationCount() == 0)
+
+        context.requestTrashSelection()
+        #expect(coordinator.confirmTrash())
+        #expect(coordinator.trashConfirmationURLs.isEmpty)
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.trashedSources() == [first, second])
+    }
+
     @Test("Only the newest file-operation notice may dismiss itself")
     func transientNoticeReplacementIsRaceSafe() async {
         let gate = FileOperationNoticeDelayGate()
@@ -266,6 +377,45 @@ struct FileOperationCoordinatorTests {
         #expect(coordinator.recursiveRefreshRevision(for: unrelatedDirectory) == 0)
     }
 
+    @Test("Directory revisions remain stable after an unrelated pane changes")
+    func unrelatedChangesDoNotResetEarlierDirectoryRevisions() async {
+        let coordinator = FileOperationCoordinator(
+            service: ScriptedFileOperationService()
+        )
+        let root = URL(filePath: "/tmp", directoryHint: .isDirectory)
+        let firstDirectory = root.appending(
+            path: "First",
+            directoryHint: .isDirectory
+        )
+        let secondDirectory = root.appending(
+            path: "Second",
+            directoryHint: .isDirectory
+        )
+
+        await coordinator.recordExternalChange(
+            directlyAffecting: firstDirectory,
+            message: "First changed",
+            systemImage: "folder"
+        )
+        let firstRevision = coordinator.directoryRefreshRevision(
+            for: firstDirectory
+        )
+
+        await coordinator.recordExternalChange(
+            directlyAffecting: secondDirectory,
+            message: "Second changed",
+            systemImage: "folder"
+        )
+
+        #expect(firstRevision == 1)
+        #expect(
+            coordinator.directoryRefreshRevision(for: firstDirectory)
+                == firstRevision
+        )
+        #expect(coordinator.directoryRefreshRevision(for: secondDirectory) == 2)
+        #expect(coordinator.recursiveRefreshRevision(for: root) == 2)
+    }
+
     @Test("A cut paste retains sources whose moves fail")
     func partialCutPasteKeepsOnlyFailedSources() async {
         let firstSource = URL(filePath: "/tmp/first.txt")
@@ -349,8 +499,38 @@ struct FileOperationCoordinatorTests {
         #expect(coordinator.canPaste)
     }
 
-    @Test("Create-folder completion and failure leave coherent coordinator state")
-    func createFolderRoutesOutcomeAndError() async {
+    @Test("Canceling new-folder naming performs no file-system work")
+    func cancelingNewFolderDraftDoesNotCreateAnything() async throws {
+        let destination = URL(
+            filePath: "/tmp/destination",
+            directoryHint: .isDirectory
+        )
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+
+        #expect(
+            coordinator.createFolder(
+                in: destination,
+                suggestedName: "New Folder 2"
+            )
+        )
+        let request = try #require(coordinator.renameRequest)
+        #expect(request.isNewFolder)
+        #expect(request.originalName == "New Folder 2")
+        #expect(coordinator.isPerforming == false)
+        #expect(await service.operationCount() == 0)
+
+        coordinator.cancelRename(request)
+
+        #expect(coordinator.renameRequest == nil)
+        #expect(coordinator.completedOperationCount == 0)
+        #expect(coordinator.lastCreatedFolderURL == nil)
+        #expect(coordinator.notice == nil)
+        #expect(await service.operationCount() == 0)
+    }
+
+    @Test("Confirming new-folder naming routes completion and failure")
+    func createFolderRoutesOutcomeAndError() async throws {
         let destination = URL(
             filePath: "/tmp/destination",
             directoryHint: .isDirectory
@@ -372,6 +552,13 @@ struct FileOperationCoordinatorTests {
         )
 
         #expect(successfulCoordinator.createFolder(in: destination))
+        let successfulRequest = try #require(successfulCoordinator.renameRequest)
+        #expect(
+            successfulCoordinator.commit(
+                successfulRequest,
+                with: "New Folder"
+            )
+        )
         #expect(successfulCoordinator.statusMessage == "Creating folder…")
         await successfulCoordinator.waitForCurrentOperation()
         #expect(successfulCoordinator.completedOperationCount == 1)
@@ -381,10 +568,7 @@ struct FileOperationCoordinatorTests {
             successfulCoordinator.lastCreatedFolderURL
                 == createdFolder.standardizedFileURL
         )
-        #expect(
-            successfulCoordinator.renameRequest?.sourceURL
-                == createdFolder.standardizedFileURL
-        )
+        #expect(successfulCoordinator.renameRequest == nil)
 
         let failingService = ScriptedFileOperationService(
             createFolderResult: .failure(.rejected("creation rejected"))
@@ -392,6 +576,8 @@ struct FileOperationCoordinatorTests {
         let failingCoordinator = FileOperationCoordinator(service: failingService)
 
         #expect(failingCoordinator.createFolder(in: destination))
+        let failingRequest = try #require(failingCoordinator.renameRequest)
+        #expect(failingCoordinator.commit(failingRequest, with: "New Folder"))
         await failingCoordinator.waitForCurrentOperation()
         #expect(failingCoordinator.completedOperationCount == 0)
         #expect(failingCoordinator.isPerforming == false)
@@ -616,6 +802,7 @@ private enum ScriptedFileOperationError: LocalizedError, Sendable {
 private actor ScriptedFileOperationService: FileOperationServicing {
     private var copyResults: [Result<FileOperationOutcome, ScriptedFileOperationError>]
     private var moveResults: [Result<FileOperationOutcome, ScriptedFileOperationError>]
+    private var trashResults: [Result<FileOperationOutcome, ScriptedFileOperationError>]
     private var createFolderResult: Result<
         FileOperationOutcome,
         ScriptedFileOperationError
@@ -631,6 +818,7 @@ private actor ScriptedFileOperationService: FileOperationServicing {
     init(
         copyResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
         moveResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
+        trashResults: [Result<FileOperationOutcome, ScriptedFileOperationError>] = [],
         createFolderResult: Result<
             FileOperationOutcome,
             ScriptedFileOperationError
@@ -638,11 +826,13 @@ private actor ScriptedFileOperationService: FileOperationServicing {
     ) {
         self.copyResults = copyResults
         self.moveResults = moveResults
+        self.trashResults = trashResults
         self.createFolderResult = createFolderResult
     }
 
     func createFolder(
-        in destinationDirectoryURL: URL
+        in destinationDirectoryURL: URL,
+        named requestedName: String?
     ) async throws -> FileOperationOutcome {
         createFolderCount += 1
 
@@ -651,7 +841,9 @@ private actor ScriptedFileOperationService: FileOperationServicing {
         }
 
         return FileOperationOutcome(
-            destinationURL: destinationDirectoryURL.appending(path: "New Folder"),
+            destinationURL: destinationDirectoryURL.appending(
+                path: requestedName ?? "New Folder"
+            ),
             didChange: true
         )
     }
@@ -677,6 +869,11 @@ private actor ScriptedFileOperationService: FileOperationServicing {
 
     func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome {
         trashedSourceURLs.append(sourceURL)
+
+        if trashResults.isEmpty == false {
+            return try trashResults.removeFirst().get()
+        }
+
         return FileOperationOutcome(
             destinationURL: URL(filePath: "/tmp/.Trash")
                 .appending(path: sourceURL.lastPathComponent),
@@ -767,10 +964,13 @@ private actor BlockingFileOperationService: FileOperationServicing {
     private var moveContinuation: CheckedContinuation<Void, Never>?
 
     func createFolder(
-        in destinationDirectoryURL: URL
+        in destinationDirectoryURL: URL,
+        named requestedName: String?
     ) async throws -> FileOperationOutcome {
         FileOperationOutcome(
-            destinationURL: destinationDirectoryURL.appending(path: "New Folder"),
+            destinationURL: destinationDirectoryURL.appending(
+                path: requestedName ?? "New Folder"
+            ),
             didChange: true
         )
     }

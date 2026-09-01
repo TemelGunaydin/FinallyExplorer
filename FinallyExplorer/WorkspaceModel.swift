@@ -237,21 +237,36 @@ final class WorkspacePaneState: Identifiable {
 
     var place: SidebarPlace
     var directoryContents: [FileItem]
+    var loadedDirectoryURL: URL?
     var isLoading: Bool
     var errorMessage: String?
     var navigation: DirectoryNavigationState
-    var selectedURL: URL?
+    var selectedURLs: Set<URL> {
+        didSet {
+            if let currentPrimary = primarySelectedURL,
+               selectedURLs.contains(currentPrimary) {
+                return
+            }
+
+            primarySelectedURL = directoryContents.first(where: {
+                selectedURLs.contains($0.url)
+            })?.url ?? selectedURLs.first
+        }
+    }
     var pendingRevealURL: URL?
-    var selectedSearchResultID: ExplorerSearchResult.ID?
+    var selectedSearchResultIDs: Set<ExplorerSearchResult.ID>
     var isInspectorPresented: Bool
     var showsHiddenItems: Bool
     var searchModel: ExplorerSearchModel
+
+    private var primarySelectedURL: URL?
 
     init(
         id: UUID,
         place: SidebarPlace,
         navigation: DirectoryNavigationState = DirectoryNavigationState(),
         directoryContents: [FileItem] = [],
+        loadedDirectoryURL: URL? = nil,
         isLoading: Bool = false,
         errorMessage: String? = nil,
         selectedURL: URL? = nil,
@@ -265,11 +280,13 @@ final class WorkspacePaneState: Identifiable {
         self.place = place
         self.navigation = navigation
         self.directoryContents = directoryContents
+        self.loadedDirectoryURL = loadedDirectoryURL
         self.isLoading = isLoading
         self.errorMessage = errorMessage
-        self.selectedURL = selectedURL
+        selectedURLs = selectedURL.map { [$0] } ?? []
+        primarySelectedURL = selectedURL
         self.pendingRevealURL = pendingRevealURL
-        self.selectedSearchResultID = selectedSearchResultID
+        selectedSearchResultIDs = selectedSearchResultID.map { [$0] } ?? []
         self.isInspectorPresented = isInspectorPresented
         self.showsHiddenItems = showsHiddenItems
         self.searchModel = searchModel ?? ExplorerSearchModel()
@@ -279,24 +296,54 @@ final class WorkspacePaneState: Identifiable {
         navigation.currentDirectory ?? place.url
     }
 
+    /// The primary item is retained for preview and compatibility with
+    /// single-item actions. Assigning it deliberately replaces the selection.
+    var selectedURL: URL? {
+        get { primarySelectedURL }
+        set {
+            replaceSelection(
+                with: newValue.map { [$0] } ?? [],
+                primaryURL: newValue
+            )
+        }
+    }
+
+    var selectedSearchResultID: ExplorerSearchResult.ID? {
+        get {
+            guard selectedSearchResultIDs.count == 1 else { return nil }
+            return selectedSearchResultIDs.first
+        }
+        set {
+            selectedSearchResultIDs = newValue.map { [$0] } ?? []
+        }
+    }
+
     var selectedCommandURLs: [URL] {
         if searchModel.isSearchActive {
-            guard let selectedSearchResultID,
-                  let result = searchModel.results.first(where: {
-                      $0.id == selectedSearchResultID
-                  }) else {
-                return []
+            return searchModel.results.compactMap { result in
+                selectedSearchResultIDs.contains(result.id)
+                    ? result.item.url
+                    : nil
             }
-
-            return [result.item.url]
         }
 
-        return selectedURL.map { [$0] } ?? []
+        let visibleSelection = directoryContents.compactMap { item in
+            selectedURLs.contains(item.url) ? item.url : nil
+        }
+        let visibleURLs = Set(visibleSelection)
+        let remainingSelection = selectedURLs
+            .subtracting(visibleURLs)
+            .sorted {
+                $0.path(percentEncoded: false)
+                    < $1.path(percentEncoded: false)
+            }
+        return visibleSelection + remainingSelection
     }
 
     var selectedInspectorItem: FileItem? {
         if searchModel.isSearchActive {
-            guard let selectedSearchResultID,
+            guard selectedSearchResultIDs.count == 1,
+                  let selectedSearchResultID,
                   let result = searchModel.results.first(where: {
                       $0.id == selectedSearchResultID
                   }),
@@ -307,10 +354,32 @@ final class WorkspacePaneState: Identifiable {
             return result.item
         }
 
-        guard let selectedURL else { return nil }
+        guard selectedURLs.count == 1, let selectedURL else { return nil }
         return directoryContents.first {
             $0.url == selectedURL && ($0.isDirectory || $0.isImage)
         }
+    }
+
+    func replaceSelection(
+        with urls: Set<URL>,
+        primaryURL: URL? = nil
+    ) {
+        primarySelectedURL = primaryURL.flatMap { urls.contains($0) ? $0 : nil }
+            ?? directoryContents.first(where: { urls.contains($0.url) })?.url
+            ?? urls.first
+        selectedURLs = urls
+    }
+
+    /// Keeps surviving rows selected during an in-place directory refresh.
+    func reconcileSelection(with contents: [FileItem]) {
+        let availableURLs = Set(contents.map(\.url))
+        let retainedSelection = selectedURLs.intersection(availableURLs)
+        guard retainedSelection != selectedURLs else { return }
+
+        replaceSelection(
+            with: retainedSelection,
+            primaryURL: primarySelectedURL
+        )
     }
 
     func select(_ place: SidebarPlace) {
@@ -324,6 +393,7 @@ final class WorkspacePaneState: Identifiable {
 
     func reset() {
         directoryContents = []
+        loadedDirectoryURL = nil
         isLoading = false
         errorMessage = nil
         navigation = DirectoryNavigationState()
@@ -446,17 +516,32 @@ final class WorkspaceModel {
             }
 
             pane.navigation.applyRename(result)
-            if let selectedURL = pane.selectedURL,
-               let relocatedSelection = FileURLRelocation.rebase(
-                   selectedURL,
-                   from: result.sourceURL,
-                   to: result.destinationURL
-               ) {
-                pane.selectedURL = relocatedSelection
-                // Directory reloads can briefly clear a List selection while
-                // the renamed row is being replaced. Reveal it again once the
-                // destination entry is present so focus is never lost.
-                pane.pendingRevealURL = relocatedSelection
+            let relocatedSelection = Set(pane.selectedURLs.map { selectedURL in
+                FileURLRelocation.rebase(
+                    selectedURL,
+                    from: result.sourceURL,
+                    to: result.destinationURL
+                ) ?? selectedURL
+            })
+            let relocatedPrimarySelection = pane.selectedURL.map { selectedURL in
+                FileURLRelocation.rebase(
+                    selectedURL,
+                    from: result.sourceURL,
+                    to: result.destinationURL
+                ) ?? selectedURL
+            }
+            if relocatedSelection != pane.selectedURLs {
+                pane.replaceSelection(
+                    with: relocatedSelection,
+                    primaryURL: relocatedPrimarySelection
+                )
+
+                if let relocatedPrimarySelection {
+                    // Directory reloads can briefly clear a List selection while
+                    // the renamed row is being replaced. Reveal it again once the
+                    // destination entry is present so focus is never lost.
+                    pane.pendingRevealURL = relocatedPrimarySelection
+                }
             }
             pane.pendingRevealURL = pane.pendingRevealURL.flatMap { pendingURL in
                 FileURLRelocation.rebase(

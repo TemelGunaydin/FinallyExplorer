@@ -33,13 +33,13 @@ struct FileRenameSheet: View {
 
     private var canSubmit: Bool {
         validationMessage == nil
-            && name != request.originalName
+            && (request.isNewFolder || name != request.originalName)
             && coordinator.isPerforming == false
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Rename Item")
+            Text(request.isNewFolder ? "New Folder" : "Rename Item")
                 .font(ExplorerTheme.paneTitleFont)
                 .foregroundStyle(theme.textPrimary)
 
@@ -62,10 +62,10 @@ struct FileRenameSheet: View {
             HStack {
                 Spacer()
 
-                Button("Cancel", role: .cancel, action: dismiss.callAsFunction)
+                Button("Cancel", role: .cancel, action: cancel)
                     .keyboardShortcut(.cancelAction)
 
-                Button("Rename", action: submit)
+                Button(request.isNewFolder ? "Create" : "Rename", action: submit)
                     .keyboardShortcut(.defaultAction)
                     .disabled(canSubmit == false)
                     .accessibilityIdentifier("rename-confirm-button")
@@ -79,14 +79,22 @@ struct FileRenameSheet: View {
             await Task.yield()
             nameSelection = TextSelection(range: name.startIndex..<name.endIndex)
         }
+        .onDisappear {
+            coordinator.cancelRename(request)
+        }
     }
 
     private func submit() {
         guard canSubmit,
-              coordinator.rename(request.sourceURL, to: name) else {
+              coordinator.commit(request, with: name) else {
             return
         }
 
+        dismiss()
+    }
+
+    private func cancel() {
+        coordinator.cancelRename(request)
         dismiss()
     }
 }

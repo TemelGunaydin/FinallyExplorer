@@ -312,6 +312,7 @@ private struct InternalFolderDropModifier: ViewModifier {
     let showsPasteCommand: Bool
     let showsTerminalCommands: Bool
     let showsNewFolderCommand: Bool
+    let onCreateFolder: (() -> Void)?
 
     @State private var isDropTargeted = false
 
@@ -342,10 +343,12 @@ private struct InternalFolderDropModifier: ViewModifier {
             .contextMenu {
                 if showsNewFolderCommand {
                     Button("New Folder", systemImage: "folder.badge.plus") {
-                        fileOperations.createFolder(in: destinationDirectoryURL)
+                        onCreateFolder?()
                     }
                     .disabled(
-                        destinationDirectoryURL == nil || fileOperations.isPerforming
+                        destinationDirectoryURL == nil
+                            || fileOperations.isPerforming
+                            || onCreateFolder == nil
                     )
 
                     Divider()
@@ -436,7 +439,8 @@ extension View {
         paneID: UUID,
         showsPasteCommand: Bool = true,
         showsTerminalCommands: Bool = false,
-        showsNewFolderCommand: Bool = false
+        showsNewFolderCommand: Bool = false,
+        onCreateFolder: (() -> Void)? = nil
     ) -> some View {
         modifier(
             InternalFolderDropModifier(
@@ -444,7 +448,8 @@ extension View {
                 paneID: paneID,
                 showsPasteCommand: showsPasteCommand,
                 showsTerminalCommands: showsTerminalCommands,
-                showsNewFolderCommand: showsNewFolderCommand
+                showsNewFolderCommand: showsNewFolderCommand,
+                onCreateFolder: onCreateFolder
             )
         )
     }

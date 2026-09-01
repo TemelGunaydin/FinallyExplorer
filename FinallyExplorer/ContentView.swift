@@ -93,6 +93,32 @@ struct ContentView: View {
         )
     }
 
+    private var isTrashConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { fileOperations.trashConfirmationURLs.isEmpty == false },
+            set: { isPresented in
+                if isPresented == false {
+                    fileOperations.cancelTrashConfirmation()
+                }
+            }
+        )
+    }
+
+    private var trashConfirmationTitle: String {
+        fileOperations.trashConfirmationURLs.count == 1
+            ? "Move to Trash?"
+            : "Move \(fileOperations.trashConfirmationURLs.count) Items to Trash?"
+    }
+
+    private var trashConfirmationMessage: String {
+        if let onlyURL = fileOperations.trashConfirmationURLs.first,
+           fileOperations.trashConfirmationURLs.count == 1 {
+            "“\(onlyURL.lastPathComponent)” will be moved to Trash."
+        } else {
+            "The selected items will be moved to Trash."
+        }
+    }
+
     private var fileCommandContext: FileCommandContext? {
         guard let pane = workspace.activePane else { return nil }
 
@@ -145,9 +171,8 @@ struct ContentView: View {
             }
             .background(theme.canvas)
             .clipShape(.rect(topLeadingRadius: 18))
-            .transaction { transaction in
-                transaction.animation = nil
-            }
+            .animation(nil, value: isPreviewVisible)
+            .animation(nil, value: workspace.paneCount)
         }
         .background(theme.sidebarBackground)
         .overlay(alignment: .bottom) {
@@ -244,6 +269,19 @@ struct ContentView: View {
                     )
                 }
             }
+        }
+        .alert(
+            trashConfirmationTitle,
+            isPresented: isTrashConfirmationPresented
+        ) {
+            Button("Cancel", role: .cancel) {
+                fileOperations.cancelTrashConfirmation()
+            }
+            Button("Move to Trash", role: .destructive) {
+                fileOperations.confirmTrash()
+            }
+        } message: {
+            Text(trashConfirmationMessage)
         }
         .alert("File Operation Failed", isPresented: $fileOperations.isErrorPresented) {
             Button("OK", role: .cancel) {}
@@ -569,6 +607,7 @@ private nonisolated struct SearchLoadRequest: Hashable {
 private struct DestinationView: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
     @Environment(\.explorerTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let pane: WorkspacePaneState
     let workspace: WorkspaceModel
@@ -576,6 +615,8 @@ private struct DestinationView: View {
     let isPreviewVisible: Bool
     let onTogglePreview: () -> Void
     let onResetView: () -> Void
+
+    @FocusState private var isDirectoryListFocused: Bool
 
     private var directoryLoadRequest: DirectoryLoadRequest {
         DirectoryLoadRequest(
@@ -608,8 +649,6 @@ private struct DestinationView: View {
             paneToolbar
 
             if let displayedDirectory = pane.displayedDirectory {
-                fileOperationStatus
-
                 if pane.searchModel.isSearchActive {
                     ExplorerSearchControlBar(
                         scope: $searchModel.scope,
@@ -627,6 +666,10 @@ private struct DestinationView: View {
                     directoryBody
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                    .overlay(alignment: .topTrailing) {
+                        fileOperationStatus
+                            .padding(10)
+                    }
                     .frame(
                         maxWidth: .infinity,
                         maxHeight: .infinity
@@ -636,7 +679,8 @@ private struct DestinationView: View {
                     .internalFolderDropTarget(
                         destinationDirectoryURL: displayedDirectory,
                         paneID: pane.id,
-                        showsNewFolderCommand: true
+                        showsNewFolderCommand: true,
+                        onCreateFolder: createFolder
                     )
             } else {
                 ContentUnavailableView(
@@ -689,7 +733,7 @@ private struct DestinationView: View {
         )
         .task(id: directoryLoadRequest) {
             let request = directoryLoadRequest
-            await loadDirectoryContents(from: request.directoryURL)
+            await loadDirectoryContents(request)
         }
         .task(id: searchLoadRequest) {
             let request = searchLoadRequest
@@ -700,16 +744,16 @@ private struct DestinationView: View {
                 await pane.searchModel.search(in: request.request.rootURL)
             }
         }
-        .onChange(of: pane.selectedURL) {
-            if pane.selectedURL != nil {
+        .onChange(of: pane.selectedURLs) {
+            if pane.selectedURLs.isEmpty == false {
                 workspace.activate(pane.id)
             }
             updatePreviewPresentation()
         }
-        .onChange(of: pane.selectedSearchResultID) {
+        .onChange(of: pane.selectedSearchResultIDs) {
             guard pane.searchModel.isSearchActive else { return }
 
-            if pane.selectedSearchResultID != nil {
+            if pane.selectedSearchResultIDs.isEmpty == false {
                 workspace.activate(pane.id)
             }
             pane.selectedURL = pane.searchModel.results
@@ -726,12 +770,6 @@ private struct DestinationView: View {
             guard oldRequest.rootURL == newRequest.rootURL else { return }
             pane.selectedSearchResultID = nil
             pane.selectedURL = nil
-        }
-        .onChange(of: directoryLoadRequest.operationRevision) {
-            guard directoryLoadRequest.operationRevision > 0 else { return }
-            pane.selectedSearchResultID = nil
-            pane.selectedURL = nil
-            pane.isInspectorPresented = false
         }
         .onChange(of: fileOperations.lastCreatedFolderURL) {
             guard let createdFolderURL = fileOperations.lastCreatedFolderURL,
@@ -945,7 +983,12 @@ private struct DestinationView: View {
 
     private func createFolder() {
         workspace.activate(pane.id)
-        fileOperations.createFolder(in: pane.displayedDirectory)
+        fileOperations.createFolder(
+            in: pane.displayedDirectory,
+            suggestedName: FileRenameNameValidator.suggestedNewFolderName(
+                existingNames: pane.directoryContents.map(\.name)
+            )
+        )
     }
 
     private func toggleHiddenItems() {
@@ -959,7 +1002,7 @@ private struct DestinationView: View {
     @ViewBuilder
     private var fileOperationStatus: some View {
         if fileOperations.isPerforming {
-            HStack {
+            HStack(spacing: 7) {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel(fileOperations.statusMessage ?? "Working")
@@ -969,10 +1012,23 @@ private struct DestinationView: View {
                         .font(.caption)
                         .foregroundStyle(theme.textSecondary)
                 }
-
-                Spacer()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(
+                theme.elevatedPanel,
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .stroke(theme.divider, lineWidth: 0.75)
+            }
+            .shadow(
+                color: theme.imperialPrimer.opacity(0.08),
+                radius: 4,
+                y: 2
+            )
+            .accessibilityIdentifier("pane-file-operation-status")
         }
     }
 
@@ -988,9 +1044,9 @@ private struct DestinationView: View {
                 results: pane.searchModel.results,
                 isSearching: pane.searchModel.isSearching,
                 errorMessage: pane.searchModel.errorMessage,
-                selection: $pane.selectedSearchResultID,
-                onSelect: selectSearchResult,
-                onOpen: openSearchResult
+                selection: $pane.selectedSearchResultIDs,
+                onOpen: openSearchResult,
+                onDelete: requestTrashSelection
             )
         } else if pane.isLoading {
             ProgressView()
@@ -1001,52 +1057,57 @@ private struct DestinationView: View {
                 systemImage: "exclamationmark.triangle.fill",
                 description: Text(errorMessage)
             )
-        } else if pane.directoryContents.isEmpty {
-            ContentUnavailableView(
-                "Folder Is Empty",
-                systemImage: "folder"
-            )
-            .accessibilityIdentifier("pane-empty-folder-state")
         } else {
-            List(pane.directoryContents, selection: $pane.selectedURL) { item in
-                FileRowView(
-                    item: item,
-                    sidebar: sidebar,
-                    onSelect: {
-                        select(item)
-                    },
-                    onOpen: {
-                        open(item)
+            ZStack {
+                List(pane.directoryContents, selection: $pane.selectedURLs) { item in
+                    FileRowView(
+                        item: item,
+                        sidebar: sidebar,
+                        onOpen: {
+                            open(item)
+                        }
+                    )
+                    .tag(item.url)
+                    .background(
+                        ExplorerRowBackground(
+                            isSelected: pane.selectedURLs.contains(item.url)
+                        )
+                    )
+                    .listRowBackground(theme.row)
+                    .internalFileInteraction(
+                        for: item,
+                        paneID: pane.id,
+                        sidebar: sidebar
+                    )
+                    .accessibilityIdentifier("file-row-\(pane.id)-\(item.name)")
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(theme.panel)
+                .listRowSeparatorTint(theme.divider)
+                .focused($isDirectoryListFocused)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        if NSApp.currentEvent?.type == .leftMouseUp {
+                            isDirectoryListFocused = true
+                        }
                     }
                 )
-                .tag(item.url)
-                .background(
-                    ExplorerRowBackground(
-                        isSelected: pane.selectedURL == item.url
+                .onDeleteCommand(perform: requestTrashSelection)
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.18),
+                    value: pane.directoryContents.map(\.id)
+                )
+
+                if pane.directoryContents.isEmpty {
+                    ContentUnavailableView(
+                        "Folder Is Empty",
+                        systemImage: "folder"
                     )
-                )
-                .listRowBackground(theme.row)
-                .internalFileInteraction(
-                    for: item,
-                    paneID: pane.id,
-                    sidebar: sidebar
-                )
-                .accessibilityIdentifier("file-row-\(pane.id)-\(item.name)")
+                    .accessibilityIdentifier("pane-empty-folder-state")
+                    .allowsHitTesting(false)
+                }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(theme.panel)
-            .listRowSeparatorTint(theme.divider)
-        }
-    }
-
-    private func select(_ item: FileItem) {
-        workspace.activate(pane.id)
-
-        if pane.selectedURL != item.url {
-            pane.selectedURL = item.url
-        } else {
-            updatePreviewPresentation()
         }
     }
 
@@ -1061,13 +1122,6 @@ private struct DestinationView: View {
         } else {
             _ = NSWorkspace.shared.open(item.url)
         }
-    }
-
-    private func selectSearchResult(_ result: ExplorerSearchResult) {
-        workspace.activate(pane.id)
-        pane.selectedSearchResultID = result.id
-        pane.selectedURL = result.item.url
-        updatePreviewPresentation()
     }
 
     private func updatePreviewPresentation() {
@@ -1092,15 +1146,22 @@ private struct DestinationView: View {
         }
     }
 
-    private func loadDirectoryContents(from requestedURL: URL?) async {
+    private func loadDirectoryContents(_ request: DirectoryLoadRequest) async {
+        let requestedURL = request.directoryURL
         guard let requestedURL else {
             pane.directoryContents = []
+            pane.loadedDirectoryURL = nil
             pane.errorMessage = DirectoryAccessError.invalidURL.localizedDescription
             pane.isLoading = false
             return
         }
 
-        pane.isLoading = true
+        let isInPlaceRefresh = pane.loadedDirectoryURL.map {
+            urlsReferToSameItem($0, requestedURL)
+        } == true
+        if isInPlaceRefresh == false {
+            pane.isLoading = true
+        }
         pane.errorMessage = nil
 
         do {
@@ -1112,7 +1173,16 @@ private struct DestinationView: View {
             try Task.checkCancellation()
             guard requestedURL == pane.displayedDirectory else { return }
 
-            pane.directoryContents = contents
+            if isInPlaceRefresh {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                    pane.reconcileSelection(with: contents)
+                    pane.directoryContents = contents
+                }
+            } else {
+                pane.reconcileSelection(with: contents)
+                pane.directoryContents = contents
+            }
+            pane.loadedDirectoryURL = requestedURL
 
             if let pendingRevealURL = pane.pendingRevealURL,
                let revealedItem = contents.first(where: {
@@ -1132,13 +1202,31 @@ private struct DestinationView: View {
         } catch let error as DirectoryAccessError {
             guard Task.isCancelled == false,
                   requestedURL == pane.displayedDirectory else { return }
+            if isInPlaceRefresh {
+                fileOperations.presentExternalNotice(
+                    message: "Couldn’t refresh folder",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                pane.isLoading = false
+                return
+            }
             pane.directoryContents = []
+            pane.loadedDirectoryURL = nil
             pane.errorMessage = error.localizedDescription
             pane.isLoading = false
         } catch {
             guard Task.isCancelled == false,
                   requestedURL == pane.displayedDirectory else { return }
+            if isInPlaceRefresh {
+                fileOperations.presentExternalNotice(
+                    message: "Couldn’t refresh folder",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                pane.isLoading = false
+                return
+            }
             pane.directoryContents = []
+            pane.loadedDirectoryURL = nil
             pane.errorMessage = "An unexpected error occurred: \(error.localizedDescription)\n\nPath: \(requestedURL.path)"
             pane.isLoading = false
         }
@@ -1147,6 +1235,17 @@ private struct DestinationView: View {
     private func urlsReferToSameItem(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.standardizedFileURL.resolvingSymlinksInPath()
             == rhs.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    private func requestTrashSelection() {
+        let selectedURLs = pane.selectedCommandURLs
+        guard selectedURLs.isEmpty == false,
+              fileOperations.isPerforming == false else {
+            return
+        }
+
+        workspace.activate(pane.id)
+        fileOperations.requestTrashConfirmation(for: selectedURLs)
     }
 }
 
@@ -1173,6 +1272,7 @@ private struct WorkspacePaneAccessibilityModifier: ViewModifier {
 
 struct FolderContentsInspector: View {
     @Environment(\.explorerTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let folder: FileItem
     let paneID: UUID
@@ -1183,6 +1283,17 @@ struct FolderContentsInspector: View {
     @State private var directoryContents: [FileItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var loadedFolderURL: URL?
+
+    private var directoryLoadRequest: DirectoryLoadRequest {
+        DirectoryLoadRequest(
+            directoryURL: folder.url,
+            operationRevision: fileOperations.directoryRefreshRevision(
+                for: folder.url
+            ),
+            includesHiddenItems: false
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1201,16 +1312,9 @@ struct FolderContentsInspector: View {
                     paneID: paneID
                 )
         }
-        .task(
-            id: DirectoryLoadRequest(
-                directoryURL: folder.url,
-                operationRevision: fileOperations.directoryRefreshRevision(
-                    for: folder.url
-                ),
-                includesHiddenItems: false
-            )
-        ) {
-            await loadDirectoryContents()
+        .task(id: directoryLoadRequest) {
+            let request = directoryLoadRequest
+            await loadDirectoryContents(request)
         }
         .environment(fileOperations)
         .environment(terminalApplications)
@@ -1227,39 +1331,50 @@ struct FolderContentsInspector: View {
                 systemImage: "exclamationmark.triangle.fill",
                 description: Text(errorMessage)
             )
-        } else if directoryContents.isEmpty {
-            ContentUnavailableView(
-                "Folder Is Empty",
-                systemImage: "folder"
-            )
         } else {
-            List(directoryContents) { item in
-                HStack(spacing: 2) {
-                    FavoriteToggleButton(item: item, sidebar: sidebar)
+            ZStack {
+                List(directoryContents) { item in
+                    HStack(spacing: 2) {
+                        FavoriteToggleButton(item: item, sidebar: sidebar)
 
-                    FileRowContent(item: item)
+                        FileRowContent(item: item)
+                    }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .listRowBackground(theme.row)
+                        .internalFileInteraction(
+                            for: item,
+                            paneID: paneID,
+                            sidebar: sidebar
+                        )
+                        .accessibilityIdentifier("file-row-\(paneID)-\(item.name)")
                 }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .listRowBackground(theme.row)
-                    .internalFileInteraction(
-                        for: item,
-                        paneID: paneID,
-                        sidebar: sidebar
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(theme.inspector)
+                .listRowSeparatorTint(theme.divider)
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.18),
+                    value: directoryContents.map(\.id)
+                )
+
+                if directoryContents.isEmpty {
+                    ContentUnavailableView(
+                        "Folder Is Empty",
+                        systemImage: "folder"
                     )
-                    .accessibilityIdentifier("file-row-\(paneID)-\(item.name)")
+                    .allowsHitTesting(false)
+                }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(theme.inspector)
-            .listRowSeparatorTint(theme.divider)
         }
     }
 
-    private func loadDirectoryContents() async {
-        isLoading = true
+    private func loadDirectoryContents(_ request: DirectoryLoadRequest) async {
+        let isInPlaceRefresh = loadedFolderURL == folder.url
+        if isInPlaceRefresh == false {
+            isLoading = true
+        }
         errorMessage = nil
-        directoryContents = []
 
         do {
             let contents = try await FileSystemService().contents(
@@ -1268,16 +1383,39 @@ struct FolderContentsInspector: View {
             )
             try Task.checkCancellation()
 
-            directoryContents = contents
+            if isInPlaceRefresh {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                    directoryContents = contents
+                }
+            } else {
+                directoryContents = contents
+            }
+            loadedFolderURL = folder.url
             isLoading = false
         } catch is CancellationError {
             return
         } catch let error as DirectoryAccessError {
             guard Task.isCancelled == false else { return }
+            if isInPlaceRefresh {
+                fileOperations.presentExternalNotice(
+                    message: "Couldn’t refresh folder",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                isLoading = false
+                return
+            }
             errorMessage = error.localizedDescription
             isLoading = false
         } catch {
             guard Task.isCancelled == false else { return }
+            if isInPlaceRefresh {
+                fileOperations.presentExternalNotice(
+                    message: "Couldn’t refresh folder",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                isLoading = false
+                return
+            }
             errorMessage = error.localizedDescription
             isLoading = false
         }
@@ -1362,7 +1500,6 @@ private struct QuickLookPreview: NSViewRepresentable {
 private struct FileRowView: View {
     let item: FileItem
     let sidebar: SidebarModel
-    let onSelect: () -> Void
     let onOpen: () -> Void
 
     var body: some View {
@@ -1376,10 +1513,6 @@ private struct FileRowView: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
-        .simultaneousGesture(
-            TapGesture(count: 1)
-                .onEnded { onSelect() }
-        )
         .simultaneousGesture(
             TapGesture(count: 2)
                 .onEnded { onOpen() }
@@ -1435,11 +1568,9 @@ private struct TrashItemButton: View {
 
     let item: FileItem
 
-    @State private var isConfirmationPresented = false
-
     var body: some View {
         Button {
-            isConfirmationPresented = true
+            fileOperations.requestTrashConfirmation(for: [item.url])
         } label: {
             Image(systemName: "trash")
                 .symbolRenderingMode(.hierarchical)
@@ -1452,14 +1583,6 @@ private struct TrashItemButton: View {
         .help("Move \(item.name) to Trash")
         .accessibilityLabel("Move \(item.name) to Trash")
         .accessibilityIdentifier("trash-item-\(item.name)")
-        .alert("Move to Trash?", isPresented: $isConfirmationPresented) {
-            Button("Cancel", role: .cancel) {}
-            Button("Move to Trash", role: .destructive) {
-                fileOperations.moveToTrash(item.url)
-            }
-        } message: {
-            Text("“\(item.name)” will be moved to Trash.")
-        }
     }
 }
 

@@ -66,4 +66,22 @@ nonisolated enum FileRenameNameValidator {
             return error.localizedDescription
         }
     }
+
+    static func suggestedNewFolderName(existingNames: [String]) -> String {
+        var folderNumber = 1
+
+        while true {
+            let candidate = folderNumber == 1
+                ? "New Folder"
+                : "New Folder \(folderNumber)"
+            let isOccupied = existingNames.contains {
+                $0.localizedCaseInsensitiveCompare(candidate) == .orderedSame
+            }
+
+            if isOccupied == false {
+                return candidate
+            }
+            folderNumber += 1
+        }
+    }
 }

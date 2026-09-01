@@ -35,6 +35,14 @@ struct FileEditCommands: Commands {
         }
 
         CommandGroup(after: .saveItem) {
+            Button("Move to Trash") {
+                if routeTextEditingCommand(#selector(NSText.deleteBackward(_:))) == false {
+                    fileCommandContext?.requestTrashSelection()
+                }
+            }
+            .keyboardShortcut(.delete, modifiers: [])
+            .disabled(fileCommandContext?.canRequestTrash != true)
+
             Button("Rename") {
                 fileCommandContext?.renameSelection()
             }

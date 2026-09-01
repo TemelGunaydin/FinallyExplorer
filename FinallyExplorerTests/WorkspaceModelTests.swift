@@ -569,6 +569,57 @@ struct WorkspaceModelTests {
         #expect(pane.selectedInspectorItem == staleItem)
     }
 
+    @Test("Directory multi-selection stays ordered and retains surviving rows")
+    func multiSelectionReconcilesWithoutClearingSurvivors() throws {
+        let model = WorkspaceModel(initialPaneID: uuid(86))
+        let pane = try #require(model.activePane)
+        let folderURL = URL(filePath: "/tmp/A Folder", directoryHint: .isDirectory)
+        let removedURL = URL(filePath: "/tmp/B Removed.txt")
+        let remainingURL = URL(filePath: "/tmp/C Remaining.txt")
+        let folder = FileItem(
+            url: folderURL,
+            isDirectory: true,
+            isImage: false,
+            fileSize: nil,
+            modificationDate: nil
+        )
+        let removed = FileItem(
+            url: removedURL,
+            isDirectory: false,
+            isImage: false,
+            fileSize: 1,
+            modificationDate: nil
+        )
+        let remaining = FileItem(
+            url: remainingURL,
+            isDirectory: false,
+            isImage: false,
+            fileSize: 1,
+            modificationDate: nil
+        )
+        pane.directoryContents = [folder, removed, remaining]
+        pane.replaceSelection(
+            with: [remainingURL, folderURL, removedURL],
+            primaryURL: folderURL
+        )
+
+        #expect(
+            pane.selectedCommandURLs == [folderURL, removedURL, remainingURL]
+        )
+        #expect(pane.selectedInspectorItem == nil)
+
+        pane.reconcileSelection(with: [folder, remaining])
+
+        #expect(pane.selectedURLs == [folderURL, remainingURL])
+        #expect(pane.selectedURL == folderURL)
+        #expect(pane.selectedCommandURLs == [folderURL, remainingURL])
+
+        pane.reconcileSelection(with: [folder])
+
+        #expect(pane.selectedURLs == [folderURL])
+        #expect(pane.selectedInspectorItem == folder)
+    }
+
     @Test("Global search reveal activates the target pane and selects the item in its parent")
     func revealGlobalResultUsesTransientLocation() throws {
         let firstID = uuid(90)

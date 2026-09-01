@@ -510,19 +510,35 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
-    func testFileCanBeRenamedFromItsContextMenu() throws {
+    func testFileCanBeRenamedAndDeleteEditsNameField() throws {
         let sourceRow = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
 
-        try rightClickRow(sourceRow)
+        let sourceCell = try XCTUnwrap(containingCell(for: sourceRow))
+        sourceCell.click()
+        XCTAssertTrue(waitForSelectedStatus(true, on: sourceCell, timeout: 3))
+
+        let fileMenu = app.menuBars.menuBarItems["File"]
+        XCTAssertTrue(fileMenu.waitForExistence(timeout: 3))
+        fileMenu.click()
+
         let renameCommand = app.menuItems["Rename"]
         XCTAssertTrue(renameCommand.waitForExistence(timeout: 3))
+        XCTAssertTrue(renameCommand.isEnabled)
         renameCommand.click()
 
         let nameField = app.textFields["rename-text-field"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.typeKey("a", modifierFlags: .command)
-        nameField.typeText("Renamed Item.txt")
+        nameField.typeText("Renamed Item.txtx")
+        nameField.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(waitForValue("Renamed Item.txt", on: nameField, timeout: 3))
+        XCTAssertFalse(app.staticTexts["Move to Trash?"].exists)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: sourceFileURL.path(percentEncoded: false)
+            )
+        )
 
         let confirmButton = app.buttons["rename-confirm-button"]
         XCTAssertTrue(confirmButton.waitForExistence(timeout: 3))
@@ -583,6 +599,83 @@ final class FinallyExplorerUITests: XCTestCase {
         )
     }
 
+    func testCancelingNewFolderNamingCreatesNothing() {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+        let contentsBefore = fixtureContents()
+
+        let newFolderButton = app.buttons["New Folder"]
+        XCTAssertTrue(newFolderButton.waitForExistence(timeout: 5))
+        newFolderButton.click()
+
+        let nameField = app.textFields["rename-text-field"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        let proposedName = nameField.value as? String
+        XCTAssertNotNil(proposedName)
+
+        let cancelButton = app.sheets.firstMatch.buttons["Cancel"]
+        XCTAssertTrue(cancelButton.waitForExistence(timeout: 3))
+        cancelButton.click()
+
+        XCTAssertTrue(nameField.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(fixtureContents(), contentsBefore)
+        if let proposedName {
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: fixtureRootURL.appending(
+                        path: proposedName,
+                        directoryHint: .isDirectory
+                    ).path()
+                )
+            )
+            XCTAssertFalse(rows(named: proposedName).firstMatch.exists)
+        }
+    }
+
+    func testShiftSelectionAndDeleteMoveEverySelectedItemAfterConfirmation() throws {
+        let destinationRow = rows(named: "Destination").firstMatch
+        let globalResultsRow = rows(named: "Global Results").firstMatch
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(destinationRow.waitForExistence(timeout: 10))
+        XCTAssertTrue(globalResultsRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 5))
+
+        let destinationCell = try XCTUnwrap(containingCell(for: destinationRow))
+        let globalResultsCell = try XCTUnwrap(containingCell(for: globalResultsRow))
+        let sourceCell = try XCTUnwrap(containingCell(for: sourceRow))
+        destinationCell.click()
+        XCUIElement.perform(withKeyModifiers: [.shift]) {
+            globalResultsCell.click()
+        }
+
+        XCTAssertTrue(waitForSelectedStatus(true, on: destinationCell, timeout: 3))
+        XCTAssertTrue(waitForSelectedStatus(true, on: globalResultsCell, timeout: 3))
+        XCTAssertTrue(waitForSelectedStatus(false, on: sourceCell, timeout: 3))
+
+        globalResultsCell.typeKey(.delete, modifierFlags: [])
+        let confirmation = app.staticTexts["Move 2 Items to Trash?"]
+        XCTAssertTrue(
+            confirmation.waitForExistence(timeout: 5),
+            "Delete should request confirmation for both selected items"
+        )
+
+        app.sheets.firstMatch.buttons["Cancel"].click()
+        XCTAssertTrue(destinationRow.waitForExistence(timeout: 3))
+        XCTAssertTrue(globalResultsRow.waitForExistence(timeout: 3))
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 3))
+
+        globalResultsCell.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        app.sheets.firstMatch.buttons["Move to Trash"].click()
+
+        XCTAssertTrue(destinationRow.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(globalResultsRow.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["pane-directory-body"].exists)
+        XCTAssertEqual(fixtureContents(), ["Source Item.txt"])
+    }
+
     func testRowTrashButtonRequiresConfirmation() {
         let sourceRow = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
@@ -598,14 +691,22 @@ final class FinallyExplorerUITests: XCTestCase {
 
         let confirmation = app.staticTexts["Move to Trash?"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Move to Trash"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.sheets.firstMatch.buttons["Move to Trash"]
+                .waitForExistence(timeout: 3)
+        )
 
-        let cancelButton = app.buttons["Cancel"]
+        let cancelButton = app.sheets.firstMatch.buttons["Cancel"]
         XCTAssertTrue(cancelButton.waitForExistence(timeout: 3))
         cancelButton.click()
 
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 3))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path()))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: sourceFileURL.path(percentEncoded: false)
+            ),
+            "Cancel must preserve the source. Fixture contents: \(fixtureContents())"
+        )
     }
 
     func testMountedUSBVolumeAppearsInLocationsAndCanBeOpened() throws {
