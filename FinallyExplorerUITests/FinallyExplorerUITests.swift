@@ -259,6 +259,29 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(favoritesHeader.waitForExistence(timeout: 5))
     }
 
+    func testWindowUsesLargerCustomTrafficLightControls() {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let closeButton = app.buttons["window-close-button"]
+        let minimizeButton = app.buttons["window-minimize-button"]
+        let fullscreenButton = app.buttons["window-fullscreen-button"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(minimizeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(fullscreenButton.waitForExistence(timeout: 5))
+
+        XCTAssertGreaterThanOrEqual(closeButton.frame.width, 24)
+        XCTAssertGreaterThanOrEqual(closeButton.frame.height, 28)
+        XCTAssertLessThan(closeButton.frame.maxX, minimizeButton.frame.minX + 1)
+        XCTAssertLessThan(minimizeButton.frame.maxX, fullscreenButton.frame.minX + 1)
+        XCTAssertEqual(
+            closeButton.frame.midY,
+            fullscreenButton.frame.midY,
+            accuracy: 2
+        )
+    }
+
     func testResetViewCollapsesSplitPane() throws {
         let sourceRows = rows(named: "Source Item.txt")
         XCTAssertTrue(

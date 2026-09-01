@@ -228,6 +228,11 @@ struct ContentView: View {
         .tint(theme.accent)
         .foregroundStyle(theme.textPrimary)
         .background(theme.canvas)
+        .background {
+            ExplorerWindowTrafficControlsInstaller()
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .environment(\.explorerTheme, theme)
         .environment(fileOperations)
         .environment(terminalApplications)
