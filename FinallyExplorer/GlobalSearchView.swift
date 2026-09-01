@@ -69,8 +69,10 @@ struct GlobalSearchToolbar: View {
 
             if isIndexing {
                 ProgressView()
+                    .progressViewStyle(.circular)
                     .controlSize(.small)
-                    .tint(theme.chromeText)
+                    .tint(.white)
+                    .environment(\.colorScheme, .dark)
                     .accessibilityHidden(true)
             } else if indexFailureMessage != nil {
                 Button(
@@ -86,7 +88,10 @@ struct GlobalSearchToolbar: View {
                 .accessibilityIdentifier("global-search-index-retry")
             } else if model.isSearching || model.isPreparingResults {
                 ProgressView()
+                    .progressViewStyle(.circular)
                     .controlSize(.small)
+                    .tint(.white)
+                    .environment(\.colorScheme, .dark)
                     .accessibilityLabel("Searching this Mac")
             }
 

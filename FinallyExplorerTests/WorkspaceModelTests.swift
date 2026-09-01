@@ -464,6 +464,40 @@ struct WorkspaceModelTests {
         #expect(pane.place == .downloads)
     }
 
+    @Test("Reselecting the current root preserves its loaded contents")
+    func reselectingCurrentRootPreservesLoadedState() throws {
+        let rootURL = URL(
+            filePath: "/tmp/Current Root",
+            directoryHint: .isDirectory
+        )
+        let place = SidebarPlace.location(rootURL, title: "Current Root")
+        let model = WorkspaceModel(
+            initialPlace: place,
+            initialPaneID: uuid(67)
+        )
+        let pane = try #require(model.activePane)
+        let item = FileItem(
+            url: rootURL.appending(path: "Existing.pdf"),
+            isDirectory: false,
+            isImage: false,
+            fileSize: 128,
+            modificationDate: nil
+        )
+        pane.directoryContents = [item]
+        pane.loadedDirectoryURL = rootURL
+        pane.selectedURL = item.url
+        pane.searchModel.query = "keep this search"
+
+        model.select(place)
+
+        #expect(pane.place == place)
+        #expect(pane.displayedDirectory == rootURL)
+        #expect(pane.directoryContents == [item])
+        #expect(pane.loadedDirectoryURL == rootURL)
+        #expect(pane.selectedURL == item.url)
+        #expect(pane.searchModel.query == "keep this search")
+    }
+
     @Test("Activating or directly selecting another pane dismisses the previous inspector")
     func activationKeepsOneInspector() throws {
         let firstID = uuid(70)

@@ -762,6 +762,53 @@ struct FileOperationCoordinatorTests {
         await coordinator.waitForCurrentOperation()
         #expect(await service.movedSources() == [source])
     }
+
+    @Test("Dropping a folder directly onto itself is a silent no-op")
+    func directSelfDropDoesNotStartAnOperation() async throws {
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(service: service)
+        let sourceURL = URL(
+            filePath: "/tmp/Dragged Folder",
+            directoryHint: .isDirectory
+        )
+        let equivalentDestinationURL = URL(
+            fileURLWithPath: "/tmp/Folder/../Dragged Folder",
+            isDirectory: true
+        )
+        let sourcePaneID = try #require(
+            UUID(uuidString: "60000000-0000-0000-0000-000000000003")
+        )
+        let otherPaneID = try #require(
+            UUID(uuidString: "60000000-0000-0000-0000-000000000004")
+        )
+        let transfer = InternalFileTransfer(
+            sourceURL: sourceURL,
+            sourcePaneID: sourcePaneID
+        )
+
+        #expect(
+            coordinator.drop(
+                [transfer],
+                into: sourceURL,
+                destinationPaneID: sourcePaneID
+            ) == false
+        )
+        #expect(
+            coordinator.drop(
+                [transfer],
+                into: equivalentDestinationURL,
+                destinationPaneID: otherPaneID
+            ) == false
+        )
+
+        await coordinator.waitForCurrentOperation()
+        #expect(await service.operationCount() == 0)
+        #expect(coordinator.isPerforming == false)
+        #expect(coordinator.isErrorPresented == false)
+        #expect(coordinator.errorMessage.isEmpty)
+        #expect(coordinator.notice == nil)
+        #expect(coordinator.completedOperationCount == 0)
+    }
 }
 
 private actor FileOperationNoticeDelayGate {

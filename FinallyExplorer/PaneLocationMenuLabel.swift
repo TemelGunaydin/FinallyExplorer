@@ -5,85 +5,81 @@
 
 import SwiftUI
 
-/// Keeps the current path outside `Menu`'s label. macOS constrains menu labels
-/// to one line, which otherwise clips the path when a `VStack` is used there.
+/// Gives the location menu a full-size label so its entire pill is interactive.
 struct PaneLocationMenu<MenuItems: View>: View {
     @Environment(\.explorerTheme) private var theme
 
     let title: String
     let systemImage: String
-    let directoryURL: URL?
     let isCompact: Bool
     let menuItems: MenuItems
 
     init(
         title: String,
         systemImage: String,
-        directoryURL: URL?,
         isCompact: Bool,
         @ViewBuilder menuItems: () -> MenuItems
     ) {
         self.title = title
         self.systemImage = systemImage
-        self.directoryURL = directoryURL
         self.isCompact = isCompact
         self.menuItems = menuItems()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Menu {
-                menuItems
-            } label: {
-                Label(title, systemImage: systemImage)
-                    .font(
-                        isCompact
-                            ? ExplorerTheme.actionFont
-                            : ExplorerTheme.paneTitleFont
-                    )
-                    .foregroundStyle(theme.textPrimary)
-                    .lineLimit(1)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize(horizontal: true, vertical: false)
-            .accessibilityIdentifier("pane-location-menu")
-
-            if let directoryURL {
-                Text(abbreviatedPath(for: directoryURL))
-                    .font(.system(.callout, design: .rounded).weight(.medium))
-                    .foregroundStyle(theme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .allowsHitTesting(false)
-                    .accessibilityIdentifier("pane-location-path")
-            }
+        Menu {
+            menuItems
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(
+                    isCompact
+                        ? ExplorerTheme.actionFont
+                        : ExplorerTheme.paneTitleFont
+                )
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(1)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .leading
+                )
+                .padding(.horizontal, 12)
+                .contentShape(.rect)
         }
-        .frame(width: isCompact ? 170 : 320, alignment: .leading)
-        .frame(minHeight: isCompact ? 40 : 48, alignment: .leading)
-        .padding(.horizontal, 12)
-        .background(
-            theme.accentSoft,
-            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+        .menuStyle(.borderlessButton)
+        .frame(
+            width: isCompact ? 170 : 320,
+            height: isCompact ? 40 : 48
         )
+        .contentShape(.rect)
+        .background {
+            ExplorerRaisedButtonSurface(
+                cornerRadius: 11,
+                pressedOverlay: theme.accentSoft.opacity(0.58)
+            )
+        }
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: 11)
                 .stroke(
-                    theme.accent.opacity(0.22),
+                    theme.accent.opacity(0.34),
                     lineWidth: 0.75
                 )
+                .allowsHitTesting(false)
         }
-    }
-
-    private func abbreviatedPath(for url: URL) -> String {
-        let path = url.path(percentEncoded: false)
-        let homePath = FileManager.default.homeDirectoryForCurrentUser
-            .path(percentEncoded: false)
-
-        if path == homePath {
-            return "~"
-        }
-
-        guard path.hasPrefix(homePath + "/") else { return path }
-        return "~" + String(path.dropFirst(homePath.count))
+        .shadow(
+            color: Color.black.opacity(0.16),
+            radius: 1,
+            x: 0,
+            y: 1
+        )
+        .shadow(
+            color: theme.imperialPrimer.opacity(0.14),
+            radius: 5,
+            x: 0,
+            y: 2
+        )
+        .accessibilityLabel("Current location: \(title)")
+        .accessibilityHint("Choose a folder for this pane")
+        .accessibilityIdentifier("pane-location-menu")
     }
 }

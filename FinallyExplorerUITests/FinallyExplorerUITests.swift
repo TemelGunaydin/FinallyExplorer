@@ -276,8 +276,8 @@ final class FinallyExplorerUITests: XCTestCase {
         let splitRightButton = app.buttons["Split Right"]
         XCTAssertTrue(splitRightButton.waitForExistence(timeout: 3))
         splitRightButton.click()
-        XCTAssertTrue(waitForElementCount(sourceRows, toEqual: 2, timeout: 5))
         XCTAssertTrue(waitForElementCount(workspacePanes, toEqual: 2, timeout: 5))
+        XCTAssertTrue(waitForElementCount(sourceRows, toEqual: 2, timeout: 5))
 
         let rightSplitPanes = existingElements(in: workspacePanes)
         let rightSplitFrame = unionFrame(of: rightSplitPanes)
@@ -382,16 +382,30 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(locationMenu.waitForExistence(timeout: 5))
         XCTAssertTrue(locationPath.waitForExistence(timeout: 5))
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-        XCTAssertLessThan(
-            locationPath.frame.midY,
-            searchField.frame.midY,
-            "The current path belongs in the folder header above search"
+        XCTAssertLessThanOrEqual(
+            locationMenu.frame.maxY,
+            locationPath.frame.minY,
+            "The current path belongs below the location menu"
+        )
+        XCTAssertLessThanOrEqual(
+            locationPath.frame.maxY,
+            searchField.frame.minY,
+            "The current path belongs above folder search"
         )
         XCTAssertGreaterThanOrEqual(
             locationPath.frame.height,
             15,
             "The current folder path must remain readable at normal window scale"
         )
+
+        locationMenu.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.8)
+        ).click()
+        XCTAssertTrue(
+            app.menuItems["Desktop"].waitForExistence(timeout: 3),
+            "The complete location pill should open its menu"
+        )
+        app.typeKey(.escape, modifierFlags: [])
 
         searchField.click()
         searchField.typeText("Source")
@@ -1014,7 +1028,7 @@ final class FinallyExplorerUITests: XCTestCase {
     }
 
     private func rows(named name: String) -> XCUIElementQuery {
-        app.descendants(matching: .any).matching(
+        app.groups.matching(
             NSPredicate(format: "identifier ENDSWITH %@", "-\(name)")
         )
     }

@@ -383,6 +383,10 @@ final class WorkspacePaneState: Identifiable {
     }
 
     func select(_ place: SidebarPlace) {
+        guard self.place != place || navigation.currentDirectory != nil else {
+            return
+        }
+
         self.place = place
         reset()
     }

@@ -191,6 +191,19 @@ final class FileOperationCoordinator {
             return false
         }
 
+        let standardizedDestinationURL = Self.standardizedURL(
+            destinationDirectoryURL
+        )
+        let containsDestination = transfers.contains { transfer in
+            Self.standardizedURL(transfer.sourceURL)
+                == standardizedDestinationURL
+        }
+        guard containsDestination == false else {
+            // A tiny drag can end inside the source folder's own row. Finder
+            // treats that direct self-drop as a canceled drag, not an error.
+            return false
+        }
+
         let action = InternalFileDropAction(
             sourcePaneIDs: transfers.map(\.sourcePaneID),
             destinationPaneID: destinationPaneID
@@ -200,7 +213,7 @@ final class FileOperationCoordinator {
         return start(
             operation: operation,
             sources: transfers.map(\.sourceURL),
-            destinationDirectoryURL: destinationDirectoryURL,
+            destinationDirectoryURL: standardizedDestinationURL,
             cutClipboardSnapshot: nil,
             completionMessage: Self.completedMessage(
                 singular: operation.isMove ? "Moved" : "Copied",

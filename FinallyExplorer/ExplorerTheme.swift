@@ -427,7 +427,7 @@ struct ExplorerActionButtonStyle: ButtonStyle {
     }
 }
 
-private struct ExplorerRaisedButtonSurface: View {
+struct ExplorerRaisedButtonSurface: View {
     @Environment(\.explorerTheme) private var theme
 
     let cornerRadius: CGFloat

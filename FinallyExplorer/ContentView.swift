@@ -815,7 +815,6 @@ private struct DestinationView: View {
                 PaneLocationMenu(
                     title: pane.place.title,
                     systemImage: pane.place.systemImage,
-                    directoryURL: pane.displayedDirectory,
                     isCompact: workspace.paneCount > 1
                 ) {
                     ForEach(sidebar.allPlaces) { place in
@@ -943,6 +942,10 @@ private struct DestinationView: View {
                 x: 0,
                 y: 2
             )
+
+            if let displayedDirectory = pane.displayedDirectory {
+                PaneCurrentPathView(directoryURL: displayedDirectory)
+            }
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
