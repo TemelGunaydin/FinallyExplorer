@@ -82,6 +82,16 @@ struct ContentView: View {
         )
     }
 
+    private var protectedColumnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { columnVisibility },
+            set: { proposedVisibility in
+                guard proposedVisibility != .detailOnly else { return }
+                columnVisibility = proposedVisibility
+            }
+        )
+    }
+
     private var isMountedVolumeEjectFailurePresented: Binding<Bool> {
         Binding(
             get: { sidebar.mountedVolumeMonitor.ejectFailure != nil },
@@ -131,9 +141,16 @@ struct ContentView: View {
         @Bindable var nearbyTransfers = nearbyTransfers
         let theme = themeController.activeTheme
 
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: protectedColumnVisibility) {
             explorerSidebar
-                .navigationSplitViewColumnWidth(min: 210, ideal: 232)
+                .background {
+                    SidebarSplitViewBehaviorInstaller()
+                }
+                .navigationSplitViewColumnWidth(
+                    min: SidebarSplitViewBehaviorInstaller.minimumWidth,
+                    ideal: SidebarSplitViewBehaviorInstaller.idealWidth,
+                    max: SidebarSplitViewBehaviorInstaller.maximumWidth
+                )
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             HStack(spacing: 0) {
