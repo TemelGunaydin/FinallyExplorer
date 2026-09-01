@@ -92,8 +92,16 @@ protocol TerminalWorkspace: AnyObject {
 @MainActor
 final class SystemTerminalWorkspace: TerminalWorkspace {
     func terminalApplicationCandidates() -> [TerminalApplicationCandidate] {
-        NSWorkspace.shared.urlsForApplications(toOpen: .unixExecutable)
+        var candidates = NSWorkspace.shared.urlsForApplications(
+            toOpen: .unixExecutable
+        )
             .compactMap(Self.terminalApplicationCandidate)
+
+        if let systemTerminal = Self.systemTerminalCandidate() {
+            candidates.append(systemTerminal)
+        }
+
+        return candidates
     }
 
     func applicationURL(withBundleIdentifier bundleIdentifier: String) -> URL? {
@@ -145,6 +153,28 @@ final class SystemTerminalWorkspace: TerminalWorkspace {
             bundleIdentifier: TerminalApplicationMetadata.normalizedBundleIdentifier(
                 bundle.bundleIdentifier
             ),
+            applicationURL: applicationURL
+        )
+    }
+
+    private static func systemTerminalCandidate() -> TerminalApplicationCandidate? {
+        let bundleIdentifier = "com.apple.Terminal"
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: bundleIdentifier
+        ) else {
+            return nil
+        }
+
+        let bundle = Bundle(url: applicationURL)
+        let name = TerminalApplicationMetadata.firstNonemptyName(
+            bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
+            bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String,
+            applicationURL.deletingPathExtension().lastPathComponent
+        )
+
+        return TerminalApplicationCandidate(
+            name: name,
+            bundleIdentifier: bundleIdentifier,
             applicationURL: applicationURL
         )
     }
