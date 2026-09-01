@@ -813,21 +813,11 @@ private struct DestinationView: View {
                 }
 
                 PaneLocationMenu(
-                    title: pane.place.title,
-                    systemImage: pane.place.systemImage,
+                    selectedPlace: pane.place,
+                    places: sidebar.allPlaces,
                     isCompact: workspace.paneCount > 1
-                ) {
-                    ForEach(sidebar.allPlaces) { place in
-                        Button {
-                            workspace.select(place, in: pane.id)
-                        } label: {
-                            if pane.place == place {
-                                Label(place.title, systemImage: "checkmark")
-                            } else {
-                                Text(place.title)
-                            }
-                        }
-                    }
+                ) { place in
+                    workspace.select(place, in: pane.id)
                 }
                 .help("Choose the folder shown in this pane")
 

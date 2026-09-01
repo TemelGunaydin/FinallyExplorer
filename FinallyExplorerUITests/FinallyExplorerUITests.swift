@@ -402,7 +402,8 @@ final class FinallyExplorerUITests: XCTestCase {
             withNormalizedOffset: CGVector(dx: 0.9, dy: 0.8)
         ).click()
         XCTAssertTrue(
-            app.menuItems["Desktop"].waitForExistence(timeout: 3),
+            app.buttons["pane-location-option-Desktop"]
+                .waitForExistence(timeout: 3),
             "The complete location pill should open its menu"
         )
         app.typeKey(.escape, modifierFlags: [])
