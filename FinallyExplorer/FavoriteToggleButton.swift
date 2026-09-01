@@ -18,7 +18,9 @@ struct FavoriteToggleButton: View {
         case .custom:
             "Remove \(item.name) from Favorites"
         case .builtIn:
-            "\(item.name) is a built-in Favorite"
+            "Remove \(item.name) from Sidebar"
+        case .hiddenBuiltIn:
+            "Add \(item.name) to Sidebar"
         case .available:
             "Add \(item.name) to Favorites"
         }
@@ -27,12 +29,16 @@ struct FavoriteToggleButton: View {
     var body: some View {
         let status = sidebar.favoriteStatus(for: item.url)
         let actionTitle = actionTitle(for: status)
-        let canToggle = status != .builtIn
 
         Button {
-            if case let .custom(favorite) = status {
+            switch status {
+            case let .custom(favorite):
                 sidebar.remove(favorite)
-            } else if case .available = status {
+            case let .builtIn(place):
+                sidebar.hideBuiltInPlace(place)
+            case let .hiddenBuiltIn(place):
+                sidebar.restoreBuiltInPlace(place)
+            case .available:
                 sidebar.add(
                     itemURL: item.url,
                     isDirectory: item.isDirectory
@@ -49,7 +55,7 @@ struct FavoriteToggleButton: View {
                 )
                 .frame(width: 24, height: 30)
                 .background(
-                    isHovered && canToggle
+                    isHovered
                         ? theme.control.opacity(0.78)
                         : Color.clear,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -57,8 +63,6 @@ struct FavoriteToggleButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(canToggle == false)
-        .opacity(canToggle || status.isFavorite ? 1 : 0.45)
         .onHover { isHovered = $0 }
         .help(actionTitle)
         .accessibilityLabel(actionTitle)

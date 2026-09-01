@@ -34,23 +34,25 @@ nonisolated enum SidebarBuiltInPlace: String, CaseIterable, Identifiable, Hashab
     var title: String {
         switch self {
         case .home:
-            "Home"
+            let accountName = NSUserName()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return accountName.isEmpty ? "Home" : accountName
         case .applications:
-            "Applications"
+            return "Applications"
         case .desktop:
-            "Desktop"
+            return "Desktop"
         case .documents:
-            "Documents"
+            return "Documents"
         case .downloads:
-            "Downloads"
+            return "Downloads"
         case .pictures:
-            "Pictures"
+            return "Pictures"
         case .music:
-            "Music"
+            return "Music"
         case .movies:
-            "Movies"
+            return "Movies"
         case .systemDrive:
-            "Macintosh HD"
+            return "Macintosh HD"
         }
     }
 
@@ -278,18 +280,28 @@ nonisolated struct SidebarPlace: Identifiable, Hashable, Sendable {
         guard case let .favorite(favorite) = storage else { return nil }
         return favorite
     }
+
+    var canRemoveFromSidebar: Bool {
+        switch storage {
+        case .builtIn, .favorite:
+            true
+        case .location:
+            false
+        }
+    }
 }
 
 nonisolated enum SidebarFavoriteStatus: Equatable, Sendable {
     case custom(SidebarFavorite)
-    case builtIn
+    case builtIn(SidebarBuiltInPlace)
+    case hiddenBuiltIn(SidebarBuiltInPlace)
     case available
 
     var isFavorite: Bool {
         switch self {
         case .custom, .builtIn:
             true
-        case .available:
+        case .hiddenBuiltIn, .available:
             false
         }
     }
@@ -326,24 +338,33 @@ struct UserDefaultsSidebarFavoriteStore: SidebarFavoriteStoring {
 @Observable
 final class SidebarModel {
     private(set) var favorites: [SidebarFavorite]
+    private(set) var hiddenBuiltInPlaces: Set<SidebarBuiltInPlace>
     let mountedVolumeMonitor: MountedVolumeMonitor
 
     @ObservationIgnored private let store: any SidebarFavoriteStoring
-    private static let builtInURLs = Set(
-        SidebarBuiltInPlace.allCases.compactMap(\.url).map(normalizedURL)
+    @ObservationIgnored private let visibilityStore: any SidebarVisibilityStoring
+    private static let builtInPlacesByURL = Dictionary(
+        uniqueKeysWithValues: SidebarBuiltInPlace.allCases.compactMap { place in
+            place.url.map { (normalizedURL($0), place) }
+        }
     )
 
     init(
         store: (any SidebarFavoriteStoring)? = nil,
+        visibilityStore: (any SidebarVisibilityStoring)? = nil,
         mountedVolumeMonitor: MountedVolumeMonitor? = nil
     ) {
         let store = store ?? UserDefaultsSidebarFavoriteStore()
+        let visibilityStore = visibilityStore
+            ?? UserDefaultsSidebarVisibilityStore()
         self.store = store
+        self.visibilityStore = visibilityStore
         self.mountedVolumeMonitor = mountedVolumeMonitor ?? MountedVolumeMonitor()
 
         let loadedFavorites = store.loadFavorites()
         let sanitizedFavorites = Self.sanitizedFavorites(loadedFavorites)
         favorites = sanitizedFavorites
+        hiddenBuiltInPlaces = visibilityStore.loadHiddenBuiltInPlaces()
 
         if sanitizedFavorites != loadedFavorites {
             store.saveFavorites(sanitizedFavorites)
@@ -354,6 +375,22 @@ final class SidebarModel {
         SidebarPlace.standardPlaces
             + favorites.map(SidebarPlace.favorite)
             + mountedVolumePlaces
+    }
+
+    var visiblePrimaryPlaces: [SidebarBuiltInPlace] {
+        visiblePlaces(in: SidebarBuiltInPlace.primaryPlaces)
+    }
+
+    var visibleMediaPlaces: [SidebarBuiltInPlace] {
+        visiblePlaces(in: SidebarBuiltInPlace.mediaPlaces)
+    }
+
+    var visibleLocationPlaces: [SidebarBuiltInPlace] {
+        visiblePlaces(in: SidebarBuiltInPlace.locationPlaces)
+    }
+
+    var hiddenBuiltInPlacesInDefaultOrder: [SidebarBuiltInPlace] {
+        SidebarBuiltInPlace.allCases.filter(hiddenBuiltInPlaces.contains)
     }
 
     var mountedVolumePlaces: [SidebarPlace] {
@@ -376,7 +413,12 @@ final class SidebarModel {
         }) {
             return .custom(favorite)
         }
-        return Self.isBuiltIn(normalizedURL) ? .builtIn : .available
+        guard let builtInPlace = Self.builtInPlace(for: normalizedURL) else {
+            return .available
+        }
+        return hiddenBuiltInPlaces.contains(builtInPlace)
+            ? .hiddenBuiltIn(builtInPlace)
+            : .builtIn(builtInPlace)
     }
 
     func canAdd(directoryURL: URL) -> Bool {
@@ -428,6 +470,44 @@ final class SidebarModel {
 
         favorites.remove(at: index)
         store.saveFavorites(favorites)
+    }
+
+    func removeFromSidebar(_ place: SidebarPlace) {
+        switch place.id {
+        case let .builtIn(builtInPlace):
+            hideBuiltInPlace(builtInPlace)
+        case .favorite:
+            if let favorite = place.favorite {
+                remove(favorite)
+            }
+        case .location:
+            break
+        }
+    }
+
+    func hideBuiltInPlace(_ place: SidebarBuiltInPlace) {
+        guard hiddenBuiltInPlaces.insert(place).inserted else { return }
+        visibilityStore.saveHiddenBuiltInPlaces(hiddenBuiltInPlaces)
+    }
+
+    func restoreBuiltInPlace(_ place: SidebarBuiltInPlace) {
+        guard hiddenBuiltInPlaces.remove(place) != nil else { return }
+        visibilityStore.saveHiddenBuiltInPlaces(hiddenBuiltInPlaces)
+    }
+
+    func restoreAllBuiltInPlaces() {
+        guard hiddenBuiltInPlaces.isEmpty == false else { return }
+        hiddenBuiltInPlaces.removeAll()
+        visibilityStore.saveHiddenBuiltInPlaces(hiddenBuiltInPlaces)
+    }
+
+    @discardableResult
+    func restoreBuiltInPlace(for directoryURL: URL) -> SidebarPlace? {
+        guard let place = Self.builtInPlace(for: directoryURL) else {
+            return nil
+        }
+        restoreBuiltInPlace(place)
+        return .builtIn(place)
     }
 
     func applyRename(_ result: FileRenameResult) {
@@ -509,6 +589,16 @@ final class SidebarModel {
     }
 
     private static func isBuiltIn(_ url: URL) -> Bool {
-        builtInURLs.contains(url)
+        builtInPlace(for: url) != nil
+    }
+
+    private static func builtInPlace(for url: URL) -> SidebarBuiltInPlace? {
+        builtInPlacesByURL[normalizedURL(url)]
+    }
+
+    private func visiblePlaces(
+        in places: [SidebarBuiltInPlace]
+    ) -> [SidebarBuiltInPlace] {
+        places.filter { hiddenBuiltInPlaces.contains($0) == false }
     }
 }

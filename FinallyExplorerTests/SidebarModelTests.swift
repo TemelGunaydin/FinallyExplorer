@@ -9,6 +9,15 @@ import Testing
 
 @MainActor
 struct SidebarModelTests {
+    @Test("Home uses the current account folder name")
+    func homeTitleUsesCurrentAccountName() {
+        let accountName = NSUserName()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedTitle = accountName.isEmpty ? "Home" : accountName
+
+        #expect(SidebarBuiltInPlace.home.title == expectedTitle)
+    }
+
     @Test("A chosen folder is persisted and restored as a sidebar favorite")
     func customFolderPersistsAcrossModelInstances() throws {
         let directoryURL = try makeTemporaryDirectory()
@@ -120,6 +129,48 @@ struct SidebarModelTests {
         store.saveFavorites([favorite])
 
         #expect(store.loadFavorites() == [favorite])
+    }
+
+    @Test("Hidden built-in places persist but remain available to navigation")
+    func hiddenBuiltInPlacesPersistAndRestore() throws {
+        let suiteName = "FinallyExplorer.SidebarVisibilityTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let visibilityStore = UserDefaultsSidebarVisibilityStore(
+            defaults: defaults
+        )
+        let firstModel = SidebarModel(
+            store: SidebarFavoriteStoreSpy(),
+            visibilityStore: visibilityStore
+        )
+        firstModel.hideBuiltInPlace(.pictures)
+
+        #expect(firstModel.visibleMediaPlaces.contains(.pictures) == false)
+        #expect(firstModel.allPlaces.contains(.pictures))
+        let picturesURL = try #require(SidebarBuiltInPlace.pictures.url)
+        #expect(
+            firstModel.favoriteStatus(for: picturesURL)
+                == .hiddenBuiltIn(.pictures)
+        )
+
+        let restoredModel = SidebarModel(
+            store: SidebarFavoriteStoreSpy(),
+            visibilityStore: visibilityStore
+        )
+        #expect(restoredModel.hiddenBuiltInPlaces == [.pictures])
+        #expect(restoredModel.visibleMediaPlaces.contains(.pictures) == false)
+
+        let restoredPlace = restoredModel.restoreBuiltInPlace(for: picturesURL)
+        #expect(restoredPlace == .pictures)
+        #expect(restoredModel.visibleMediaPlaces.contains(.pictures))
+        #expect(restoredModel.favoriteStatus(for: picturesURL) == .builtIn(.pictures))
+
+        let finalModel = SidebarModel(
+            store: SidebarFavoriteStoreSpy(),
+            visibilityStore: visibilityStore
+        )
+        #expect(finalModel.hiddenBuiltInPlaces.isEmpty)
     }
 
     @Test("Favorites saved before file pinning still decode as folders")

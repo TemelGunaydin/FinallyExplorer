@@ -371,36 +371,44 @@ struct ContentView: View {
 
     private var explorerSidebar: some View {
         List(selection: sidebarSelection) {
-            Section {
-                ForEach(SidebarBuiltInPlace.primaryPlaces) { place in
-                    sidebarRow(.builtIn(place))
-                }
+            if sidebar.visiblePrimaryPlaces.isEmpty == false
+                || sidebar.favorites.isEmpty == false {
+                Section {
+                    ForEach(sidebar.visiblePrimaryPlaces) { place in
+                        sidebarRow(.builtIn(place))
+                    }
 
-                ForEach(sidebar.favorites) { favorite in
-                    sidebarRow(.favorite(favorite))
+                    ForEach(sidebar.favorites) { favorite in
+                        sidebarRow(.favorite(favorite))
+                    }
+                } header: {
+                    sidebarSectionHeader("Favorites")
                 }
-            } header: {
-                sidebarSectionHeader("Favorites")
             }
 
-            Section {
-                ForEach(SidebarBuiltInPlace.mediaPlaces) { place in
-                    sidebarRow(.builtIn(place))
+            if sidebar.visibleMediaPlaces.isEmpty == false {
+                Section {
+                    ForEach(sidebar.visibleMediaPlaces) { place in
+                        sidebarRow(.builtIn(place))
+                    }
+                } header: {
+                    sidebarSectionHeader("Media")
                 }
-            } header: {
-                sidebarSectionHeader("Media")
             }
 
-            Section {
-                ForEach(SidebarBuiltInPlace.locationPlaces) { place in
-                    sidebarRow(.builtIn(place))
-                }
+            if sidebar.visibleLocationPlaces.isEmpty == false
+                || sidebar.mountedVolumeMonitor.volumes.isEmpty == false {
+                Section {
+                    ForEach(sidebar.visibleLocationPlaces) { place in
+                        sidebarRow(.builtIn(place))
+                    }
 
-                ForEach(sidebar.mountedVolumeMonitor.volumes) { volume in
-                    mountedVolumeSidebarRow(volume)
+                    ForEach(sidebar.mountedVolumeMonitor.volumes) { volume in
+                        mountedVolumeSidebarRow(volume)
+                    }
+                } header: {
+                    sidebarSectionHeader("Locations")
                 }
-            } header: {
-                sidebarSectionHeader("Locations")
             }
         }
         .listStyle(.sidebar)
@@ -408,13 +416,23 @@ struct ContentView: View {
         .scrollContentBackground(.hidden)
         .background(themeController.activeTheme.sidebarBackground)
         .safeAreaInset(edge: .bottom) {
-            Button {
-                isSidebarFolderPickerPresented = true
-            } label: {
-                Label("Add Folder", systemImage: "plus.circle.fill")
+            HStack(spacing: 8) {
+                Button {
+                    isSidebarFolderPickerPresented = true
+                } label: {
+                    Label("Add Folder", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(ExplorerSidebarActionButtonStyle())
+                .help("Add Folder to Sidebar")
+
+                if sidebar.hiddenBuiltInPlaces.isEmpty == false {
+                    SidebarRestoreButton(
+                        hiddenPlaces: sidebar.hiddenBuiltInPlacesInDefaultOrder,
+                        onRestore: sidebar.restoreBuiltInPlace,
+                        onRestoreAll: sidebar.restoreAllBuiltInPlaces
+                    )
+                }
             }
-            .buttonStyle(ExplorerSidebarActionButtonStyle())
-            .help("Add Folder to Sidebar")
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(themeController.activeTheme.sidebarFooter)
@@ -430,8 +448,18 @@ struct ContentView: View {
             allowsMultipleSelection: false
         ) { result in
             guard case let .success(directoryURLs) = result,
-                  let directoryURL = directoryURLs.first,
-                  let favorite = sidebar.add(directoryURL: directoryURL) else {
+                  let directoryURL = directoryURLs.first else {
+                return
+            }
+
+            if let restoredPlace = sidebar.restoreBuiltInPlace(
+                for: directoryURL
+            ) {
+                workspace.select(restoredPlace, in: workspace.activePaneID)
+                return
+            }
+
+            guard let favorite = sidebar.add(directoryURL: directoryURL) else {
                 return
             }
 
@@ -476,13 +504,12 @@ struct ContentView: View {
                 showsTerminalCommands: place.isDirectory
             )
             .contextMenu {
-                if let favorite = place.favorite {
+                if place.canRemoveFromSidebar {
                     Button(
-                        "Remove from Favorites",
-                        systemImage: "star.slash",
-                        role: .destructive
+                        "Remove from Sidebar",
+                        systemImage: "minus.circle"
                     ) {
-                        sidebar.remove(favorite)
+                        sidebar.removeFromSidebar(place)
                     }
                 }
             }

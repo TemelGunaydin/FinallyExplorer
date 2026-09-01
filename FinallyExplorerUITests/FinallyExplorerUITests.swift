@@ -494,7 +494,7 @@ final class FinallyExplorerUITests: XCTestCase {
         )
 
         try rightClickRow(sidebarFavorites.firstMatch)
-        let removeFavorite = app.menuItems["Remove from Favorites"]
+        let removeFavorite = app.menuItems["Remove from Sidebar"]
         XCTAssertTrue(removeFavorite.waitForExistence(timeout: 3))
         removeFavorite.click()
         XCTAssertTrue(
@@ -503,6 +503,42 @@ final class FinallyExplorerUITests: XCTestCase {
 
         try rightClickRow(destinationRows.firstMatch)
         XCTAssertTrue(app.menuItems["Add to Favorites"].waitForExistence(timeout: 3))
+    }
+
+    func testBuiltInSidebarItemsCanBeRemovedAndRestored() throws {
+        XCTAssertTrue(
+            rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)
+        )
+
+        let homeRow = app.descendants(matching: .any)["sidebar-built-in-home"]
+        XCTAssertTrue(homeRow.waitForExistence(timeout: 5))
+        let accountName = NSUserName()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedHomeTitle = accountName.isEmpty ? "Home" : accountName
+        XCTAssertTrue(
+            app.staticTexts[expectedHomeTitle].waitForExistence(timeout: 3),
+            "The Home sidebar row should use the current account name"
+        )
+
+        let picturesRow = app.descendants(matching: .any)[
+            "sidebar-built-in-pictures"
+        ]
+        XCTAssertTrue(picturesRow.waitForExistence(timeout: 5))
+        try rightClickRow(picturesRow)
+
+        let remove = app.menuItems["Remove from Sidebar"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 3))
+        remove.click()
+        XCTAssertTrue(picturesRow.waitForNonExistence(timeout: 5))
+
+        let restoreItems = app.buttons["sidebar-restore-items-button"]
+        XCTAssertTrue(restoreItems.waitForExistence(timeout: 5))
+        restoreItems.click()
+
+        let restorePictures = app.buttons["sidebar-restore-pictures"]
+        XCTAssertTrue(restorePictures.waitForExistence(timeout: 5))
+        restorePictures.click()
+        XCTAssertTrue(picturesRow.waitForExistence(timeout: 5))
     }
 
     func testFileContextMenuOffersSharingAndInformation() throws {

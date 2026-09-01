@@ -47,6 +47,9 @@ struct FinallyExplorerApp: App {
         _sidebar = State(
             initialValue: SidebarModel(
                 store: Self.sidebarStore(for: launchConfiguration),
+                visibilityStore: Self.sidebarVisibilityStore(
+                    for: launchConfiguration
+                ),
                 mountedVolumeMonitor: Self.mountedVolumeMonitor(
                     for: launchConfiguration
                 )
@@ -88,6 +91,17 @@ struct FinallyExplorerApp: App {
         }
 
         return UserDefaultsSidebarFavoriteStore(defaults: defaults)
+    }
+
+    private static func sidebarVisibilityStore(
+        for launchConfiguration: ExplorerLaunchConfiguration
+    ) -> (any SidebarVisibilityStoring)? {
+        guard let suiteName = launchConfiguration.defaultsSuiteName,
+              let defaults = UserDefaults(suiteName: suiteName) else {
+            return nil
+        }
+
+        return UserDefaultsSidebarVisibilityStore(defaults: defaults)
     }
 
     private static func fileOperationCoordinator(
