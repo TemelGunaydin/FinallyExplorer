@@ -17,7 +17,7 @@ struct TerminalToolbarButton: View {
             openOrChooseTerminal()
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(ExplorerToolbarButtonStyle())
+        .buttonStyle(ExplorerPaneUtilityButtonStyle())
         .disabled(
             directoryURL == nil
                 || coordinator.installedApplications.isEmpty

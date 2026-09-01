@@ -15,7 +15,7 @@ struct NearbyTransferToolbarButton: View {
             nearbyTransfers.prepareToSend(sourceURLs)
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(ExplorerToolbarButtonStyle())
+        .buttonStyle(ExplorerPaneUtilityButtonStyle())
         .help(
             sourceURLs.isEmpty
                 ? "Enable nearby receiving"

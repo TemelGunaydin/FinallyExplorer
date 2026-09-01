@@ -859,7 +859,9 @@ private struct DestinationView: View {
                     Button("New Folder", systemImage: "folder.badge.plus") {
                         createFolder()
                     }
-                    .buttonStyle(ExplorerActionButtonStyle())
+                    .buttonStyle(
+                        ExplorerPanePrimaryButtonStyle(isCompact: false)
+                    )
                     .disabled(
                         pane.displayedDirectory == nil
                             || fileOperations.isPerforming
@@ -871,7 +873,9 @@ private struct DestinationView: View {
                         createFolder()
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .buttonStyle(
+                        ExplorerPanePrimaryButtonStyle(isCompact: true)
+                    )
                     .disabled(
                         pane.displayedDirectory == nil
                             || fileOperations.isPerforming
@@ -891,7 +895,7 @@ private struct DestinationView: View {
                     toggleHiddenItems()
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .help(
                     pane.showsHiddenItems
                         ? "Hide hidden files and folders in this pane"
@@ -902,7 +906,7 @@ private struct DestinationView: View {
                     _ = workspace.split(paneID: pane.id, direction: .right)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .disabled(workspace.canSplit == false)
                 .help("Split this pane to the right")
 
@@ -910,7 +914,7 @@ private struct DestinationView: View {
                     _ = workspace.split(paneID: pane.id, direction: .below)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .disabled(workspace.canSplit == false)
                 .help("Split this pane below")
 
@@ -922,7 +926,7 @@ private struct DestinationView: View {
                             action: onResetView
                         )
                         .labelStyle(.iconOnly)
-                        .buttonStyle(ExplorerToolbarButtonStyle())
+                        .buttonStyle(ExplorerPaneUtilityButtonStyle())
                         .help("Keep the active pane and close the other panes")
                     }
 
@@ -930,7 +934,7 @@ private struct DestinationView: View {
                         _ = workspace.close(pane.id)
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
                     .help("Close this pane")
                 }
 
@@ -941,7 +945,7 @@ private struct DestinationView: View {
                         action: onTogglePreview
                     )
                     .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerToolbarButtonStyle())
+                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
                     .help(
                         isPreviewVisible
                             ? "Hide the preview area"
