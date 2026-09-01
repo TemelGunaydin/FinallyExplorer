@@ -646,6 +646,7 @@ private nonisolated struct DirectoryLoadRequest: Hashable {
     let directoryURL: URL?
     let operationRevision: Int
     let includesHiddenItems: Bool
+    let retryGeneration: Int
 }
 
 private nonisolated struct SearchLoadRequest: Hashable {
@@ -657,6 +658,7 @@ private struct DestinationView: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
     @Environment(\.explorerTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     let pane: WorkspacePaneState
     let workspace: WorkspaceModel
@@ -666,6 +668,7 @@ private struct DestinationView: View {
     let onResetView: () -> Void
 
     @FocusState private var isDirectoryListFocused: Bool
+    @State private var directoryRetryGeneration = 0
 
     private var directoryLoadRequest: DirectoryLoadRequest {
         DirectoryLoadRequest(
@@ -673,7 +676,8 @@ private struct DestinationView: View {
             operationRevision: fileOperations.directoryRefreshRevision(
                 for: pane.displayedDirectory
             ),
-            includesHiddenItems: pane.showsHiddenItems
+            includesHiddenItems: pane.showsHiddenItems,
+            retryGeneration: directoryRetryGeneration
         )
     }
 
@@ -783,6 +787,15 @@ private struct DestinationView: View {
         .task(id: directoryLoadRequest) {
             let request = directoryLoadRequest
             await loadDirectoryContents(request)
+        }
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active,
+                  let accessError = pane.directoryAccessError,
+                  case .permissionDenied = accessError else {
+                return
+            }
+
+            directoryRetryGeneration += 1
         }
         .task(id: searchLoadRequest) {
             let request = searchLoadRequest
@@ -1097,6 +1110,13 @@ private struct DestinationView: View {
         } else if pane.isLoading {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let accessError = pane.directoryAccessError {
+            DirectoryAccessUnavailableView(
+                error: accessError,
+                openPrivacySettings: {
+                    SystemPrivacySettingsOpener.openFilesAndFolders()
+                }
+            )
         } else if let errorMessage = pane.errorMessage {
             ContentUnavailableView(
                 "Unable to Access Folder",
@@ -1197,7 +1217,8 @@ private struct DestinationView: View {
         guard let requestedURL else {
             pane.directoryContents = []
             pane.loadedDirectoryURL = nil
-            pane.errorMessage = DirectoryAccessError.invalidURL.localizedDescription
+            pane.directoryAccessError = .invalidURL
+            pane.errorMessage = nil
             pane.isLoading = false
             return
         }
@@ -1208,6 +1229,7 @@ private struct DestinationView: View {
         if isInPlaceRefresh == false {
             pane.isLoading = true
         }
+        pane.directoryAccessError = nil
         pane.errorMessage = nil
 
         do {
@@ -1258,7 +1280,8 @@ private struct DestinationView: View {
             }
             pane.directoryContents = []
             pane.loadedDirectoryURL = nil
-            pane.errorMessage = error.localizedDescription
+            pane.directoryAccessError = error
+            pane.errorMessage = nil
             pane.isLoading = false
         } catch {
             guard Task.isCancelled == false,
@@ -1273,6 +1296,7 @@ private struct DestinationView: View {
             }
             pane.directoryContents = []
             pane.loadedDirectoryURL = nil
+            pane.directoryAccessError = nil
             pane.errorMessage = "An unexpected error occurred: \(error.localizedDescription)\n\nPath: \(requestedURL.path)"
             pane.isLoading = false
         }
@@ -1337,7 +1361,8 @@ struct FolderContentsInspector: View {
             operationRevision: fileOperations.directoryRefreshRevision(
                 for: folder.url
             ),
-            includesHiddenItems: false
+            includesHiddenItems: false,
+            retryGeneration: 0
         )
     }
 

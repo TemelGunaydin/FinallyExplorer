@@ -239,6 +239,7 @@ final class WorkspacePaneState: Identifiable {
     var directoryContents: [FileItem]
     var loadedDirectoryURL: URL?
     var isLoading: Bool
+    var directoryAccessError: DirectoryAccessError?
     var errorMessage: String?
     var navigation: DirectoryNavigationState
     var selectedURLs: Set<URL> {
@@ -268,6 +269,7 @@ final class WorkspacePaneState: Identifiable {
         directoryContents: [FileItem] = [],
         loadedDirectoryURL: URL? = nil,
         isLoading: Bool = false,
+        directoryAccessError: DirectoryAccessError? = nil,
         errorMessage: String? = nil,
         selectedURL: URL? = nil,
         pendingRevealURL: URL? = nil,
@@ -282,6 +284,7 @@ final class WorkspacePaneState: Identifiable {
         self.directoryContents = directoryContents
         self.loadedDirectoryURL = loadedDirectoryURL
         self.isLoading = isLoading
+        self.directoryAccessError = directoryAccessError
         self.errorMessage = errorMessage
         selectedURLs = selectedURL.map { [$0] } ?? []
         primarySelectedURL = selectedURL
@@ -399,6 +402,7 @@ final class WorkspacePaneState: Identifiable {
         directoryContents = []
         loadedDirectoryURL = nil
         isLoading = false
+        directoryAccessError = nil
         errorMessage = nil
         navigation = DirectoryNavigationState()
         selectedURL = nil

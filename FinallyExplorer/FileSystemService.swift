@@ -19,8 +19,8 @@ nonisolated enum DirectoryAccessError: LocalizedError, Equatable, Sendable {
         switch self {
         case .invalidURL:
             "Invalid directory URL"
-        case let .permissionDenied(path, folderTitle):
-            "Permission denied. Please check System Settings > Privacy & Security > Files and Folders to grant access to the \(folderTitle) folder.\n\nPath: \(path)"
+        case let .permissionDenied(_, folderTitle):
+            "FinallyExplorer doesn’t have permission to view \(folderTitle)."
         case let .notFound(path, folderTitle):
             "The \(folderTitle) folder could not be found at this location.\n\nPath: \(path)"
         case let .notDirectory(path, folderTitle):
