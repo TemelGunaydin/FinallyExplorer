@@ -497,19 +497,6 @@ private struct WorkspaceRootView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let leadingInset = workspace.paneCount > 1
-                ? proxy.safeAreaInsets.leading
-                : 0
-            let trailingInset = workspace.paneCount > 1
-                ? proxy.safeAreaInsets.trailing
-                : 0
-            let topInset = workspace.paneCount > 1
-                ? proxy.safeAreaInsets.top
-                : 0
-            let bottomInset = workspace.paneCount > 1
-                ? proxy.safeAreaInsets.bottom
-                : 0
-
             WorkspaceNodeView(
                 node: workspace.layoutRoot,
                 workspace: workspace,
@@ -518,22 +505,15 @@ private struct WorkspaceRootView: View {
                 onTogglePreview: onTogglePreview,
                 onResetView: onResetView
             )
-            // `HSplitView` is AppKit-backed and otherwise escapes the detail
-            // column's proposal, using the whole window (including sidebar).
-            // Offset instead of padding so measuring the safe area cannot feed
-            // back into the split view's AppKit layout proposal.
+            // AppKit-backed split views need a finite proposal. Pinning the
+            // root to the detail container keeps every nested pane inside it;
+            // safe-area offsets are already represented by this container's
+            // position and must not be applied a second time.
             .frame(
-                width: max(
-                    0,
-                    proxy.size.width - leadingInset - trailingInset
-                ),
-                height: max(
-                    0,
-                    proxy.size.height - topInset - bottomInset
-                ),
+                width: proxy.size.width,
+                height: proxy.size.height,
                 alignment: .topLeading
             )
-            .offset(x: leadingInset, y: topInset)
         }
         .background(theme.canvas)
     }

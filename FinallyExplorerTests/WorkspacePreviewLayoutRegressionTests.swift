@@ -18,8 +18,8 @@ struct WorkspacePreviewLayoutRegressionTests {
     }
 
     @MainActor
-    @Test("Workspace split remains inside the navigation detail column")
-    func workspaceSplitStaysInsideDetailColumn() async {
+    @Test("Workspace grid fills the navigation detail column without gaps")
+    func workspaceGridFillsDetailColumn() async {
         await #expect(processExitsWith: .success) {
             await exerciseNestedSplitFramesInARealWindow()
         }
@@ -37,6 +37,10 @@ private func exerciseNestedSplitFramesInARealWindow() async {
     )
     precondition(
         workspace.split(paneID: firstPaneID, direction: .right) != nil
+    )
+    let secondPaneID = workspace.activePaneID
+    precondition(
+        workspace.split(paneID: secondPaneID, direction: .right) != nil
     )
 
     let contentView = ContentView(
@@ -63,13 +67,15 @@ private func exerciseNestedSplitFramesInARealWindow() async {
     hostingView.layoutSubtreeIfNeeded()
 
     let splitViews = nestedSplitViews(in: hostingView)
-    precondition(splitViews.count >= 2)
+    precondition(splitViews.isEmpty == false)
 
     let navigationSplit = splitViews.min { $0.depth < $1.depth }!.view
-    let workspaceSplit = splitViews.max { $0.depth < $1.depth }!.view
     let detailView = navigationSplit.subviews
         .filter { $0.frame.width >= navigationSplit.bounds.width * 0.25 }
         .max { $0.frame.minX < $1.frame.minX }!
+    let workspaceSplit = nestedSplitViews(in: detailView)
+        .min { $0.depth < $1.depth }!
+        .view
     let detailFrame = detailView.convert(detailView.bounds, to: hostingView)
     let workspaceFrame = workspaceSplit.convert(
         workspaceSplit.bounds,
@@ -78,20 +84,20 @@ private func exerciseNestedSplitFramesInARealWindow() async {
     let tolerance: CGFloat = 2
 
     precondition(
-        workspaceFrame.minX >= detailFrame.minX - tolerance,
-        "Workspace split must not extend underneath the sidebar."
+        abs(workspaceFrame.minX - detailFrame.minX) <= tolerance,
+        "Workspace grid must start at the detail column's leading edge."
     )
     precondition(
-        workspaceFrame.maxX <= detailFrame.maxX + tolerance,
-        "Workspace split must not extend beyond the detail trailing edge."
+        abs(workspaceFrame.maxX - detailFrame.maxX) <= tolerance,
+        "Workspace grid must end at the detail column's trailing edge."
     )
     precondition(
-        workspaceFrame.minY >= detailFrame.minY - tolerance,
-        "Workspace split must not extend underneath the window toolbar."
+        abs(workspaceFrame.minY - detailFrame.minY) <= tolerance,
+        "Workspace grid must start at the detail column's top edge."
     )
     precondition(
-        workspaceFrame.maxY <= detailFrame.maxY + tolerance,
-        "Workspace split must not extend below the detail column."
+        abs(workspaceFrame.maxY - detailFrame.maxY) <= tolerance,
+        "Workspace grid must end at the detail column's bottom edge."
     )
 }
 
