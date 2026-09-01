@@ -17,26 +17,74 @@ struct GlobalSearchToolbar: View {
 
     var body: some View {
         @Bindable var model = model
+        let isIndexReady = model.isIndexReady(in: rootURL)
+        let isIndexing = model.isIndexing(in: rootURL)
+        let indexFailureMessage = model.indexFailureMessage(in: rootURL)
 
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(
+                    isIndexReady ? theme.chromeText : theme.chromeText.opacity(0.78)
+                )
 
-            TextField("Search this Mac", text: $model.query)
-                .textFieldStyle(.plain)
-                .focused($isSearchFocused)
-                .accessibilityIdentifier("global-search-text-field")
-                .onSubmit(activateSelection)
-                .onKeyPress(.upArrow) {
-                    model.moveSelection(.previous)
-                    return .handled
-                }
-                .onKeyPress(.downArrow) {
-                    model.moveSelection(.next)
-                    return .handled
-                }
+            ZStack(alignment: .leading) {
+                TextField("", text: $model.query)
+                    .textFieldStyle(.plain)
+                    .focused($isSearchFocused)
+                    .disabled(isIndexReady == false)
+                    .foregroundStyle(isIndexReady ? theme.chromeText : Color.clear)
+                    .accessibilityLabel("Search this Mac")
+                    .accessibilityValue(searchFieldAccessibilityValue)
+                    .accessibilityHint(searchFieldAccessibilityHint)
+                    .accessibilityIdentifier("global-search-text-field")
+                    .onSubmit(activateSelection)
+                    .onKeyPress(.upArrow) {
+                        model.moveSelection(.previous)
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        model.moveSelection(.next)
+                        return .handled
+                    }
 
-            if model.isSearching || model.isPreparingResults {
+                if isIndexing {
+                    Text("Indexing this Mac…")
+                        .foregroundStyle(theme.chromeText.opacity(0.84))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                } else if indexFailureMessage != nil {
+                    Text("Search unavailable")
+                        .foregroundStyle(theme.chromeText.opacity(0.84))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                } else if model.query.isEmpty {
+                    Text("Search this Mac")
+                        .foregroundStyle(theme.chromeText.opacity(0.58))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isIndexing {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(theme.chromeText)
+                    .accessibilityHidden(true)
+            } else if indexFailureMessage != nil {
+                Button(
+                    "Retry Search Indexing",
+                    systemImage: "arrow.clockwise",
+                    action: retryIndexing
+                )
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .help(
+                    "Retry search preparation. \(indexFailureMessage ?? "Unknown error.")"
+                )
+                .accessibilityIdentifier("global-search-index-retry")
+            } else if model.isSearching || model.isPreparingResults {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel("Searching this Mac")
@@ -55,16 +103,18 @@ struct GlobalSearchToolbar: View {
         .padding(.horizontal, 12)
         .frame(width: 460, height: 34)
         .background(
-            Color.black.opacity(isSearchFocused ? 0.28 : 0.17),
+            Color.black.opacity(
+                isIndexReady ? (isSearchFocused ? 0.28 : 0.17) : 0.12
+            ),
             in: .rect(cornerRadius: 10)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(
-                    isSearchFocused
+                    isIndexReady && isSearchFocused
                         ? theme.accent.opacity(0.72)
-                        : Color.white.opacity(0.14),
-                    lineWidth: isSearchFocused ? 1.25 : 0.75
+                        : Color.white.opacity(isIndexReady ? 0.14 : 0.08),
+                    lineWidth: isIndexReady && isSearchFocused ? 1.25 : 0.75
                 )
         }
         .popover(isPresented: $isResultsPresented, arrowEdge: .bottom) {
@@ -73,15 +123,21 @@ struct GlobalSearchToolbar: View {
                 onReveal: reveal
             )
         }
+        .task(id: rootURL) {
+            await model.runIndexLifecycle(in: rootURL)
+        }
         .task(id: model.request(in: rootURL)) {
             await model.search(in: rootURL)
         }
         .onChange(of: model.hasQuery) { _, hasQuery in
-            isResultsPresented = hasQuery
+            isResultsPresented = hasQuery && model.isIndexReady(in: rootURL)
         }
-        .onDisappear {
-            Task {
-                await model.shutdown()
+        .onChange(of: isIndexReady) { _, isReady in
+            if isReady {
+                isResultsPresented = model.hasQuery
+            } else {
+                isSearchFocused = false
+                isResultsPresented = false
             }
         }
     }
@@ -89,6 +145,32 @@ struct GlobalSearchToolbar: View {
     private func activateSelection() {
         guard let result = model.selectedResult else { return }
         reveal(result)
+    }
+
+    private var searchFieldAccessibilityValue: String {
+        if model.isIndexing(in: rootURL) {
+            "Indexing"
+        } else if model.indexFailureMessage(in: rootURL) != nil {
+            "Unavailable"
+        } else {
+            model.query
+        }
+    }
+
+    private var searchFieldAccessibilityHint: String {
+        if model.isIndexing(in: rootURL) {
+            "Search will be available when indexing finishes."
+        } else if let message = model.indexFailureMessage(in: rootURL) {
+            "Search preparation failed: \(message) Use the retry button to try again."
+        } else {
+            "Searches file names and contents on this Mac."
+        }
+    }
+
+    private func retryIndexing() {
+        Task {
+            await model.prepare(in: rootURL)
+        }
     }
 
     private func reveal(_ result: ExplorerSearchResult) {

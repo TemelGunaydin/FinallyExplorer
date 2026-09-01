@@ -11,6 +11,71 @@ import Testing
 struct GlobalSearchModelTests {
     private let rootURL = URL(filePath: "/", directoryHint: .isDirectory)
 
+    @Test("Index preparation gates search and runs the latest queued query when ready")
+    func preparationGatesSearchUntilReady() async {
+        let result = globalResult(named: "needle.txt")
+        let service = GatedPreparationGlobalSearchService(result: result)
+        let model = GlobalSearchModel(service: service, debounce: {})
+
+        #expect(model.isIndexing(in: rootURL))
+        #expect(model.isIndexReady(in: rootURL) == false)
+
+        let preparationTask = Task {
+            await model.prepare(in: rootURL)
+        }
+        await service.waitUntilPreparationIsRequested()
+
+        model.query = "needle"
+        await model.search(in: rootURL)
+        #expect(await service.searchCount() == 0)
+        #expect(model.isIndexing(in: rootURL))
+
+        await service.finishPreparation()
+        await preparationTask.value
+
+        #expect(model.isIndexReady(in: rootURL))
+        #expect(model.isIndexing(in: rootURL) == false)
+        #expect(model.results == [result])
+        #expect(await service.preparationCount() == 1)
+        #expect(await service.searchCount() == 1)
+        await model.shutdown()
+    }
+
+    @Test("Failed index preparation stays unavailable and can be retried")
+    func failedPreparationCanRetry() async {
+        let service = GatedPreparationGlobalSearchService(
+            result: globalResult(named: "unused.txt")
+        )
+        let model = GlobalSearchModel(service: service, debounce: {})
+
+        let failedPreparation = Task {
+            await model.prepare(in: rootURL)
+        }
+        await service.waitUntilPreparationIsRequested()
+        await service.failPreparation()
+        await failedPreparation.value
+
+        #expect(model.isIndexReady(in: rootURL) == false)
+        #expect(model.isIndexing(in: rootURL) == false)
+        #expect(
+            model.indexFailureMessage(in: rootURL)
+                == "Search failed for testing."
+        )
+
+        let retry = Task {
+            await model.prepare(in: rootURL)
+        }
+        await service.waitUntilPreparationIsRequested()
+        #expect(model.isIndexing(in: rootURL))
+        await service.finishPreparation()
+        await retry.value
+
+        #expect(model.isIndexReady(in: rootURL))
+        #expect(model.indexFailureMessage(in: rootURL) == nil)
+        #expect(await service.preparationCount() == 2)
+        await model.shutdown()
+    }
+
     @Test("The closest result starts selected and arrow movement wraps at both bounds")
     func keyboardSelectionWraps() async throws {
         let results = [
@@ -22,6 +87,7 @@ struct GlobalSearchModelTests {
             pages: ["a": GlobalSearchPage(results: results, message: nil)]
         )
         let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
         model.query = "a"
 
         await model.search(in: rootURL)
@@ -45,6 +111,7 @@ struct GlobalSearchModelTests {
     func blankAndClearAreSideEffectFree() async {
         let service = GlobalSearchServiceStub(pages: [:])
         let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
 
         model.query = "   \n"
         await model.search(in: rootURL)
@@ -68,6 +135,7 @@ struct GlobalSearchModelTests {
             ]
         )
         let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
         model.query = "needle"
         model.scope = .contents
         model.contentMode = .regex
@@ -86,6 +154,7 @@ struct GlobalSearchModelTests {
     func staleCompletionIsDiscarded() async {
         let service = ControlledGlobalSearchService()
         let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
 
         model.query = "old"
         let oldTask = Task { await model.search(in: rootURL) }
@@ -119,6 +188,7 @@ struct GlobalSearchModelTests {
         let result = globalResult(named: "eventual.txt")
         let service = WarmingGlobalSearchService(result: result)
         let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
         model.query = "eventual"
 
         await model.search(in: rootURL)
@@ -141,6 +211,35 @@ struct GlobalSearchModelTests {
         await model.shutdown()
     }
 
+    @Test("Clearing a query does not strand an index warm-up")
+    func clearKeepsWarmupAliveUntilIndexIsReady() async {
+        let service = WarmingGlobalSearchService(
+            result: globalResult(named: "unused.txt")
+        )
+        let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
+        model.query = "eventual"
+
+        await model.search(in: rootURL)
+        await service.waitUntilWarmupIsObserved()
+        #expect(model.isIndexing(in: rootURL))
+
+        model.clear()
+        #expect(model.query.isEmpty)
+        #expect(model.isIndexing(in: rootURL))
+
+        await service.finishInitialScan()
+        for _ in 0..<1_000 {
+            if model.isIndexReady(in: rootURL) { break }
+            await Task.yield()
+        }
+
+        #expect(model.isIndexReady(in: rootURL))
+        #expect(model.results.isEmpty)
+        #expect(await service.searchCount() == 1)
+        await model.shutdown()
+    }
+
     @Test("Service failures become visible and shutdown releases the service")
     func errorAndShutdownLifecycle() async {
         let service = GlobalSearchServiceStub(
@@ -148,6 +247,7 @@ struct GlobalSearchModelTests {
             error: GlobalSearchTestError.failed
         )
         let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
         model.query = "needle"
 
         await model.search(in: rootURL)
@@ -180,6 +280,8 @@ private actor GlobalSearchServiceStub: GlobalSearchServicing {
         self.pages = pages
         self.error = error
     }
+
+    func prepare(rootURL: URL) async throws {}
 
     func search(
         rootURL: URL,
@@ -216,6 +318,8 @@ private actor ControlledGlobalSearchService: GlobalSearchServicing {
     private var continuations: [
         String: CheckedContinuation<GlobalSearchPage, any Error>
     ] = [:]
+
+    func prepare(rootURL: URL) async throws {}
 
     func search(
         rootURL: URL,
@@ -256,6 +360,8 @@ private actor WarmingGlobalSearchService: GlobalSearchServicing {
         self.result = result
     }
 
+    func prepare(rootURL: URL) async throws {}
+
     func search(
         rootURL: URL,
         query: String,
@@ -293,6 +399,63 @@ private actor WarmingGlobalSearchService: GlobalSearchServicing {
     func finishInitialScan() {
         warmupContinuation?.resume()
         warmupContinuation = nil
+    }
+
+    func searchCount() -> Int {
+        searches
+    }
+}
+
+private actor GatedPreparationGlobalSearchService: GlobalSearchServicing {
+    private let result: ExplorerSearchResult
+    private var preparationRequests = 0
+    private var searches = 0
+    private var preparationContinuation: CheckedContinuation<Void, any Error>?
+
+    init(result: ExplorerSearchResult) {
+        self.result = result
+    }
+
+    func prepare(rootURL: URL) async throws {
+        preparationRequests += 1
+        try await withCheckedThrowingContinuation { continuation in
+            preparationContinuation = continuation
+        }
+    }
+
+    func search(
+        rootURL: URL,
+        query: String,
+        scope: ExplorerSearchScope,
+        contentMode: FFFContentSearchMode
+    ) async throws -> GlobalSearchPage {
+        searches += 1
+        return GlobalSearchPage(results: [result], message: nil)
+    }
+
+    func shutdown() async {
+        preparationContinuation?.resume(throwing: CancellationError())
+        preparationContinuation = nil
+    }
+
+    func waitUntilPreparationIsRequested() async {
+        while preparationContinuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func finishPreparation() {
+        preparationContinuation?.resume()
+        preparationContinuation = nil
+    }
+
+    func failPreparation() {
+        preparationContinuation?.resume(throwing: GlobalSearchTestError.failed)
+        preparationContinuation = nil
+    }
+
+    func preparationCount() -> Int {
+        preparationRequests
     }
 
     func searchCount() -> Int {

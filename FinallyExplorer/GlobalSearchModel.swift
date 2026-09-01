@@ -13,6 +13,13 @@ nonisolated struct GlobalSearchRequest: Hashable, Sendable {
     let contentMode: FFFContentSearchMode
 }
 
+nonisolated enum GlobalSearchIndexState: Equatable, Sendable {
+    case idle
+    case indexing(rootURL: URL)
+    case ready(rootURL: URL)
+    case failed(rootURL: URL, message: String)
+}
+
 nonisolated enum GlobalSearchSelectionMovement: Sendable {
     case previous
     case next
@@ -29,11 +36,14 @@ final class GlobalSearchModel {
     private(set) var selectedResultID: ExplorerSearchResult.ID?
     private(set) var isSearching = false
     private(set) var isPreparingResults = false
+    private(set) var indexState: GlobalSearchIndexState = .idle
     private(set) var message: ExplorerSearchMessage?
 
     @ObservationIgnored private let service: any GlobalSearchServicing
     @ObservationIgnored private let debounce: @Sendable () async throws -> Void
+    @ObservationIgnored private var lifecycleGeneration = 0
     @ObservationIgnored private var requestGeneration = 0
+    @ObservationIgnored private var preparationGeneration = 0
     @ObservationIgnored private var warmupGeneration = 0
     @ObservationIgnored private var warmupTask: Task<Void, Never>?
 
@@ -60,6 +70,33 @@ final class GlobalSearchModel {
         normalizedQuery.isEmpty == false
     }
 
+    func isIndexReady(in rootURL: URL) -> Bool {
+        guard case let .ready(readyRootURL) = indexState else { return false }
+        return readyRootURL == Self.canonicalRootURL(rootURL)
+    }
+
+    func isIndexing(in rootURL: URL) -> Bool {
+        let canonicalRootURL = Self.canonicalRootURL(rootURL)
+        switch indexState {
+        case .idle:
+            return true
+        case .indexing:
+            return true
+        case let .ready(readyRootURL):
+            return readyRootURL != canonicalRootURL
+        case let .failed(failedRootURL, _):
+            return failedRootURL != canonicalRootURL
+        }
+    }
+
+    func indexFailureMessage(in rootURL: URL) -> String? {
+        guard case let .failed(failedRootURL, message) = indexState,
+              failedRootURL == Self.canonicalRootURL(rootURL) else {
+            return nil
+        }
+        return message
+    }
+
     func request(in rootURL: URL) -> GlobalSearchRequest {
         GlobalSearchRequest(
             rootURL: rootURL,
@@ -69,7 +106,65 @@ final class GlobalSearchModel {
         )
     }
 
+    func runIndexLifecycle(in rootURL: URL) async {
+        lifecycleGeneration += 1
+        let generation = lifecycleGeneration
+
+        await prepare(in: rootURL)
+
+        do {
+            while Task.isCancelled == false {
+                try await Task.sleep(for: .seconds(60))
+            }
+        } catch is CancellationError {
+            // View disappearance and root changes own cancellation.
+        } catch {
+            // Task.sleep(for:) only throws for cancellation.
+        }
+
+        await shutdown(ifLifecycleGeneration: generation)
+    }
+
+    func prepare(in rootURL: URL) async {
+        let canonicalRootURL = Self.canonicalRootURL(rootURL)
+        if case let .ready(readyRootURL) = indexState,
+           readyRootURL == canonicalRootURL {
+            return
+        }
+
+        preparationGeneration += 1
+        let generation = preparationGeneration
+        requestGeneration += 1
+        cancelWarmup()
+        resetVisibleState()
+        indexState = .indexing(rootURL: canonicalRootURL)
+
+        do {
+            try await service.prepare(rootURL: canonicalRootURL)
+            try Task.checkCancellation()
+            guard generation == preparationGeneration else { return }
+
+            indexState = .ready(rootURL: canonicalRootURL)
+            if hasQuery {
+                await search(in: canonicalRootURL, applyingDebounce: false)
+            }
+        } catch is CancellationError {
+            guard generation == preparationGeneration else { return }
+            indexState = .idle
+        } catch {
+            guard generation == preparationGeneration, Task.isCancelled == false else {
+                return
+            }
+            indexState = .failed(
+                rootURL: canonicalRootURL,
+                message: error.localizedDescription
+            )
+            isPreparingResults = false
+        }
+    }
+
     func search(in rootURL: URL) async {
+        guard isIndexReady(in: rootURL) else { return }
         await search(in: rootURL, applyingDebounce: true)
     }
 
@@ -127,6 +222,9 @@ final class GlobalSearchModel {
             message = page.message
             isSearching = false
             isPreparingResults = page.isIndexWarming
+            indexState = page.isIndexWarming
+                ? .indexing(rootURL: Self.canonicalRootURL(rootURL))
+                : .ready(rootURL: Self.canonicalRootURL(rootURL))
 
             if page.isIndexWarming {
                 beginWarmupRefresh(for: rootURL)
@@ -182,15 +280,27 @@ final class GlobalSearchModel {
 
     func clear() {
         requestGeneration += 1
-        cancelWarmup()
         query = ""
         resetVisibleState()
     }
 
     func shutdown() async {
+        lifecycleGeneration += 1
+        await performShutdown()
+    }
+
+    private func shutdown(ifLifecycleGeneration generation: Int) async {
+        guard lifecycleGeneration == generation else { return }
+        lifecycleGeneration += 1
+        await performShutdown()
+    }
+
+    private func performShutdown() async {
+        preparationGeneration += 1
         requestGeneration += 1
         cancelWarmup()
         resetVisibleState()
+        indexState = .idle
         await service.shutdown()
     }
 
@@ -203,13 +313,16 @@ final class GlobalSearchModel {
             do {
                 try await service.waitForInitialScan(rootURL: rootURL)
                 guard let self,
-                      self.warmupGeneration == generation,
-                      self.hasQuery else {
+                      self.warmupGeneration == generation else {
                     return
                 }
 
                 self.warmupTask = nil
-                await self.search(in: rootURL, applyingDebounce: false)
+                self.indexState = .ready(rootURL: Self.canonicalRootURL(rootURL))
+                self.isPreparingResults = false
+                if self.hasQuery {
+                    await self.search(in: rootURL, applyingDebounce: false)
+                }
             } catch is CancellationError {
                 // Query changes and shutdown own cancellation.
             } catch {
@@ -217,8 +330,12 @@ final class GlobalSearchModel {
                     return
                 }
                 self.warmupTask = nil
+                self.isPreparingResults = false
+                self.indexState = .failed(
+                    rootURL: Self.canonicalRootURL(rootURL),
+                    message: error.localizedDescription
+                )
                 if self.hasQuery {
-                    self.isPreparingResults = false
                     self.message = .notice(
                         "Search preparation is taking longer than expected."
                     )
@@ -235,6 +352,10 @@ final class GlobalSearchModel {
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private nonisolated static func canonicalRootURL(_ rootURL: URL) -> URL {
+        rootURL.standardizedFileURL.resolvingSymlinksInPath()
     }
 
     private func isCurrent(

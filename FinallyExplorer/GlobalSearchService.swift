@@ -23,6 +23,8 @@ nonisolated struct GlobalSearchPage: Sendable {
 }
 
 nonisolated protocol GlobalSearchServicing: Sendable {
+    func prepare(rootURL: URL) async throws
+
     func search(
         rootURL: URL,
         query: String,
@@ -35,7 +37,9 @@ nonisolated protocol GlobalSearchServicing: Sendable {
 }
 
 extension GlobalSearchServicing {
-    func waitForInitialScan(rootURL: URL) async throws {}
+    func waitForInitialScan(rootURL: URL) async throws {
+        try await prepare(rootURL: rootURL)
+    }
 }
 
 /// Uses only FFF's native indexes for system-wide queries. In particular, it
@@ -48,9 +52,29 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
     private let enginePool: FFFSearchEnginePool
     private var engine: FFFSearchEngine?
     private var engineRootURL: URL?
+    private var lifecycleGeneration = 0
 
     init(enginePool: FFFSearchEnginePool = .shared) {
         self.enginePool = enginePool
+    }
+
+    func prepare(rootURL: URL) async throws {
+        let resolvedRootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        let engine = try await preparedEngine(for: resolvedRootURL)
+
+        do {
+            try await engine.waitForInitialScan()
+            try Task.checkCancellation()
+
+            guard self.engine === engine, engineRootURL == resolvedRootURL else {
+                throw CancellationError()
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            await discardCurrentEngine(engine, rootURL: resolvedRootURL)
+            throw error
+        }
     }
 
     func search(
@@ -59,9 +83,20 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
         scope: ExplorerSearchScope,
         contentMode: FFFContentSearchMode
     ) async throws -> GlobalSearchPage {
-        let engine = try await preparedEngine(for: rootURL)
-        try Task.checkCancellation()
+        let resolvedRootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        let engine = try await preparedEngine(for: resolvedRootURL)
+        let generation = lifecycleGeneration
+        try validateCurrentEngine(
+            engine,
+            rootURL: resolvedRootURL,
+            generation: generation
+        )
         let scanProgress = try await engine.scanProgress()
+        try validateCurrentEngine(
+            engine,
+            rootURL: resolvedRootURL,
+            generation: generation
+        )
         let isIndexWarming = scanProgress.isScanning
             || scanProgress.isWarmupComplete == false
 
@@ -77,7 +112,11 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
             )
 
             let (files, directories) = try await (filePage, directoryHits)
-            try Task.checkCancellation()
+            try validateCurrentEngine(
+                engine,
+                rootURL: resolvedRootURL,
+                generation: generation
+            )
             var notices: [String] = []
             if files.isTruncated {
                 notices.append(
@@ -103,7 +142,11 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
                 limit: Self.maximumResultCount,
                 timeBudgetMilliseconds: 350
             )
-            try Task.checkCancellation()
+            try validateCurrentEngine(
+                engine,
+                rootURL: resolvedRootURL,
+                generation: generation
+            )
 
             var notices: [String] = []
             if page.isTruncated {
@@ -127,21 +170,33 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
         }
     }
 
-    func waitForInitialScan(rootURL: URL) async throws {
-        let resolvedRootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
-        guard let engine, engineRootURL == resolvedRootURL else {
-            throw CancellationError()
-        }
-
-        try await engine.waitForInitialScan()
+    private func validateCurrentEngine(
+        _ engine: FFFSearchEngine,
+        rootURL: URL,
+        generation: Int
+    ) throws {
         try Task.checkCancellation()
-
-        guard self.engine === engine, engineRootURL == resolvedRootURL else {
+        guard lifecycleGeneration == generation,
+              self.engine === engine,
+              engineRootURL == rootURL else {
             throw CancellationError()
         }
     }
 
+    private func discardCurrentEngine(
+        _ engine: FFFSearchEngine,
+        rootURL: URL
+    ) async {
+        guard self.engine === engine, engineRootURL == rootURL else { return }
+
+        lifecycleGeneration += 1
+        self.engine = nil
+        engineRootURL = nil
+        await enginePool.release(engine, rootURL: rootURL)
+    }
+
     func shutdown() async {
+        lifecycleGeneration += 1
         let oldEngine = engine
         let oldRootURL = engineRootURL
         engine = nil
@@ -162,11 +217,29 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
             return engine
         }
 
-        await shutdown()
+        lifecycleGeneration += 1
+        let generation = lifecycleGeneration
+        let oldEngine = engine
+        let oldRootURL = engineRootURL
+        engine = nil
+        engineRootURL = nil
+
+        if let oldEngine, let oldRootURL {
+            await enginePool.release(oldEngine, rootURL: oldRootURL)
+        }
+
+        guard lifecycleGeneration == generation else {
+            throw CancellationError()
+        }
+        try Task.checkCancellation()
+
         let newEngine = try await enginePool.acquire(rootURL: resolvedRootURL)
 
         do {
             try Task.checkCancellation()
+            guard lifecycleGeneration == generation else {
+                throw CancellationError()
+            }
             engine = newEngine
             engineRootURL = resolvedRootURL
             return newEngine

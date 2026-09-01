@@ -826,9 +826,16 @@ final class FinallyExplorerUITests: XCTestCase {
             paneSearchField.frame.midY,
             "The computer-wide search field belongs in the window toolbar"
         )
+        XCTAssertTrue(
+            waitForEnabled(globalSearchField, timeout: 10),
+            "Global search indexing did not finish"
+        )
+        let readyGlobalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
 
-        globalSearchField.click()
-        globalSearchField.typeText("Global Needle")
+        readyGlobalSearchField.click()
+        readyGlobalSearchField.typeText("Global Needle")
 
         let resultRows = app.descendants(matching: .any).matching(
             NSPredicate(
@@ -845,7 +852,7 @@ final class FinallyExplorerUITests: XCTestCase {
         let secondResult = try XCTUnwrap(visibleResults.last)
         XCTAssertEqual(firstResult.value as? String, "Selected")
 
-        globalSearchField.typeKey(.downArrow, modifierFlags: [])
+        readyGlobalSearchField.typeKey(.downArrow, modifierFlags: [])
         XCTAssertTrue(
             waitForValue("Selected", on: secondResult, timeout: 3),
             "Down Arrow must move the active global-search result"
@@ -853,7 +860,7 @@ final class FinallyExplorerUITests: XCTestCase {
         let selectedResultName = secondResult.label
         XCTAssertFalse(selectedResultName.isEmpty)
 
-        globalSearchField.typeKey(.return, modifierFlags: [])
+        readyGlobalSearchField.typeKey(.return, modifierFlags: [])
         let revealedRows = rows(named: selectedResultName)
         XCTAssertTrue(revealedRows.firstMatch.waitForExistence(timeout: 10))
         let revealedRow = revealedRows.firstMatch
@@ -873,8 +880,15 @@ final class FinallyExplorerUITests: XCTestCase {
             "global-search-text-field"
         ]
         XCTAssertTrue(globalSearchField.waitForExistence(timeout: 5))
-        globalSearchField.click()
-        globalSearchField.typeText("grep-only-phrase")
+        XCTAssertTrue(
+            waitForEnabled(globalSearchField, timeout: 10),
+            "Global search indexing did not finish"
+        )
+        let readyGlobalSearchField = app.descendants(matching: .any)[
+            "global-search-text-field"
+        ]
+        readyGlobalSearchField.click()
+        readyGlobalSearchField.typeText("grep-only-phrase")
 
         let searchScope = app.radioGroups["global-search-scope-picker"]
         XCTAssertTrue(searchScope.waitForExistence(timeout: 5))
