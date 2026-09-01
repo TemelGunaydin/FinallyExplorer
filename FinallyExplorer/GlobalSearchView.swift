@@ -36,11 +36,13 @@ struct GlobalSearchToolbar: View {
                     return .handled
                 }
 
-            if model.isSearching {
+            if model.isSearching || model.isPreparingResults {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel("Searching this Mac")
-            } else if model.hasQuery {
+            }
+
+            if model.hasQuery {
                 Button("Clear Search", systemImage: "xmark.circle.fill") {
                     model.clear()
                 }
@@ -130,8 +132,8 @@ private struct GlobalSearchResultsPopover: View {
 
     @ViewBuilder
     private var resultsBody: some View {
-        if model.isSearching, model.results.isEmpty {
-            ProgressView("Indexing and searching this Mac…")
+        if (model.isSearching || model.isPreparingResults), model.results.isEmpty {
+            ProgressView("Searching this Mac…")
         } else if let message = model.message,
                   message.isError,
                   model.results.isEmpty {

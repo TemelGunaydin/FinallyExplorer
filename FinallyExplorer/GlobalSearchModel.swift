@@ -28,6 +28,7 @@ final class GlobalSearchModel {
     private(set) var results: [ExplorerSearchResult] = []
     private(set) var selectedResultID: ExplorerSearchResult.ID?
     private(set) var isSearching = false
+    private(set) var isPreparingResults = false
     private(set) var message: ExplorerSearchMessage?
 
     @ObservationIgnored private let service: any GlobalSearchServicing
@@ -86,6 +87,7 @@ final class GlobalSearchModel {
         }
 
         isSearching = true
+        isPreparingResults = false
         results = []
         selectedResultID = nil
         message = nil
@@ -124,6 +126,7 @@ final class GlobalSearchModel {
             selectedResultID = page.results.first?.id
             message = page.message
             isSearching = false
+            isPreparingResults = page.isIndexWarming
 
             if page.isIndexWarming {
                 beginWarmupRefresh(for: rootURL)
@@ -131,6 +134,7 @@ final class GlobalSearchModel {
         } catch is CancellationError {
             guard generation == requestGeneration else { return }
             isSearching = false
+            isPreparingResults = false
         } catch {
             guard generation == requestGeneration, Task.isCancelled == false else {
                 return
@@ -139,6 +143,7 @@ final class GlobalSearchModel {
             selectedResultID = nil
             message = .error(error.localizedDescription)
             isSearching = false
+            isPreparingResults = false
         }
     }
 
@@ -213,8 +218,9 @@ final class GlobalSearchModel {
                 }
                 self.warmupTask = nil
                 if self.hasQuery {
+                    self.isPreparingResults = false
                     self.message = .notice(
-                        "The search index is still warming: \(error.localizedDescription)"
+                        "Search preparation is taking longer than expected."
                     )
                 }
             }
@@ -247,6 +253,7 @@ final class GlobalSearchModel {
         results = []
         selectedResultID = nil
         isSearching = false
+        isPreparingResults = false
         message = nil
     }
 }

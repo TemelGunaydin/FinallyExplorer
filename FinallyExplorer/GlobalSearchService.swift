@@ -79,11 +79,6 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
             let (files, directories) = try await (filePage, directoryHits)
             try Task.checkCancellation()
             var notices: [String] = []
-            if isIndexWarming {
-                notices.append(
-                    "Indexing this Mac. Results will refresh automatically."
-                )
-            }
             if files.isTruncated {
                 notices.append(
                     "Showing the closest \(Self.maximumResultCount) file matches. Refine the search to see a narrower result set."
@@ -111,11 +106,6 @@ actor FFFGlobalSearchService: GlobalSearchServicing {
             try Task.checkCancellation()
 
             var notices: [String] = []
-            if isIndexWarming {
-                notices.append(
-                    "Indexing this Mac. Results will refresh automatically."
-                )
-            }
             if page.isTruncated {
                 notices.append(
                     "Searched \(page.totalFilesSearched) of \(page.filteredFileCount) eligible files. Refine the search to scan fewer files."

@@ -123,7 +123,8 @@ struct GlobalSearchModelTests {
 
         await model.search(in: rootURL)
         #expect(model.results.isEmpty)
-        #expect(model.message == .notice("Indexing for testing."))
+        #expect(model.message == nil)
+        #expect(model.isPreparingResults)
 
         await service.waitUntilWarmupIsObserved()
         await service.finishInitialScan()
@@ -135,6 +136,7 @@ struct GlobalSearchModelTests {
 
         #expect(model.results == [result])
         #expect(model.selectedResultID == result.id)
+        #expect(model.isPreparingResults == false)
         #expect(await service.searchCount() == 2)
         await model.shutdown()
     }
@@ -264,7 +266,7 @@ private actor WarmingGlobalSearchService: GlobalSearchServicing {
         if searches == 1 {
             return GlobalSearchPage(
                 results: [],
-                message: .notice("Indexing for testing."),
+                message: nil,
                 isIndexWarming: true
             )
         }
