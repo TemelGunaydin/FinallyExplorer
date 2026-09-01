@@ -20,7 +20,7 @@ nonisolated enum SidebarBuiltInPlace: String, CaseIterable, Identifiable, Hashab
     var id: String { rawValue }
 
     static var primaryPlaces: [Self] {
-        [.home, .applications, .desktop, .documents, .downloads]
+        [.applications, .desktop, .documents, .downloads]
     }
 
     static var mediaPlaces: [Self] {
@@ -28,7 +28,7 @@ nonisolated enum SidebarBuiltInPlace: String, CaseIterable, Identifiable, Hashab
     }
 
     static var locationPlaces: [Self] {
-        [.systemDrive]
+        [.home, .systemDrive]
     }
 
     var title: String {

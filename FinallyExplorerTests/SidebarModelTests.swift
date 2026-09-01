@@ -16,6 +16,8 @@ struct SidebarModelTests {
         let expectedTitle = accountName.isEmpty ? "Home" : accountName
 
         #expect(SidebarBuiltInPlace.home.title == expectedTitle)
+        #expect(SidebarBuiltInPlace.primaryPlaces.contains(.home) == false)
+        #expect(SidebarBuiltInPlace.locationPlaces.first == .home)
     }
 
     @Test("A chosen folder is persisted and restored as a sidebar favorite")
