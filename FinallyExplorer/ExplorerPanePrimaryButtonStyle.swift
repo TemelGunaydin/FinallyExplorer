@@ -11,13 +11,14 @@ struct ExplorerPanePrimaryButtonStyle: ButtonStyle {
     @Environment(\.explorerTheme) private var theme
 
     let isCompact: Bool
+    var usesAccentForeground = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(ExplorerTheme.actionFont)
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(
-                isEnabled ? theme.textPrimary : theme.textTertiary
+                foregroundColor(isPressed: configuration.isPressed)
             )
             .padding(.horizontal, isCompact ? 0 : 14)
             .frame(width: isCompact ? 34 : nil, height: 36)
@@ -56,5 +57,11 @@ struct ExplorerPanePrimaryButtonStyle: ButtonStyle {
                 reduceMotion ? nil : .easeOut(duration: 0.12),
                 value: configuration.isPressed
             )
+    }
+
+    private func foregroundColor(isPressed: Bool) -> Color {
+        guard isEnabled else { return theme.textTertiary }
+        guard usesAccentForeground else { return theme.textPrimary }
+        return isPressed ? theme.chromeText : theme.accent
     }
 }

@@ -12,6 +12,7 @@ final class MouseBackNavigationAttachmentView: NSView {
     private var navigateBack: () -> Bool
     private var eventMonitor: Any?
     private weak var monitoredWindow: NSWindow?
+    private var consumesBackMouseUp = false
 
     init(navigateBack: @escaping () -> Bool) {
         self.navigateBack = navigateBack
@@ -49,6 +50,7 @@ final class MouseBackNavigationAttachmentView: NSView {
 
         eventMonitor = nil
         monitoredWindow = nil
+        consumesBackMouseUp = false
     }
 
     private func installIfNeeded() {
@@ -58,22 +60,85 @@ final class MouseBackNavigationAttachmentView: NSView {
         uninstall()
         monitoredWindow = window
         eventMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: .otherMouseDown
+            matching: [.otherMouseDown, .otherMouseUp, .keyDown]
         ) { [weak self] event in
             self?.handle(event) ?? event
         }
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
-        guard event.buttonNumber == Self.backButtonNumber,
-              let monitoredWindow,
-              event.window === monitoredWindow,
-              monitoredWindow.isKeyWindow,
-              monitoredWindow.attachedSheet == nil,
-              navigateBack() else {
+        guard let monitoredWindow,
+              eventBelongsToMonitoredWindow(event, window: monitoredWindow) else {
             return event
         }
 
-        return nil
+        switch event.type {
+        case .otherMouseDown:
+            guard event.buttonNumber == Self.backButtonNumber,
+                  navigateBack() else {
+                return event
+            }
+
+            consumesBackMouseUp = true
+            return nil
+
+        case .otherMouseUp:
+            guard event.buttonNumber == Self.backButtonNumber else {
+                return event
+            }
+
+            if consumesBackMouseUp {
+                consumesBackMouseUp = false
+                return nil
+            }
+
+            // Some mouse drivers emit only the release event for a Back action.
+            return navigateBack() ? nil : event
+
+        case .keyDown:
+            guard event.isARepeat == false,
+                  isBackKeyboardEvent(event),
+                  navigateBack() else {
+                return event
+            }
+
+            // Mouse utilities commonly translate Back to Command-[ or
+            // Command-Left Arrow, so accept those standard macOS shortcuts too.
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    private func eventBelongsToMonitoredWindow(
+        _ event: NSEvent,
+        window: NSWindow
+    ) -> Bool {
+        guard NSApp.isActive,
+              window.attachedSheet == nil else {
+            return false
+        }
+
+        if event.window === window || event.windowNumber == window.windowNumber {
+            return true
+        }
+
+        // Events synthesized by mouse utilities can omit their source window.
+        return event.window == nil
+            && (NSApp.keyWindow === window || window.isKeyWindow || window.isMainWindow)
+    }
+
+    private func isBackKeyboardEvent(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+        let disallowedModifiers: NSEvent.ModifierFlags = [.control, .option, .shift]
+
+        guard modifiers.contains(.command),
+              modifiers.intersection(disallowedModifiers).isEmpty else {
+            return false
+        }
+
+        return event.charactersIgnoringModifiers == "[" || event.keyCode == 123
     }
 }

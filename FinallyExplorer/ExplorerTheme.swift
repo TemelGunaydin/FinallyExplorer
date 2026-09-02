@@ -341,58 +341,6 @@ struct ExplorerToolbarButtonStyle: ButtonStyle {
     }
 }
 
-struct ExplorerBackButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.explorerTheme) private var theme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(
-                isEnabled
-                    ? (configuration.isPressed ? theme.chromeText : theme.accent)
-                    : theme.textTertiary
-            )
-            .frame(width: 34, height: 34)
-            .background {
-                RoundedRectangle(cornerRadius: 11)
-                    .fill(theme.imperialPrimer.opacity(0.7))
-                    .offset(y: 3)
-
-                RoundedRectangle(cornerRadius: 11)
-                    .fill(theme.accentSoft)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 11)
-                            .fill(
-                                theme.accent.opacity(
-                                    configuration.isPressed ? 0.4 : 0.24
-                                )
-                            )
-                    }
-            }
-            .shadow(
-                color: Color.black.opacity(0.28),
-                radius: 2,
-                x: 0,
-                y: 3
-            )
-            .shadow(
-                color: theme.imperialPrimer.opacity(0.2),
-                radius: 6,
-                x: 0,
-                y: 4
-            )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .offset(y: configuration.isPressed ? 2 : 0)
-            .opacity(isEnabled ? 1 : 0.52)
-            .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.12),
-                value: configuration.isPressed
-            )
-    }
-}
-
 struct ExplorerChromeIconButtonStyle: ButtonStyle {
     @Environment(\.explorerTheme) private var theme
 

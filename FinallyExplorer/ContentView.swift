@@ -869,7 +869,12 @@ private struct DestinationView: View {
                         _ = workspace.goBack(in: pane.id)
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerBackButtonStyle())
+                    .buttonStyle(
+                        ExplorerPanePrimaryButtonStyle(
+                            isCompact: true,
+                            usesAccentForeground: true
+                        )
+                    )
                     .help("Go to the previous folder")
                 }
 
