@@ -16,10 +16,10 @@ struct NearbyTransferToolbarButton: View {
         }
         .labelStyle(.iconOnly)
         .buttonStyle(ExplorerPaneUtilityButtonStyle())
-        .help(
+        .explorerTooltip(
             sourceURLs.isEmpty
-                ? "Enable nearby receiving"
-                : "Send the selection to a nearby Mac"
+                ? "Turn on nearby sharing"
+                : "Send selected items nearby"
         )
         .accessibilityIdentifier("nearby-transfer-toolbar-button")
     }

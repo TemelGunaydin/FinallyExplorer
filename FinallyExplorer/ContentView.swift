@@ -875,7 +875,10 @@ private struct DestinationView: View {
                             usesAccentForeground: true
                         )
                     )
-                    .help("Go to the previous folder")
+                    .explorerTooltip(
+                        "Go back",
+                        alignment: .topLeading
+                    )
                 }
 
                 PaneLocationMenu(
@@ -914,7 +917,10 @@ private struct DestinationView: View {
                         pane.displayedDirectory == nil
                             || fileOperations.isPerforming
                     )
-                    .help("Create a new folder in this pane")
+                    .explorerTooltip(
+                        "Create a new folder",
+                        alignment: .topLeading
+                    )
 
                 }
 
@@ -930,10 +936,10 @@ private struct DestinationView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                .help(
+                .explorerTooltip(
                     pane.showsHiddenItems
-                        ? "Hide hidden files and folders in this pane"
-                        : "Show hidden files and folders in this pane"
+                        ? "Hide hidden items"
+                        : "Show hidden items"
                 )
 
                 Button("Split Right", systemImage: "rectangle.split.2x1") {
@@ -942,7 +948,7 @@ private struct DestinationView: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .disabled(workspace.canSplit == false)
-                .help("Split this pane to the right")
+                .explorerTooltip("Add a pane on the right")
 
                 Button("Split Below", systemImage: "rectangle.split.1x2") {
                     _ = workspace.split(paneID: pane.id, direction: .below)
@@ -950,7 +956,7 @@ private struct DestinationView: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .disabled(workspace.canSplit == false)
-                .help("Split this pane below")
+                .explorerTooltip("Add a pane below")
 
                 if workspace.paneCount > 1 {
                     if workspace.activePaneID == pane.id {
@@ -961,7 +967,10 @@ private struct DestinationView: View {
                         )
                         .labelStyle(.iconOnly)
                         .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                        .help("Keep the active pane and close the other panes")
+                        .explorerTooltip(
+                            "Close the other panes",
+                            alignment: .topTrailing
+                        )
                     }
 
                     Button("Close Pane", systemImage: "xmark") {
@@ -969,7 +978,10 @@ private struct DestinationView: View {
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                    .help("Close this pane")
+                    .explorerTooltip(
+                        "Close this pane",
+                        alignment: .topTrailing
+                    )
                 }
 
                 if workspace.paneCount == 1 {
@@ -980,10 +992,11 @@ private struct DestinationView: View {
                     )
                     .labelStyle(.iconOnly)
                     .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                    .help(
+                    .explorerTooltip(
                         isPreviewVisible
-                            ? "Hide the preview area"
-                            : "Show the preview area"
+                            ? "Hide preview"
+                            : "Show preview",
+                        alignment: .topTrailing
                     )
                 }
             }
@@ -1002,6 +1015,7 @@ private struct DestinationView: View {
                 x: 0,
                 y: 2
             )
+            .zIndex(1)
 
             if let displayedDirectory = pane.displayedDirectory {
                 PaneCurrentPathView(directoryURL: displayedDirectory)

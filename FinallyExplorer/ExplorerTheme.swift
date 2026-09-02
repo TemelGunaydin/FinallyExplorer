@@ -342,23 +342,50 @@ struct ExplorerToolbarButtonStyle: ButtonStyle {
 }
 
 struct ExplorerChromeIconButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
     @Environment(\.explorerTheme) private var theme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(theme.chromeText)
-            .frame(width: 34, height: 32)
-            .background(
-                configuration.isPressed
-                    ? Color.black.opacity(0.28)
-                    : Color.black.opacity(0.16),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .foregroundStyle(
+                isEnabled ? theme.chromeText : theme.chromeSecondaryText
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.16), lineWidth: 0.75)
+            .frame(width: 34, height: 34)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.black.opacity(0.34))
+                    .offset(y: 2)
+
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(theme.imperialPrimer)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(
+                                theme.accent.opacity(
+                                    configuration.isPressed ? 0.18 : 0.08
+                                )
+                            )
+                    }
             }
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(theme.chromeDivider, lineWidth: 0.75)
+            }
+            .shadow(
+                color: Color.black.opacity(0.26),
+                radius: 2,
+                x: 0,
+                y: 2
+            )
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .offset(y: configuration.isPressed ? 1 : 0)
+            .opacity(isEnabled ? 1 : 0.56)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.12),
+                value: configuration.isPressed
+            )
     }
 }
 

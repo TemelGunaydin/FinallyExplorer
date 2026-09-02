@@ -23,7 +23,7 @@ struct TerminalToolbarButton: View {
                 || coordinator.installedApplications.isEmpty
                 || coordinator.isOpening
         )
-        .help(helpText)
+        .explorerTooltip(helpText, alignment: .topLeading)
         .accessibilityIdentifier("pane-terminal-button")
         .contextMenu {
             Button("Choose Terminal…", systemImage: "terminal") {
@@ -48,12 +48,12 @@ struct TerminalToolbarButton: View {
 
     private var helpText: String {
         if let preferredApplication = coordinator.preferredApplication {
-            return "Open this folder in \(preferredApplication.name)"
+            return "Open folder in \(preferredApplication.name)"
         }
         if coordinator.installedApplications.isEmpty {
-            return "No terminal application was found"
+            return "No terminal app found"
         }
-        return "Choose a terminal for this folder"
+        return "Choose a terminal"
     }
 
     private func openOrChooseTerminal() {
