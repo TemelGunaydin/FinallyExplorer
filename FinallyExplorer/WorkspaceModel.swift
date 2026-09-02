@@ -477,6 +477,22 @@ final class WorkspaceModel {
         targetPane.select(place)
     }
 
+    @discardableResult
+    func goBack(in paneID: UUID? = nil) -> Bool {
+        let targetPaneID = paneID ?? activePaneID
+        guard let targetPane = panes[targetPaneID],
+              targetPane.navigation.canGoBack else {
+            return false
+        }
+
+        activate(targetPaneID)
+        targetPane.navigation.goBack()
+        targetPane.selectedURL = nil
+        targetPane.selectedSearchResultID = nil
+        targetPane.isInspectorPresented = false
+        return true
+    }
+
     /// Reveals a global-search hit in its containing folder without adding a
     /// transient location to the user's sidebar favorites.
     func reveal(_ item: FileItem, in paneID: UUID? = nil) {

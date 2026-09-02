@@ -246,9 +246,7 @@ struct ContentView: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.canvas)
         .background {
-            ExplorerWindowTrafficControlsInstaller()
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+            ExplorerWindowBehaviorInstallers(navigateBack: navigateBack)
         }
         .environment(\.explorerTheme, theme)
         .environment(fileOperations)
@@ -371,6 +369,10 @@ struct ContentView: View {
 
     private func resetWorkspaceView() {
         _ = workspace.resetView()
+    }
+
+    private func navigateBack() -> Bool {
+        workspace.goBack()
     }
 
     private func revealGlobalSearchResult(_ result: ExplorerSearchResult) {
@@ -864,10 +866,7 @@ private struct DestinationView: View {
             HStack(spacing: 8) {
                 if pane.navigation.canGoBack {
                     Button("Back", systemImage: "chevron.left") {
-                        workspace.activate(pane.id)
-                        pane.navigation.goBack()
-                        pane.selectedURL = nil
-                        pane.selectedSearchResultID = nil
+                        _ = workspace.goBack(in: pane.id)
                     }
                     .labelStyle(.iconOnly)
                     .buttonStyle(ExplorerBackButtonStyle())
