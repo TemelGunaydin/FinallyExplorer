@@ -8,5 +8,7 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Finally Explorer uses your local network to discover nearby devices and transfer files you approve.</string>
+	<key>NSPrefersDisplaySafeAreaCompatibilityMode</key>
+	<false/>
 </dict>
 </plist>

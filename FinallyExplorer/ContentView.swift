@@ -239,12 +239,13 @@ struct ContentView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        .toolbarBackground(theme.windowChrome, for: .windowToolbar)
-        .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+        .containerBackground(theme.windowChrome, for: .window)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .windowToolbarFullScreenVisibility(.visible)
         .toolbar(removing: .title)
         .tint(theme.accent)
         .foregroundStyle(theme.textPrimary)
-        .background(theme.canvas)
+        .background(theme.canvas, ignoresSafeAreaEdges: [])
         .background {
             ExplorerWindowBehaviorInstallers(navigateBack: navigateBack)
         }
