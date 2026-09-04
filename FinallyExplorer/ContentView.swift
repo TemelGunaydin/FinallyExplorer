@@ -9,7 +9,6 @@ import AppKit
 import Foundation
 import QuickLookUI
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -22,7 +21,6 @@ struct ContentView: View {
     @State private var sidebar = SidebarModel()
     @State private var themeController = ExplorerThemeController()
     @State private var globalSearch = GlobalSearchModel()
-    @State private var isSidebarFolderPickerPresented = false
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -436,54 +434,25 @@ struct ContentView: View {
         .scrollContentBackground(.hidden)
         .background(themeController.activeTheme.sidebarBackground)
         .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 8) {
-                Button {
-                    isSidebarFolderPickerPresented = true
-                } label: {
-                    Label("Add Folder", systemImage: "plus.circle.fill")
-                }
-                .buttonStyle(ExplorerSidebarActionButtonStyle())
-                .help("Add Folder to Sidebar")
+            if sidebar.hiddenBuiltInPlaces.isEmpty == false {
+                HStack {
+                    Spacer()
 
-                if sidebar.hiddenBuiltInPlaces.isEmpty == false {
                     SidebarRestoreButton(
                         hiddenPlaces: sidebar.hiddenBuiltInPlacesInDefaultOrder,
                         onRestore: sidebar.restoreBuiltInPlace,
                         onRestoreAll: sidebar.restoreAllBuiltInPlaces
                     )
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(themeController.activeTheme.sidebarFooter)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(themeController.activeTheme.chromeDivider)
+                        .frame(height: 0.75)
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(themeController.activeTheme.sidebarFooter)
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(themeController.activeTheme.chromeDivider)
-                    .frame(height: 0.75)
-            }
-        }
-        .fileImporter(
-            isPresented: $isSidebarFolderPickerPresented,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case let .success(directoryURLs) = result,
-                  let directoryURL = directoryURLs.first else {
-                return
-            }
-
-            if let restoredPlace = sidebar.restoreBuiltInPlace(
-                for: directoryURL
-            ) {
-                workspace.select(restoredPlace, in: workspace.activePaneID)
-                return
-            }
-
-            guard let favorite = sidebar.add(directoryURL: directoryURL) else {
-                return
-            }
-
-            workspace.select(.favorite(favorite), in: workspace.activePaneID)
         }
     }
 
@@ -1002,20 +971,6 @@ private struct DestinationView: View {
                 }
             }
             .padding(7)
-            .background(
-                theme.elevatedPanel,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(theme.divider, lineWidth: 0.75)
-            }
-            .shadow(
-                color: theme.imperialPrimer.opacity(0.06),
-                radius: 5,
-                x: 0,
-                y: 2
-            )
             .zIndex(1)
 
             if let displayedDirectory = pane.displayedDirectory {

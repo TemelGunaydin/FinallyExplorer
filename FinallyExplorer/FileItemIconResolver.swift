@@ -175,7 +175,15 @@ struct FileItemIconView: View {
 
     @ViewBuilder
     private var icon: some View {
-        if let customAssetName = kind.customAssetName {
+        if item.isApplicationBundle {
+            Image(
+                nsImage: ApplicationIconProvider.shared.icon(for: item.url)
+            )
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: 30, height: 30)
+        } else if let customAssetName = kind.customAssetName {
             Image(customAssetName)
                 .resizable()
                 .interpolation(.high)

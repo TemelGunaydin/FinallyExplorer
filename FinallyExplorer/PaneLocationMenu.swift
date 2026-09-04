@@ -21,6 +21,8 @@ struct PaneLocationMenu: View {
 
                 Text(selectedPlace.title)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+                    .layoutPriority(1)
 
                 Spacer(minLength: 2)
 

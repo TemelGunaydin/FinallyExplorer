@@ -61,6 +61,9 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
 
     var id: URL { url }
     var name: String { url.lastPathComponent }
+    var isApplicationBundle: Bool {
+        isDirectory && url.pathExtension.lowercased() == "app"
+    }
 
     static func displayOrder(_ lhs: Self, _ rhs: Self) -> Bool {
         if lhs.isDirectory != rhs.isDirectory {

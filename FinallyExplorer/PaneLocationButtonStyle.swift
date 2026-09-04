@@ -20,7 +20,7 @@ struct PaneLocationButtonStyle: ButtonStyle {
             )
             .foregroundStyle(theme.textPrimary)
             .frame(
-                width: isCompact ? 148 : 236,
+                width: isCompact ? 184 : 236,
                 height: isCompact ? 38 : 44
             )
             .background {
