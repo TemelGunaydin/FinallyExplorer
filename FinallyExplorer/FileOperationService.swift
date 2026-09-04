@@ -75,6 +75,13 @@ nonisolated protocol FileOperationServicing: Sendable {
         at sourceURL: URL,
         to destinationDirectoryURL: URL
     ) async throws -> FileOperationOutcome
+    func compressItem(at sourceURL: URL) async throws -> FileOperationOutcome
+}
+
+extension FileOperationServicing {
+    func compressItem(at sourceURL: URL) async throws -> FileOperationOutcome {
+        throw FileOperationError.compressionUnavailable
+    }
 }
 
 nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
@@ -96,6 +103,8 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
     case trashFailed(sourcePath: String, reason: String)
     case copyFailed(sourcePath: String, destinationPath: String, reason: String)
     case moveFailed(sourcePath: String, destinationPath: String, reason: String)
+    case compressionUnavailable
+    case compressFailed(sourcePath: String, destinationPath: String, reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -135,6 +144,10 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
             "Unable to copy the item: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
         case let .moveFailed(sourcePath, destinationPath, reason):
             "Unable to move the item: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
+        case .compressionUnavailable:
+            "Compression is unavailable for this file operation provider."
+        case let .compressFailed(sourcePath, destinationPath, reason):
+            "Unable to create the ZIP archive: \(reason)\n\nSource: \(sourcePath)\nDestination: \(destinationPath)"
         }
     }
 }
@@ -594,6 +607,122 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
         return FileOperationOutcome(destinationURL: destinationURL, didChange: true)
     }
 
+    /// Creates a Finder-compatible ZIP archive beside the selected item.
+    ///
+    /// `ditto` preserves macOS resource forks and extended attributes inside
+    /// `__MACOSX`, matching the archive format produced by Finder.
+    @concurrent
+    func compressItem(at sourceURL: URL) async throws -> FileOperationOutcome {
+        try Task.checkCancellation()
+        guard Self.isLocalFileURL(sourceURL) else {
+            throw FileOperationError.sourceMustBeFileURL(
+                value: sourceURL.absoluteString
+            )
+        }
+
+        let sourceURL = sourceURL.standardizedFileURL
+        let destinationDirectoryURL = sourceURL
+            .deletingLastPathComponent()
+            .standardizedFileURL
+        guard sourceURL != destinationDirectoryURL else {
+            throw FileOperationError.compressFailed(
+                sourcePath: sourceURL.path,
+                destinationPath: destinationDirectoryURL.path,
+                reason: "The file-system root cannot be compressed."
+            )
+        }
+
+        let fileManager = FileManager()
+        guard Self.itemExists(at: sourceURL, fileManager: fileManager) else {
+            throw FileOperationError.sourceNotFound(path: sourceURL.path)
+        }
+
+        var destinationURL = Self.uniqueArchiveDestination(
+            for: sourceURL,
+            fileManager: fileManager
+        )
+        let stagingURL = destinationDirectoryURL.appending(
+            path: ".finallyexplorer-archive-\(UUID().uuidString).zip"
+        )
+        defer {
+            try? fileManager.removeItem(at: stagingURL)
+        }
+
+        let process = Process()
+        let errorPipe = Pipe()
+        process.executableURL = URL(filePath: "/usr/bin/ditto")
+        process.arguments = [
+            "-c",
+            "-k",
+            "--sequesterRsrc",
+            "--keepParent",
+            sourceURL.path,
+            stagingURL.path,
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+
+            while process.isRunning {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(80))
+            }
+        } catch is CancellationError {
+            if process.isRunning {
+                process.terminate()
+                process.waitUntilExit()
+            }
+            throw CancellationError()
+        } catch {
+            throw FileOperationError.compressFailed(
+                sourcePath: sourceURL.path,
+                destinationPath: destinationURL.path,
+                reason: error.localizedDescription
+            )
+        }
+
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let processMessage = String(decoding: errorData, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw FileOperationError.compressFailed(
+                sourcePath: sourceURL.path,
+                destinationPath: destinationURL.path,
+                reason: processMessage.isEmpty
+                    ? "The archive utility exited with status \(process.terminationStatus)."
+                    : processMessage
+            )
+        }
+
+        try Task.checkCancellation()
+
+        while true {
+            do {
+                try Self.moveItemExclusively(
+                    at: stagingURL,
+                    to: destinationURL
+                )
+                break
+            } catch let error where Self.isDestinationCollision(error) {
+                destinationURL = Self.uniqueArchiveDestination(
+                    for: sourceURL,
+                    fileManager: fileManager
+                )
+                try Task.checkCancellation()
+            } catch {
+                throw FileOperationError.compressFailed(
+                    sourcePath: sourceURL.path,
+                    destinationPath: destinationURL.path,
+                    reason: error.localizedDescription
+                )
+            }
+        }
+
+        return FileOperationOutcome(destinationURL: destinationURL, didChange: true)
+    }
+
     private struct ValidatedOperation {
         let sourceURL: URL
         let destinationDirectoryURL: URL
@@ -779,6 +908,37 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
             if Self.itemExists(at: candidateURL, fileManager: fileManager) == false {
                 return candidateURL
             }
+        }
+    }
+
+    private static func uniqueArchiveDestination(
+        for sourceURL: URL,
+        fileManager: FileManager
+    ) -> URL {
+        let destinationDirectoryURL = sourceURL.deletingLastPathComponent()
+        let maximumNameLength = Self.maximumFileNameLength(
+            in: destinationDirectoryURL
+        )
+        var archiveNumber = 1
+
+        while true {
+            let suffix = archiveNumber == 1 ? "" : " \(archiveNumber)"
+            let archiveName = Self.fileName(
+                baseName: sourceURL.lastPathComponent,
+                suffix: suffix,
+                extensionSuffix: ".zip",
+                maximumUTF8Length: maximumNameLength
+            )
+            let candidateURL = destinationDirectoryURL.appending(
+                path: archiveName,
+                directoryHint: .notDirectory
+            )
+
+            if Self.itemExists(at: candidateURL, fileManager: fileManager) == false {
+                return candidateURL
+            }
+
+            archiveNumber += 1
         }
     }
 

@@ -11,6 +11,7 @@ import QuickLookUI
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @FocusedValue(\.explorerPaneID) private var focusedPaneID
 
@@ -191,7 +192,19 @@ struct ContentView: View {
         }
         .background(theme.sidebarBackground)
         .overlay(alignment: .bottom) {
-            if let notice = fileOperations.notice {
+            if fileOperations.isPerforming {
+                FileOperationActivityView(
+                    title: fileOperations.statusMessage ?? "Working…",
+                    systemImage: fileOperations.statusSystemImage ?? "gearshape.fill",
+                    completedItemCount: fileOperations.completedItemCount,
+                    totalItemCount: fileOperations.totalItemCount,
+                    onCancel: {
+                        _ = fileOperations.cancelCurrentOperation()
+                    }
+                )
+                .padding(.bottom, 22)
+                .transition(.opacity)
+            } else if let notice = fileOperations.notice {
                 FileOperationToastView(notice: notice)
                     .id(notice.id)
                     .padding(.bottom, 22)
@@ -208,7 +221,14 @@ struct ContentView: View {
                 .padding(.bottom, 22)
             }
         }
-        .animation(.easeOut(duration: 0.18), value: fileOperations.notice?.id)
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.18),
+            value: fileOperations.notice?.id
+        )
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: 0.18),
+            value: fileOperations.isPerforming
+        )
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(
@@ -691,10 +711,6 @@ private struct DestinationView: View {
                     directoryBody
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                    .overlay(alignment: .topTrailing) {
-                        fileOperationStatus
-                            .padding(10)
-                    }
                     .frame(
                         maxWidth: .infinity,
                         maxHeight: .infinity
@@ -1033,39 +1049,6 @@ private struct DestinationView: View {
     }
 
     @ViewBuilder
-    private var fileOperationStatus: some View {
-        if fileOperations.isPerforming {
-            HStack(spacing: 7) {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(fileOperations.statusMessage ?? "Working")
-
-                if let statusMessage = fileOperations.statusMessage {
-                    Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(theme.textSecondary)
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(
-                theme.elevatedPanel,
-                in: Capsule()
-            )
-            .overlay {
-                Capsule()
-                    .stroke(theme.divider, lineWidth: 0.75)
-            }
-            .shadow(
-                color: theme.imperialPrimer.opacity(0.08),
-                radius: 4,
-                y: 2
-            )
-            .accessibilityIdentifier("pane-file-operation-status")
-        }
-    }
-
-    @ViewBuilder
     private var directoryBody: some View {
         @Bindable var pane = pane
 
@@ -1110,7 +1093,8 @@ private struct DestinationView: View {
                     .tag(item.url)
                     .background(
                         ExplorerRowBackground(
-                            isSelected: pane.selectedURLs.contains(item.url)
+                            isSelected: pane.selectedURLs.contains(item.url),
+                            isHidden: item.isHidden
                         )
                     )
                     .listRowBackground(theme.row)

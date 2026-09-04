@@ -23,6 +23,9 @@ final class FileOperationCoordinator {
     private(set) var clipboardOperation: FileClipboardOperation?
     private(set) var isPerforming = false
     private(set) var statusMessage: String?
+    private(set) var statusSystemImage: String?
+    private(set) var completedItemCount = 0
+    private(set) var totalItemCount = 0
     private(set) var notice: FileOperationNotice?
     private(set) var completedOperationCount = 0
     var renameRequest: FileRenameRequest?
@@ -269,6 +272,20 @@ final class FileOperationCoordinator {
     }
 
     @discardableResult
+    func compress(_ sourceURL: URL?) -> Bool {
+        guard let sourceURL else { return false }
+
+        return start(
+            operation: .compress,
+            sources: [sourceURL],
+            destinationDirectoryURL: sourceURL.deletingLastPathComponent(),
+            cutClipboardSnapshot: nil,
+            completionMessage: "Archive created",
+            completionSystemImage: "archivebox.fill"
+        )
+    }
+
+    @discardableResult
     func requestTrashConfirmation(for sourceURLs: [URL]) -> Bool {
         let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
         guard sourceURLs.isEmpty == false,
@@ -394,6 +411,9 @@ final class FileOperationCoordinator {
 
         isPerforming = true
         statusMessage = operation.statusMessage(itemCount: sources.count)
+        statusSystemImage = operation.systemImage
+        completedItemCount = 0
+        totalItemCount = max(sources.count, 1)
         isErrorPresented = false
         errorMessage = ""
 
@@ -440,6 +460,9 @@ final class FileOperationCoordinator {
 
             isPerforming = false
             statusMessage = nil
+            statusSystemImage = nil
+            completedItemCount = 0
+            totalItemCount = 0
             operationTask = nil
 
             if let completedCreatedFolderURL {
@@ -455,6 +478,7 @@ final class FileOperationCoordinator {
                     named: name
                 )
                 didChange = outcome.didChange
+                completedItemCount = 1
 
                 if outcome.didChange {
                     completedCreatedFolderURL = Self.standardizedURL(
@@ -486,6 +510,8 @@ final class FileOperationCoordinator {
                     } catch {
                         failureMessages.append(error.localizedDescription)
                     }
+
+                    completedItemCount += 1
                 }
 
                 if failureMessages.isEmpty == false {
@@ -499,6 +525,7 @@ final class FileOperationCoordinator {
                     for: directoryURL
                 )
                 didChange = outcome.didChange
+                completedItemCount = 1
 
                 if outcome.didChange {
                     directlyAffectedDirectoryURLs.insert(
@@ -514,6 +541,7 @@ final class FileOperationCoordinator {
                     to: newName
                 )
                 didChange = outcome.didChange
+                completedItemCount = 1
 
                 if outcome.didChange {
                     directlyAffectedDirectoryURLs.insert(
@@ -545,7 +573,7 @@ final class FileOperationCoordinator {
                                 at: sourceURL,
                                 to: destinationDirectoryURL
                             )
-                        case .createFolder, .trash, .setHidden, .rename:
+                        case .createFolder, .trash, .setHidden, .rename, .compress:
                             preconditionFailure(
                                 "This operation does not process copy or move sources."
                             )
@@ -577,11 +605,26 @@ final class FileOperationCoordinator {
                     } catch {
                         failureMessages.append(error.localizedDescription)
                     }
+
+                    completedItemCount += 1
                 }
 
                 if failureMessages.isEmpty == false {
                     errorMessage = Self.errorMessage(for: failureMessages)
                     isErrorPresented = true
+                }
+            case .compress:
+                guard let sourceURL = sources.first else { return }
+                let outcome = try await service.compressItem(at: sourceURL)
+                didChange = outcome.didChange
+                completedItemCount = 1
+
+                if outcome.didChange {
+                    directlyAffectedDirectoryURLs.insert(
+                        Self.standardizedURL(
+                            outcome.destinationURL.deletingLastPathComponent()
+                        )
+                    )
                 }
             }
 
@@ -766,6 +809,7 @@ final class FileOperationCoordinator {
         case trash
         case setHidden(Bool)
         case rename(String)
+        case compress
 
         var isMove: Bool {
             if case .move = self {
@@ -777,7 +821,7 @@ final class FileOperationCoordinator {
 
         var requiresSources: Bool {
             switch self {
-            case .copy, .move, .trash, .setHidden, .rename:
+            case .copy, .move, .trash, .setHidden, .rename, .compress:
                 true
             case .createFolder:
                 false
@@ -798,6 +842,27 @@ final class FileOperationCoordinator {
                 hidden ? "Hide folder" : "Unhide folder"
             case .rename:
                 "Rename item"
+            case .compress:
+                "Create ZIP archive"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .copy:
+                "doc.on.doc.fill"
+            case .move:
+                "arrow.right.doc.on.clipboard"
+            case .createFolder:
+                "folder.badge.plus"
+            case .trash:
+                "trash.fill"
+            case let .setHidden(hidden):
+                hidden ? "eye.slash.fill" : "eye.fill"
+            case .rename:
+                "pencil"
+            case .compress:
+                "archivebox.fill"
             }
         }
 
@@ -821,6 +886,8 @@ final class FileOperationCoordinator {
                 hidden ? "Hiding folder…" : "Unhiding folder…"
             case (.rename, _):
                 "Renaming item…"
+            case (.compress, _):
+                "Creating ZIP archive…"
             }
         }
     }

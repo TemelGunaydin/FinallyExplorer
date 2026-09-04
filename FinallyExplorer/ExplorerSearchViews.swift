@@ -161,7 +161,8 @@ struct ExplorerSearchResultsView: View {
                     .tag(result.id)
                     .background(
                         ExplorerRowBackground(
-                            isSelected: selection.contains(result.id)
+                            isSelected: selection.contains(result.id),
+                            isHidden: result.item.isHidden
                         )
                     )
                     .listRowBackground(theme.row)

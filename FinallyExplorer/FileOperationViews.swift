@@ -115,13 +115,14 @@ private struct InternalFileTransferEnvelope: Codable {
 
 private struct InternalFileInteractionModifier: ViewModifier {
     @Environment(FileOperationCoordinator.self) private var fileOperations
-    @Environment(NearbyTransferCoordinator.self) private var nearbyTransfers
 
     let item: FileItem
     let paneID: UUID
     let sidebar: SidebarModel
 
     @State private var isInfoPresented = false
+    @State private var isContextMenuPresented = false
+    @State private var contextMenuAnchor = UnitPoint.center
 
     func body(content: Content) -> some View {
         content
@@ -142,93 +143,37 @@ private struct InternalFileInteractionModifier: ViewModifier {
                     paneID: paneID
                 )
             )
-            .contextMenu {
-                Button("Cut") {
-                    fileOperations.cut([item.url])
+            .overlay {
+                ExplorerContextClickCapture { anchor in
+                    contextMenuAnchor = anchor
+                    isContextMenuPresented = true
                 }
-
-                Button("Copy") {
-                    fileOperations.copy([item.url])
-                }
-
-                Button("Rename", systemImage: "pencil") {
-                    fileOperations.requestRename(item.url)
-                }
-                .disabled(fileOperations.isPerforming)
-
-                Divider()
-
-                ShareLink(item: item.url) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-
-                Button("Send to Nearby Device…", systemImage: "person.2.wave.2") {
-                    nearbyTransfers.prepareToSend([item.url])
-                }
-
-                Button("Get Info", systemImage: "info.circle") {
-                    isInfoPresented = true
-                }
-
-                Button("Show in Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([item.url])
-                }
-
-                if item.isDirectory {
-                    Divider()
-
-                    if let favorite = sidebar.favorite(for: item.url) {
-                        Button("Remove from Favorites", systemImage: "star.slash") {
-                            sidebar.remove(favorite)
-                        }
-                    } else if sidebar.canAdd(
-                        itemURL: item.url,
-                        isDirectory: true
-                    ) {
-                        Button("Add to Favorites", systemImage: "star") {
-                            sidebar.add(itemURL: item.url, isDirectory: true)
-                        }
+                .accessibilityHidden(true)
+            }
+            .popover(
+                isPresented: $isContextMenuPresented,
+                attachmentAnchor: .point(contextMenuAnchor),
+                arrowEdge: .leading
+            ) {
+                FileItemContextMenu(
+                    item: item,
+                    sidebar: sidebar,
+                    onDismiss: {
+                        isContextMenuPresented = false
+                    },
+                    onShowInfo: {
+                        isInfoPresented = true
                     }
-
-                    Button(
-                        item.isHidden ? "Unhide Folder" : "Hide Folder",
-                        systemImage: item.isHidden ? "eye" : "eye.slash"
-                    ) {
-                        fileOperations.setHidden(
-                            item.isHidden == false,
-                            for: item.url
-                        )
-                    }
-                    .disabled(fileOperations.isPerforming)
-
-                    Button("Paste Into Folder") {
-                        fileOperations.paste(into: item.url)
-                    }
-                    .disabled(fileOperations.canPaste == false)
-
-                    TerminalContextMenuCommands(directoryURL: item.url)
-                } else {
-                    Divider()
-
-                    if let favorite = sidebar.favorite(for: item.url) {
-                        Button("Remove from Favorites", systemImage: "star.slash") {
-                            sidebar.remove(favorite)
-                        }
-                    } else if sidebar.canAdd(
-                        itemURL: item.url,
-                        isDirectory: false
-                    ) {
-                        Button("Add to Favorites", systemImage: "star") {
-                            sidebar.add(itemURL: item.url, isDirectory: false)
-                        }
-                    }
-                }
+                )
             }
             .sheet(isPresented: $isInfoPresented) {
                 FileInformationView(item: item)
             }
             .accessibilityAction(named: "Copy") {
                 fileOperations.copy([item.url])
+            }
+            .accessibilityAction(named: "Compress to ZIP") {
+                fileOperations.compress(item.url)
             }
     }
 }
