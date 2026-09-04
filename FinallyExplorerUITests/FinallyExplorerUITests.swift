@@ -1061,6 +1061,11 @@ final class FinallyExplorerUITests: XCTestCase {
     }
 
     func testNearbyTransferPickerAndPairingFlow() throws {
+        try XCTSkipIf(
+            ExplorerFeatureFlagsForUITests.nearbyTransferEnabled == false,
+            "Nearby Transfer is temporarily disabled for App Review."
+        )
+
         let sourceRow = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
         sourceRow.coordinate(
@@ -1359,4 +1364,8 @@ final class FinallyExplorerUITests: XCTestCase {
             total += Int64(size)
         }
     }
+}
+
+private enum ExplorerFeatureFlagsForUITests {
+    static let nearbyTransferEnabled = false
 }

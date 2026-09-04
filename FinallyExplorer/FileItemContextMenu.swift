@@ -98,12 +98,14 @@ struct FileItemContextMenu: View {
                 .buttonStyle(.plain)
                 .explorerContextMenuRow()
 
-                ExplorerContextMenuActionButton(
-                    title: "Send to Nearby Device…",
-                    systemImage: "person.2.wave.2"
-                ) {
-                    perform {
-                        nearbyTransfers.prepareToSend([item.url])
+                if ExplorerFeatureFlags.nearbyTransferEnabled {
+                    ExplorerContextMenuActionButton(
+                        title: "Send to Nearby Device…",
+                        systemImage: "person.2.wave.2"
+                    ) {
+                        perform {
+                            nearbyTransfers.prepareToSend([item.url])
+                        }
                     }
                 }
 

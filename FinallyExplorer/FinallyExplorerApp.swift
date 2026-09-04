@@ -154,6 +154,11 @@ struct FinallyExplorerApp: App {
     private static func nearbyTransferCoordinator(
         for launchConfiguration: ExplorerLaunchConfiguration
     ) -> NearbyTransferCoordinator {
+        guard ExplorerFeatureFlags.nearbyTransferEnabled else {
+            return NearbyTransferCoordinator(
+                service: DisabledNearbyTransferService()
+            )
+        }
         guard let peerName = launchConfiguration.nearbyPeerName else {
             return NearbyTransferCoordinator()
         }

@@ -87,9 +87,9 @@ struct WorkspaceLayoutTests {
         #expect(layout.paneIDs == [first, third, second])
     }
 
-    @Test("A workspace never grows beyond four panes")
+    @Test("A workspace never grows beyond a two-by-two grid")
     func maximumPaneCount() {
-        let ids = (30...38).map(uuid)
+        let ids = (30...40).map(uuid)
         var layout = WorkspaceLayout(initialPaneID: ids[0])
 
         let secondPane = layout.split(
@@ -102,27 +102,85 @@ struct WorkspaceLayoutTests {
             newPaneID: ids[3],
             splitID: ids[4]
         )
-        let fourthPane = layout.split(
+        let thirdColumn = layout.split(
             direction: .right,
             newPaneID: ids[5],
             splitID: ids[6]
         )
+        let fourthPane = layout.split(
+            paneID: ids[0],
+            direction: .below,
+            newPaneID: ids[7],
+            splitID: ids[8]
+        )
         #expect(secondPane)
         #expect(thirdPane)
+        #expect(thirdColumn == false)
         #expect(fourthPane)
         #expect(layout.paneCount == WorkspaceLayout.maximumPaneCount)
+        #expect(
+            layout.root.gridSize
+                == WorkspaceGridSize(columns: 2, rows: 2)
+        )
         #expect(layout.canSplit == false)
         let rootAtCapacity = layout.root
         let activePaneAtCapacity = layout.activePaneID
         let fifthPane = layout.split(
             direction: .below,
+            newPaneID: ids[9],
+            splitID: ids[10]
+        )
+        #expect(fifthPane == false)
+        #expect(layout.paneIDs.contains(ids[9]) == false)
+        #expect(layout.root == rootAtCapacity)
+        #expect(layout.activePaneID == activePaneAtCapacity)
+    }
+
+    @Test("A stacked-first layout also stops at two rows by two columns")
+    func stackedFirstMaximumGrid() {
+        let ids = (60...69).map(uuid)
+        var layout = WorkspaceLayout(initialPaneID: ids[0])
+
+        let didSplitBelow = layout.split(
+            direction: .below,
+            newPaneID: ids[1],
+            splitID: ids[2]
+        )
+        let didSplitTopRight = layout.split(
+            paneID: ids[0],
+            direction: .right,
+            newPaneID: ids[3],
+            splitID: ids[4]
+        )
+        let didSplitBottomRight = layout.split(
+            paneID: ids[1],
+            direction: .right,
+            newPaneID: ids[5],
+            splitID: ids[6]
+        )
+
+        #expect(didSplitBelow)
+        #expect(didSplitTopRight)
+        #expect(didSplitBottomRight)
+
+        #expect(
+            layout.root.gridSize
+                == WorkspaceGridSize(columns: 2, rows: 2)
+        )
+        #expect(layout.canSplit == false)
+        let didExceedGrid = layout.split(
+            paneID: ids[0],
+            direction: .below,
             newPaneID: ids[7],
             splitID: ids[8]
         )
-        #expect(fifthPane == false)
-        #expect(layout.paneIDs.contains(ids[7]) == false)
-        #expect(layout.root == rootAtCapacity)
-        #expect(layout.activePaneID == activePaneAtCapacity)
+        #expect(didExceedGrid == false)
+
+        let didCloseBottomRight = layout.close(ids[5])
+        #expect(didCloseBottomRight)
+        #expect(layout.paneCount == 3)
+        #expect(layout.canSplit(paneID: ids[1], direction: .right))
+        #expect(layout.canSplit)
     }
 
     @Test("Unknown and colliding identifiers never corrupt the layout")
@@ -704,6 +762,6 @@ private final class DeterministicWorkspaceIDSequence {
     }
 }
 
-private func uuid(_ value: Int) -> UUID {
+private nonisolated func uuid(_ value: Int) -> UUID {
     UUID(uuidString: String(format: "00000000-0000-0000-0000-%012X", value))!
 }

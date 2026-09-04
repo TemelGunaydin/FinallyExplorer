@@ -36,6 +36,7 @@ final class GlobalSearchModel {
     private(set) var selectedResultID: ExplorerSearchResult.ID?
     private(set) var isSearching = false
     private(set) var isPreparingResults = false
+    private(set) var isRebuildingContentIndex = false
     private(set) var indexState: GlobalSearchIndexState = .idle
     private(set) var message: ExplorerSearchMessage?
 
@@ -46,19 +47,28 @@ final class GlobalSearchModel {
     @ObservationIgnored private var preparationGeneration = 0
     @ObservationIgnored private var warmupGeneration = 0
     @ObservationIgnored private var warmupTask: Task<Void, Never>?
+    @ObservationIgnored private var rebuildGeneration = 0
+    @ObservationIgnored private var rebuildTask: Task<Void, Never>?
 
     init(
         service: (any GlobalSearchServicing)? = nil,
+        initialRootURL: URL? = nil,
         debounce: @escaping @Sendable () async throws -> Void = {
             try await Task.sleep(for: .milliseconds(150))
         }
     ) {
-        self.service = service ?? FFFGlobalSearchService()
+        self.service = service ?? HybridGlobalSearchService()
         self.debounce = debounce
+        if let initialRootURL {
+            indexState = .ready(
+                rootURL: Self.canonicalRootURL(initialRootURL)
+            )
+        }
     }
 
     deinit {
         warmupTask?.cancel()
+        rebuildTask?.cancel()
     }
 
     var selectedResult: ExplorerSearchResult? {
@@ -222,9 +232,7 @@ final class GlobalSearchModel {
             message = page.message
             isSearching = false
             isPreparingResults = page.isIndexWarming
-            indexState = page.isIndexWarming
-                ? .indexing(rootURL: Self.canonicalRootURL(rootURL))
-                : .ready(rootURL: Self.canonicalRootURL(rootURL))
+            indexState = .ready(rootURL: Self.canonicalRootURL(rootURL))
 
             if page.isIndexWarming {
                 beginWarmupRefresh(for: rootURL)
@@ -284,6 +292,53 @@ final class GlobalSearchModel {
         resetVisibleState()
     }
 
+    func rebuildContentIndex(in rootURL: URL) {
+        guard isIndexReady(in: rootURL), isRebuildingContentIndex == false else {
+            return
+        }
+
+        rebuildGeneration += 1
+        let generation = rebuildGeneration
+        requestGeneration += 1
+        cancelWarmup()
+        isSearching = false
+        isPreparingResults = false
+        isRebuildingContentIndex = true
+        message = nil
+
+        rebuildTask?.cancel()
+        rebuildTask = Task { @MainActor [weak self, service] in
+            do {
+                try await service.rebuildContentIndex(rootURL: rootURL)
+                try Task.checkCancellation()
+                guard let self, generation == self.rebuildGeneration else { return }
+
+                self.rebuildTask = nil
+                self.isRebuildingContentIndex = false
+                self.isPreparingResults = false
+                self.message = .notice("Content search refreshed.")
+                if self.hasQuery, self.scope == .contents {
+                    await self.search(in: rootURL, applyingDebounce: false)
+                }
+            } catch is CancellationError {
+                guard let self, generation == self.rebuildGeneration else { return }
+                self.rebuildTask = nil
+                self.isRebuildingContentIndex = false
+                self.isPreparingResults = false
+            } catch {
+                guard let self,
+                      generation == self.rebuildGeneration,
+                      Task.isCancelled == false else {
+                    return
+                }
+                self.rebuildTask = nil
+                self.isRebuildingContentIndex = false
+                self.isPreparingResults = false
+                self.message = .error(error.localizedDescription)
+            }
+        }
+    }
+
     func shutdown() async {
         lifecycleGeneration += 1
         await performShutdown()
@@ -298,7 +353,11 @@ final class GlobalSearchModel {
     private func performShutdown() async {
         preparationGeneration += 1
         requestGeneration += 1
+        rebuildGeneration += 1
         cancelWarmup()
+        rebuildTask?.cancel()
+        rebuildTask = nil
+        isRebuildingContentIndex = false
         resetVisibleState()
         indexState = .idle
         await service.shutdown()
@@ -318,7 +377,6 @@ final class GlobalSearchModel {
                 }
 
                 self.warmupTask = nil
-                self.indexState = .ready(rootURL: Self.canonicalRootURL(rootURL))
                 self.isPreparingResults = false
                 if self.hasQuery {
                     await self.search(in: rootURL, applyingDebounce: false)
@@ -331,13 +389,9 @@ final class GlobalSearchModel {
                 }
                 self.warmupTask = nil
                 self.isPreparingResults = false
-                self.indexState = .failed(
-                    rootURL: Self.canonicalRootURL(rootURL),
-                    message: error.localizedDescription
-                )
                 if self.hasQuery {
                     self.message = .notice(
-                        "Search preparation is taking longer than expected."
+                        "The content index could not finish preparing: \(error.localizedDescription)"
                     )
                 }
             }

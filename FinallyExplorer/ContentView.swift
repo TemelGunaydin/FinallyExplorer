@@ -28,8 +28,12 @@ struct ContentView: View {
     private let globalSearchRootURL: URL
 
     init() {
-        globalSearchRootURL = SidebarPlace.systemDrive.url
+        let rootURL = SidebarPlace.systemDrive.url
             ?? URL(filePath: "/", directoryHint: .isDirectory)
+        globalSearchRootURL = rootURL
+        _globalSearch = State(
+            initialValue: GlobalSearchModel(initialRootURL: rootURL)
+        )
     }
 
     init(
@@ -59,9 +63,10 @@ struct ContentView: View {
         if let themeController {
             _themeController = State(initialValue: themeController)
         }
-        if let globalSearch {
-            _globalSearch = State(initialValue: globalSearch)
-        }
+        _globalSearch = State(
+            initialValue: globalSearch
+                ?? GlobalSearchModel(initialRootURL: globalSearchRootURL)
+        )
     }
 
     private var sidebarSelection: Binding<SidebarPlace?> {
@@ -912,7 +917,9 @@ private struct DestinationView: View {
 
                 TerminalToolbarButton(directoryURL: pane.displayedDirectory)
 
-                NearbyTransferToolbarButton(sourceURLs: pane.selectedCommandURLs)
+                if ExplorerFeatureFlags.nearbyTransferEnabled {
+                    NearbyTransferToolbarButton(sourceURLs: pane.selectedCommandURLs)
+                }
 
                 Button(
                     pane.showsHiddenItems ? "Hide Hidden Items" : "Show Hidden Items",
@@ -933,7 +940,9 @@ private struct DestinationView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                .disabled(workspace.canSplit == false)
+                .disabled(
+                    workspace.canSplit(paneID: pane.id, direction: .right) == false
+                )
                 .explorerTooltip("Add a pane on the right")
 
                 Button("Split Below", systemImage: "rectangle.split.1x2") {
@@ -941,7 +950,9 @@ private struct DestinationView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                .disabled(workspace.canSplit == false)
+                .disabled(
+                    workspace.canSplit(paneID: pane.id, direction: .below) == false
+                )
                 .explorerTooltip("Add a pane below")
 
                 if workspace.paneCount > 1 {

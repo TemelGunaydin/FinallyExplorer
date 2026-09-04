@@ -206,7 +206,7 @@ struct GlobalSearchModelTests {
         #expect(model.selectedResultID == newResult.id)
     }
 
-    @Test("A partial FFF index refreshes the active query when warm-up completes")
+    @Test("A partial content index refreshes the active query after warm-up")
     func warmIndexRefreshesActiveQuery() async {
         let result = globalResult(named: "eventual.txt")
         let service = WarmingGlobalSearchService(result: result)
@@ -234,7 +234,7 @@ struct GlobalSearchModelTests {
         await model.shutdown()
     }
 
-    @Test("Clearing a query does not strand an index warm-up")
+    @Test("Clearing a query does not strand a content-index warm-up")
     func clearKeepsWarmupAliveUntilIndexIsReady() async {
         let service = WarmingGlobalSearchService(
             result: globalResult(named: "unused.txt")
@@ -245,11 +245,13 @@ struct GlobalSearchModelTests {
 
         await model.search(in: rootURL)
         await service.waitUntilWarmupIsObserved()
-        #expect(model.isIndexing(in: rootURL))
+        #expect(model.isIndexReady(in: rootURL))
+        #expect(model.isIndexing(in: rootURL) == false)
 
         model.clear()
         #expect(model.query.isEmpty)
-        #expect(model.isIndexing(in: rootURL))
+        #expect(model.isIndexReady(in: rootURL))
+        #expect(model.isIndexing(in: rootURL) == false)
 
         await service.finishInitialScan()
         for _ in 0..<1_000 {

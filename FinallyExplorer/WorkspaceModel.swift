@@ -25,6 +25,31 @@ nonisolated enum WorkspaceSplitAxis: Hashable, Sendable {
     case stacked
 }
 
+nonisolated struct WorkspaceGridSize: Equatable, Sendable {
+    let columns: Int
+    let rows: Int
+
+    static let singlePane = WorkspaceGridSize(columns: 1, rows: 1)
+
+    func combined(
+        with other: WorkspaceGridSize,
+        along axis: WorkspaceSplitAxis
+    ) -> WorkspaceGridSize {
+        switch axis {
+        case .sideBySide:
+            WorkspaceGridSize(
+                columns: columns + other.columns,
+                rows: max(rows, other.rows)
+            )
+        case .stacked:
+            WorkspaceGridSize(
+                columns: max(columns, other.columns),
+                rows: rows + other.rows
+            )
+        }
+    }
+}
+
 nonisolated indirect enum WorkspaceLayoutNode: Identifiable, Equatable, Sendable {
     case pane(id: UUID)
     case split(
@@ -67,6 +92,55 @@ nonisolated indirect enum WorkspaceLayoutNode: Identifiable, Equatable, Sendable
             id == paneID
         case let .split(_, _, first, second):
             first.contains(paneID: paneID) || second.contains(paneID: paneID)
+        }
+    }
+
+    var gridSize: WorkspaceGridSize {
+        switch self {
+        case .pane:
+            .singlePane
+        case let .split(_, axis, first, second):
+            first.gridSize.combined(with: second.gridSize, along: axis)
+        }
+    }
+
+    fileprivate func gridSizeAfterSplitting(
+        paneID targetID: UUID,
+        direction: WorkspaceSplitDirection
+    ) -> (size: WorkspaceGridSize, didFindPane: Bool) {
+        switch self {
+        case let .pane(id):
+            guard id == targetID else { return (.singlePane, false) }
+            let splitSize: WorkspaceGridSize
+            switch direction {
+            case .right:
+                splitSize = WorkspaceGridSize(columns: 2, rows: 1)
+            case .below:
+                splitSize = WorkspaceGridSize(columns: 1, rows: 2)
+            }
+            return (splitSize, true)
+
+        case let .split(_, axis, first, second):
+            let firstResult = first.gridSizeAfterSplitting(
+                paneID: targetID,
+                direction: direction
+            )
+            if firstResult.didFindPane {
+                return (
+                    firstResult.size.combined(with: second.gridSize, along: axis),
+                    true
+                )
+            }
+
+            let secondResult = second.gridSizeAfterSplitting(
+                paneID: targetID,
+                direction: direction
+            )
+            guard secondResult.didFindPane else { return (gridSize, false) }
+            return (
+                first.gridSize.combined(with: secondResult.size, along: axis),
+                true
+            )
         }
     }
 
@@ -158,6 +232,8 @@ nonisolated indirect enum WorkspaceLayoutNode: Identifiable, Equatable, Sendable
 
 nonisolated struct WorkspaceLayout: Equatable, Sendable {
     static let maximumPaneCount = 4
+    static let maximumColumnCount = 2
+    static let maximumRowCount = 2
 
     private(set) var root: WorkspaceLayoutNode
     private(set) var activePaneID: UUID
@@ -175,7 +251,27 @@ nonisolated struct WorkspaceLayout: Equatable, Sendable {
 
     var paneIDs: [UUID] { root.paneIDs }
     var paneCount: Int { paneIDs.count }
-    var canSplit: Bool { paneCount < Self.maximumPaneCount }
+    var canSplit: Bool {
+        guard paneCount < Self.maximumPaneCount else { return false }
+        return paneIDs.contains { paneID in
+            canSplit(paneID: paneID, direction: .right)
+                || canSplit(paneID: paneID, direction: .below)
+        }
+    }
+
+    func canSplit(
+        paneID: UUID,
+        direction: WorkspaceSplitDirection
+    ) -> Bool {
+        guard paneCount < Self.maximumPaneCount else { return false }
+        let result = root.gridSizeAfterSplitting(
+            paneID: paneID,
+            direction: direction
+        )
+        return result.didFindPane
+            && result.size.columns <= Self.maximumColumnCount
+            && result.size.rows <= Self.maximumRowCount
+    }
 
     @discardableResult
     mutating func activate(_ paneID: UUID) -> Bool {
@@ -191,10 +287,9 @@ nonisolated struct WorkspaceLayout: Equatable, Sendable {
         newPaneID: UUID,
         splitID: UUID
     ) -> Bool {
-        guard canSplit else { return false }
-
         let targetPaneID = paneID ?? activePaneID
-        guard root.contains(paneID: targetPaneID),
+        guard canSplit(paneID: targetPaneID, direction: direction),
+              root.contains(paneID: targetPaneID),
               root.nodeIDs.contains(newPaneID) == false,
               root.nodeIDs.contains(splitID) == false,
               newPaneID != splitID else {
@@ -445,7 +540,14 @@ final class WorkspaceModel {
 
     var activePane: WorkspacePaneState? { panes[activePaneID] }
     var paneCount: Int { layoutRoot.paneIDs.count }
-    var canSplit: Bool { paneCount < WorkspaceLayout.maximumPaneCount }
+    var canSplit: Bool { layout.canSplit }
+
+    func canSplit(
+        paneID: UUID,
+        direction: WorkspaceSplitDirection
+    ) -> Bool {
+        layout.canSplit(paneID: paneID, direction: direction)
+    }
 
     func pane(_ id: UUID) -> WorkspacePaneState? {
         panes[id]
@@ -614,7 +716,10 @@ final class WorkspaceModel {
         paneID: UUID,
         direction: WorkspaceSplitDirection
     ) -> UUID? {
-        guard canSplit, let sourcePane = panes[paneID] else { return nil }
+        guard canSplit(paneID: paneID, direction: direction),
+              let sourcePane = panes[paneID] else {
+            return nil
+        }
 
         let previouslyActivePane = activePane
         guard let newPaneID = makeUniqueID(),

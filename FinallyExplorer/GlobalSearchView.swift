@@ -125,6 +125,7 @@ struct GlobalSearchToolbar: View {
         .popover(isPresented: $isResultsPresented, arrowEdge: .bottom) {
             GlobalSearchResultsPopover(
                 model: model,
+                rootURL: rootURL,
                 onReveal: reveal
             )
         }
@@ -190,6 +191,7 @@ private struct GlobalSearchResultsPopover: View {
     @Environment(\.explorerTheme) private var theme
 
     let model: GlobalSearchModel
+    let rootURL: URL
     let onReveal: (ExplorerSearchResult) -> Void
 
     var body: some View {
@@ -199,7 +201,11 @@ private struct GlobalSearchResultsPopover: View {
             GlobalSearchScopeBar(
                 scope: $model.scope,
                 contentMode: $model.contentMode,
-                resultCount: model.results.count
+                resultCount: model.results.count,
+                isRebuildingContentIndex: model.isRebuildingContentIndex,
+                onRebuildContentIndex: {
+                    model.rebuildContentIndex(in: rootURL)
+                }
             )
 
             Divider()
@@ -220,7 +226,13 @@ private struct GlobalSearchResultsPopover: View {
     @ViewBuilder
     private var resultsBody: some View {
         if (model.isSearching || model.isPreparingResults), model.results.isEmpty {
-            ProgressView("Searching this Mac…")
+            ProgressView(
+                model.isPreparingResults
+                    ? preparationMessage
+                    : "Searching this Mac…"
+            )
+            .tint(theme.accent)
+            .foregroundStyle(theme.textPrimary)
         } else if let message = model.message,
                   message.isError,
                   model.results.isEmpty {
@@ -262,6 +274,15 @@ private struct GlobalSearchResultsPopover: View {
             }
         }
     }
+
+    private var preparationMessage: String {
+        switch model.scope {
+        case .names:
+            "Searching more locations…"
+        case .contents:
+            "Preparing content search…"
+        }
+    }
 }
 
 private struct GlobalSearchScopeBar: View {
@@ -271,6 +292,8 @@ private struct GlobalSearchScopeBar: View {
     @Binding var contentMode: FFFContentSearchMode
 
     let resultCount: Int
+    let isRebuildingContentIndex: Bool
+    let onRebuildContentIndex: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -294,6 +317,26 @@ private struct GlobalSearchScopeBar: View {
                 .labelsHidden()
                 .frame(width: 230)
                 .accessibilityIdentifier("global-search-content-mode-picker")
+
+                if isRebuildingContentIndex {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.small)
+                        .tint(theme.accent)
+                        .frame(width: 112, height: 36)
+                        .accessibilityLabel("Refreshing content search")
+                } else {
+                    Button(
+                        "Refresh Search",
+                        systemImage: "arrow.clockwise",
+                        action: onRebuildContentIndex
+                    )
+                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .help(
+                        "Refresh on-demand content search. Name results update automatically through Spotlight."
+                    )
+                    .accessibilityIdentifier("global-search-rebuild-content-index")
+                }
             }
 
             Spacer(minLength: 8)
