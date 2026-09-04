@@ -90,6 +90,7 @@ struct FileInformationView: View {
         .padding(22)
         .frame(width: 460)
         .background(theme.elevatedPanel)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("file-info-panel")
         .task(id: item.url) {
             await calculateFolderSizeIfNeeded()

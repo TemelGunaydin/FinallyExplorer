@@ -166,7 +166,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(containingCell(for: sourceRow)).isSelected)
 
         try rightClickRow(sourceRow)
-        let copyCommand = sourceRow.menuItems["Copy"]
+        let copyCommand = fileContextMenuButton(named: "Copy")
         XCTAssertTrue(copyCommand.waitForExistence(timeout: 3))
         XCTAssertTrue(copyCommand.isEnabled)
         copyCommand.click()
@@ -181,7 +181,7 @@ final class FinallyExplorerUITests: XCTestCase {
         )
 
         try rightClickRow(destinationRow)
-        let pasteCommand = app.menuItems["Paste Into Folder"]
+        let pasteCommand = fileContextMenuButton(named: "Paste Into Folder")
         XCTAssertTrue(pasteCommand.waitForExistence(timeout: 3))
         XCTAssertTrue(pasteCommand.isEnabled)
         pasteCommand.click()
@@ -504,7 +504,10 @@ final class FinallyExplorerUITests: XCTestCase {
         )
 
         try rightClickRow(destinationRows.firstMatch)
-        XCTAssertTrue(app.menuItems["Add to Favorites"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            fileContextMenuButton(named: "Add to Favorites")
+                .waitForExistence(timeout: 3)
+        )
     }
 
     func testBuiltInSidebarItemsCanBeRemovedAndRestored() throws {
@@ -548,9 +551,11 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(sourceRows.firstMatch.waitForExistence(timeout: 10))
 
         try rightClickRow(sourceRows.firstMatch)
-        XCTAssertTrue(app.menuItems["Share"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            fileContextMenuButton(named: "Share").waitForExistence(timeout: 3)
+        )
 
-        let getInfo = app.menuItems["Get Info"]
+        let getInfo = fileContextMenuButton(named: "Get Info")
         XCTAssertTrue(getInfo.waitForExistence(timeout: 3))
         getInfo.click()
 
@@ -569,7 +574,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(folderRow.waitForExistence(timeout: 10))
 
         try rightClickRow(folderRow)
-        let getInfo = app.menuItems["Get Info"]
+        let getInfo = fileContextMenuButton(named: "Get Info")
         XCTAssertTrue(getInfo.waitForExistence(timeout: 3))
         getInfo.click()
 
@@ -581,7 +586,7 @@ final class FinallyExplorerUITests: XCTestCase {
             countStyle: .file
         )
         XCTAssertTrue(
-            waitForLabel(expectedText, on: sizeValue, timeout: 10),
+            waitForValue(expectedText, on: sizeValue, timeout: 10),
             "Folder Get Info should replace the placeholder with its recursive size"
         )
     }
@@ -857,7 +862,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 10))
 
         try rightClickRow(destinationRows.firstMatch)
-        let hideFolder = app.menuItems["Hide Folder"]
+        let hideFolder = fileContextMenuButton(named: "Hide Folder")
         XCTAssertTrue(hideFolder.waitForExistence(timeout: 3))
         hideFolder.click()
 
@@ -873,7 +878,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 5))
 
         try rightClickRow(destinationRows.firstMatch)
-        let unhideFolder = app.menuItems["Unhide Folder"]
+        let unhideFolder = fileContextMenuButton(named: "Unhide Folder")
         XCTAssertTrue(unhideFolder.waitForExistence(timeout: 3))
         unhideFolder.click()
 
@@ -919,13 +924,24 @@ final class FinallyExplorerUITests: XCTestCase {
                 "global-search-result-"
             )
         )
-        XCTAssertTrue(waitForElementCount(resultRows, toEqual: 2, timeout: 10))
+        XCTAssertTrue(
+            waitForMinimumElementCount(resultRows, 2, timeout: 10),
+            "Global search must return both exact fixture matches"
+        )
+        XCTAssertTrue(
+            app.staticTexts["Global Needle Alpha.txt"]
+                .waitForExistence(timeout: 10)
+        )
+        XCTAssertTrue(
+            app.staticTexts["Global Needle Beta.txt"]
+                .waitForExistence(timeout: 10)
+        )
 
         let visibleResults = existingElements(in: resultRows).sorted {
             $0.frame.minY < $1.frame.minY
         }
         let firstResult = try XCTUnwrap(visibleResults.first)
-        let secondResult = try XCTUnwrap(visibleResults.last)
+        let secondResult = try XCTUnwrap(visibleResults.dropFirst().first)
         XCTAssertEqual(firstResult.value as? String, "Selected")
 
         readyGlobalSearchField.typeKey(.downArrow, modifierFlags: [])
@@ -1156,6 +1172,11 @@ final class FinallyExplorerUITests: XCTestCase {
         ).firstMatch
     }
 
+    private func fileContextMenuButton(named name: String) -> XCUIElement {
+        app.descendants(matching: .any)["file-item-context-menu"]
+            .buttons[name]
+    }
+
     private func existingElements(in query: XCUIElementQuery) -> [XCUIElement] {
         (0..<query.count)
             .map(query.element(boundBy:))
@@ -1221,6 +1242,22 @@ final class FinallyExplorerUITests: XCTestCase {
             (object as? XCUIElementQuery)?.count == expectedCount
         }
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: query)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForMinimumElementCount(
+        _ query: XCUIElementQuery,
+        _ minimumCount: Int,
+        timeout: TimeInterval
+    ) -> Bool {
+        let predicate = NSPredicate { object, _ in
+            guard let query = object as? XCUIElementQuery else { return false }
+            return query.count >= minimumCount
+        }
+        let expectation = XCTNSPredicateExpectation(
+            predicate: predicate,
+            object: query
+        )
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 

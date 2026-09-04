@@ -14,6 +14,73 @@ nonisolated protocol SpotlightGlobalSearchServicing: Sendable {
     ) async throws -> SpotlightGlobalSearchService.Page
 }
 
+nonisolated enum SpotlightNamePredicateBuilder {
+    static func predicate(for queryText: String) -> NSPredicate {
+        let trimmedQuery = queryText.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let tokens = trimmedQuery
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        let compactQuery = tokens.joined()
+
+        if trimmedQuery.count < 3 {
+            return namePrefixPredicate(trimmedQuery)
+        }
+
+        var alternatives: [NSPredicate] = [
+            nameLikePredicate(trimmedQuery)
+        ]
+
+        if tokens.count > 1 {
+            alternatives.append(
+                NSCompoundPredicate(
+                    andPredicateWithSubpredicates: tokens.map(nameLikePredicate)
+                )
+            )
+        }
+
+        if compactQuery != trimmedQuery {
+            alternatives.append(nameLikePredicate(compactQuery))
+        }
+
+        // NSMetadataQuery rejects an OR compound predicate containing only one
+        // child with an Objective-C exception. Single-token queries therefore
+        // need to use their leaf predicate directly.
+        guard alternatives.count > 1 else {
+            return alternatives[0]
+        }
+
+        // Character-by-character wildcards can make Spotlight gather a
+        // huge whole-disk candidate set. Hybrid search keeps broad fuzzy
+        // matching in its bounded FFF fallback instead.
+        return NSCompoundPredicate(orPredicateWithSubpredicates: alternatives)
+    }
+
+    private static func nameLikePredicate(_ value: String) -> NSPredicate {
+        NSPredicate(
+            format: "%K LIKE[cd] %@",
+            NSMetadataItemFSNameKey,
+            "*\(escapedLikeValue(value))*"
+        )
+    }
+
+    private static func namePrefixPredicate(_ value: String) -> NSPredicate {
+        NSPredicate(
+            format: "%K LIKE[cd] %@",
+            NSMetadataItemFSNameKey,
+            "\(escapedLikeValue(value))*"
+        )
+    }
+
+    private static func escapedLikeValue(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "*", with: "\\*")
+            .replacingOccurrences(of: "?", with: "\\?")
+    }
+}
+
 /// Reads macOS's persistent, incrementally maintained Spotlight catalog for
 /// global name searches. FinallyExplorer therefore does not need to rescan the
 /// entire startup disk every time it launches.
@@ -104,7 +171,9 @@ nonisolated struct SpotlightGlobalSearchService:
             resultQueue.qualityOfService = .userInitiated
 
             let metadataQuery = queryHandle.value
-            metadataQuery.predicate = Self.predicate(for: queryText)
+            metadataQuery.predicate = SpotlightNamePredicateBuilder.predicate(
+                for: queryText
+            )
             metadataQuery.searchScopes = Self.searchScopes(for: self.rootURL)
             metadataQuery.sortDescriptors = [
                 NSSortDescriptor(
@@ -305,64 +374,6 @@ nonisolated struct SpotlightGlobalSearchService:
                 hits: hits,
                 isTruncated: resultCount < totalResultCount
             )
-        }
-
-        private static func predicate(for queryText: String) -> NSPredicate {
-            let trimmedQuery = queryText.trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-            let tokens = trimmedQuery
-                .split(whereSeparator: \.isWhitespace)
-                .map(String.init)
-            let compactQuery = tokens.joined()
-
-            if trimmedQuery.count < 3 {
-                return namePrefixPredicate(trimmedQuery)
-            }
-
-            var alternatives: [NSPredicate] = [
-                nameLikePredicate(trimmedQuery)
-            ]
-
-            if tokens.count > 1 {
-                alternatives.append(
-                    NSCompoundPredicate(
-                        andPredicateWithSubpredicates: tokens.map(nameLikePredicate)
-                    )
-                )
-            }
-
-            if compactQuery != trimmedQuery {
-                alternatives.append(nameLikePredicate(compactQuery))
-            }
-
-            // Character-by-character wildcards can make Spotlight gather a
-            // huge whole-disk candidate set. Hybrid search keeps broad fuzzy
-            // matching in its bounded FFF fallback instead.
-            return NSCompoundPredicate(orPredicateWithSubpredicates: alternatives)
-        }
-
-        private static func nameLikePredicate(_ value: String) -> NSPredicate {
-            NSPredicate(
-                format: "%K LIKE[cd] %@",
-                NSMetadataItemFSNameKey,
-                "*\(escapedLikeValue(value))*"
-            )
-        }
-
-        private static func namePrefixPredicate(_ value: String) -> NSPredicate {
-            NSPredicate(
-                format: "%K LIKE[cd] %@",
-                NSMetadataItemFSNameKey,
-                "\(escapedLikeValue(value))*"
-            )
-        }
-
-        private static func escapedLikeValue(_ value: String) -> String {
-            value
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "*", with: "\\*")
-                .replacingOccurrences(of: "?", with: "\\?")
         }
 
         private static func searchScopes(for rootURL: URL) -> [Any] {

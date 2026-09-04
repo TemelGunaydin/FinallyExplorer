@@ -30,9 +30,12 @@ struct ExplorerContextMenuActionButton: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .explorerContextMenuRow(isDestructive: isDestructive)
         .disabled(isEnabled == false)
+        .accessibilityLabel(title)
     }
 }

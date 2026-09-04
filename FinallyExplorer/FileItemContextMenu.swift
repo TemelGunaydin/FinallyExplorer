@@ -94,9 +94,12 @@ struct FileItemContextMenu: View {
                         Text("Share")
                         Spacer(minLength: 12)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .explorerContextMenuRow()
+                .accessibilityLabel("Share")
 
                 if ExplorerFeatureFlags.nearbyTransferEnabled {
                     ExplorerContextMenuActionButton(
