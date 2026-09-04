@@ -42,6 +42,7 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
     let fileSize: Int64?
     let modificationDate: Date?
     let isHidden: Bool
+    let isApplicationBundle: Bool
 
     init(
         url: URL,
@@ -49,7 +50,8 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
         isImage: Bool,
         fileSize: Int64?,
         modificationDate: Date?,
-        isHidden: Bool = false
+        isHidden: Bool = false,
+        isApplicationBundle: Bool? = nil
     ) {
         self.url = url
         self.isDirectory = isDirectory
@@ -57,14 +59,12 @@ nonisolated struct FileItem: Identifiable, Hashable, Sendable {
         self.fileSize = fileSize
         self.modificationDate = modificationDate
         self.isHidden = isHidden
+        self.isApplicationBundle = isApplicationBundle
+            ?? (isDirectory && url.pathExtension.lowercased() == "app")
     }
 
     var id: URL { url }
     var name: String { url.lastPathComponent }
-    var isApplicationBundle: Bool {
-        isDirectory && url.pathExtension.lowercased() == "app"
-    }
-
     static func displayOrder(_ lhs: Self, _ rhs: Self) -> Bool {
         if lhs.isDirectory != rhs.isDirectory {
             return lhs.isDirectory
@@ -116,6 +116,7 @@ nonisolated struct FileSystemService: Sendable {
         .fileSizeKey,
         .contentModificationDateKey,
         .isHiddenKey,
+        .isApplicationKey,
     ]
 
     private static let sizeResourceKeys: Set<URLResourceKey> = [
@@ -174,15 +175,19 @@ nonisolated struct FileSystemService: Sendable {
             try Task.checkCancellation()
             let values = try? url.resourceValues(forKeys: Self.resourceKeys)
             let contentType = values?.contentType ?? UTType(filenameExtension: url.pathExtension)
+            let isDirectory = values?.isDirectory ?? false
 
             items.append(
                 FileItem(
                     url: url,
-                    isDirectory: values?.isDirectory ?? false,
+                    isDirectory: isDirectory,
                     isImage: contentType?.conforms(to: .image) == true,
                     fileSize: values?.fileSize.map(Int64.init),
                     modificationDate: values?.contentModificationDate,
-                    isHidden: values?.isHidden ?? url.lastPathComponent.hasPrefix(".")
+                    isHidden: values?.isHidden ?? url.lastPathComponent.hasPrefix("."),
+                    isApplicationBundle: isDirectory
+                        && url.pathExtension.lowercased() == "app"
+                        && values?.isApplication == true
                 )
             )
         }

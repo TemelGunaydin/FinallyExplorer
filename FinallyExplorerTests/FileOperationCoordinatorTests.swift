@@ -172,6 +172,151 @@ struct FileOperationCoordinatorTests {
         #expect(await service.trashedSources() == [first, second])
     }
 
+    @Test("Application uninstall waits for its dedicated confirmation before using Trash")
+    func applicationUninstallUsesTransactionalTrashConfirmation() async {
+        let service = ScriptedFileOperationService()
+        let policy = ApplicationUninstallPolicy(
+            applicationDirectoryURLs: [URL(filePath: "/Applications")],
+            runningApplicationURL: nil,
+            isApplication: { _ in true },
+            isDeletable: { _ in true }
+        )
+        let coordinator = FileOperationCoordinator(
+            service: service,
+            applicationUninstallPolicy: policy
+        )
+        let applicationURL = URL(
+            filePath: "/Applications/Fixture App.app",
+            directoryHint: .isDirectory
+        )
+
+        #expect(coordinator.requestTrashConfirmation(for: [applicationURL]))
+        #expect(coordinator.trashConfirmationKind == .uninstallApplication)
+        coordinator.cancelTrashConfirmation()
+
+        #expect(
+            coordinator.requestApplicationUninstallConfirmation(
+                for: applicationURL
+            )
+        )
+        #expect(coordinator.trashConfirmationURLs == [applicationURL])
+        #expect(coordinator.trashConfirmationKind == .uninstallApplication)
+        #expect(await service.operationCount() == 0)
+
+        coordinator.cancelTrashConfirmation()
+        #expect(coordinator.trashConfirmationURLs.isEmpty)
+        #expect(coordinator.trashConfirmationKind == .moveToTrash)
+        #expect(await service.operationCount() == 0)
+
+        #expect(
+            coordinator.requestApplicationUninstallConfirmation(
+                for: applicationURL
+            )
+        )
+        #expect(coordinator.confirmTrash())
+        #expect(coordinator.trashConfirmationURLs.isEmpty)
+        #expect(coordinator.trashConfirmationKind == .moveToTrash)
+        await coordinator.waitForCurrentOperation()
+
+        #expect(await service.trashedSources() == [applicationURL])
+    }
+
+    @Test("Protected applications are rejected by every Trash entry point")
+    func protectedApplicationsCannotBypassUninstallPolicy() async {
+        let service = ScriptedFileOperationService()
+        let policy = ApplicationUninstallPolicy(
+            applicationDirectoryURLs: [URL(filePath: "/Applications")],
+            runningApplicationURL: nil,
+            isApplication: { _ in true },
+            isDeletable: { _ in true }
+        )
+        let coordinator = FileOperationCoordinator(
+            service: service,
+            applicationUninstallPolicy: policy
+        )
+        let applicationURL = URL(
+            filePath: "/System/Applications/Utilities/System Information.app",
+            directoryHint: .isDirectory
+        )
+        let item = FileItem(
+            url: applicationURL,
+            isDirectory: true,
+            isImage: false,
+            fileSize: nil,
+            modificationDate: nil,
+            isApplicationBundle: true
+        )
+
+        #expect(
+            coordinator.applicationUninstallAvailability(for: item)
+                == .unavailable
+        )
+        #expect(coordinator.canRequestTrashConfirmation(for: [applicationURL]) == false)
+        #expect(coordinator.requestTrashConfirmation(for: [applicationURL]) == false)
+        #expect(
+            coordinator.requestApplicationUninstallConfirmation(
+                for: applicationURL
+            ) == false
+        )
+        #expect(coordinator.moveToTrash(applicationURL) == false)
+        #expect(await service.operationCount() == 0)
+    }
+
+    @Test("Application uninstall is revalidated after confirmation")
+    func applicationUninstallRejectsAStaleConfirmation() async throws {
+        let fileManager = FileManager.default
+        let markerURL = fileManager.temporaryDirectory.appending(
+            path: "FinallyExplorer-Uninstall-\(UUID().uuidString)"
+        )
+        try Data().write(to: markerURL)
+        defer { try? fileManager.removeItem(at: markerURL) }
+
+        let rootURL = URL(
+            filePath: "/tmp/Test Applications",
+            directoryHint: .isDirectory
+        )
+        let applicationURL = rootURL.appending(
+            path: "Fixture App.app",
+            directoryHint: .isDirectory
+        )
+        let policy = ApplicationUninstallPolicy(
+            applicationDirectoryURLs: [rootURL],
+            runningApplicationURL: nil,
+            isApplication: { _ in
+                FileManager.default.fileExists(
+                    atPath: markerURL.path(percentEncoded: false)
+                )
+            },
+            isDeletable: { _ in true }
+        )
+        let service = ScriptedFileOperationService()
+        let coordinator = FileOperationCoordinator(
+            service: service,
+            applicationUninstallPolicy: policy
+        )
+
+        #expect(
+            coordinator.requestApplicationUninstallConfirmation(
+                for: applicationURL
+            )
+        )
+        try fileManager.removeItem(at: markerURL)
+
+        #expect(coordinator.confirmTrash() == false)
+        #expect(coordinator.isErrorPresented)
+        #expect(coordinator.errorMessage.contains("changed"))
+        #expect(
+            coordinator.canRequestTrashConfirmation(for: [applicationURL])
+                == false
+        )
+        #expect(
+            coordinator.requestTrashConfirmation(for: [applicationURL])
+                == false
+        )
+        #expect(coordinator.moveToTrash(applicationURL) == false)
+        #expect(await service.operationCount() == 0)
+    }
+
     @Test("Only the newest file-operation notice may dismiss itself")
     func transientNoticeReplacementIsRaceSafe() async {
         let gate = FileOperationNoticeDelayGate()

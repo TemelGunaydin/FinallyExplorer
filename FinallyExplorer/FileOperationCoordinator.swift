@@ -30,6 +30,7 @@ final class FileOperationCoordinator {
     private(set) var completedOperationCount = 0
     var renameRequest: FileRenameRequest?
     private(set) var trashConfirmationURLs: [URL] = []
+    private(set) var trashConfirmationKind: FileTrashConfirmationKind = .moveToTrash
     private(set) var lastRenameResult: FileRenameResult?
     private(set) var lastCreatedFolderURL: URL?
     private var directoryRevisionByPath: [String: Int] = [:]
@@ -41,16 +42,19 @@ final class FileOperationCoordinator {
     @ObservationIgnored private var noticeDismissalTask: Task<Void, Never>?
     @ObservationIgnored private let service: any FileOperationServicing
     @ObservationIgnored private let noticeDelay: @Sendable () async throws -> Void
+    @ObservationIgnored private let applicationUninstallPolicy: ApplicationUninstallPolicy
     @ObservationIgnored private var clipboardRevision = UUID()
 
     init(
         service: any FileOperationServicing = FileOperationService(),
         noticeDelay: @escaping @Sendable () async throws -> Void = {
             try await Task.sleep(for: .seconds(2.2))
-        }
+        },
+        applicationUninstallPolicy: ApplicationUninstallPolicy = .live()
     ) {
         self.service = service
         self.noticeDelay = noticeDelay
+        self.applicationUninstallPolicy = applicationUninstallPolicy
     }
 
     deinit {
@@ -256,7 +260,10 @@ final class FileOperationCoordinator {
     @discardableResult
     func moveToTrash(_ sourceURLs: [URL]) -> Bool {
         let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
-        guard let firstSourceURL = sourceURLs.first else { return false }
+        guard let firstSourceURL = sourceURLs.first,
+              destructiveConfirmationKind(for: sourceURLs) != nil else {
+            return false
+        }
 
         return start(
             operation: .trash,
@@ -288,25 +295,96 @@ final class FileOperationCoordinator {
     @discardableResult
     func requestTrashConfirmation(for sourceURLs: [URL]) -> Bool {
         let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
+        guard let kind = destructiveConfirmationKind(for: sourceURLs) else {
+            return false
+        }
+
+        return requestTrashConfirmation(
+            for: sourceURLs,
+            kind: kind
+        )
+    }
+
+    @discardableResult
+    func requestApplicationUninstallConfirmation(for sourceURL: URL) -> Bool {
+        guard applicationUninstallPolicy.availability(for: sourceURL) == .available else {
+            return false
+        }
+
+        return requestTrashConfirmation(
+            for: [sourceURL],
+            kind: .uninstallApplication
+        )
+    }
+
+    func canRequestTrashConfirmation(for sourceURLs: [URL]) -> Bool {
+        let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
+        return isPerforming == false
+            && trashConfirmationURLs.isEmpty
+            && destructiveConfirmationKind(for: sourceURLs) != nil
+    }
+
+    func applicationUninstallAvailability(
+        for item: FileItem
+    ) -> ApplicationUninstallAvailability {
+        applicationUninstallPolicy.availability(for: item)
+    }
+
+    private func requestTrashConfirmation(
+        for sourceURLs: [URL],
+        kind: FileTrashConfirmationKind
+    ) -> Bool {
+        let sourceURLs = Self.uniqueTrashRootURLs(sourceURLs)
         guard sourceURLs.isEmpty == false,
               isPerforming == false,
               trashConfirmationURLs.isEmpty else {
             return false
         }
 
+        trashConfirmationKind = kind
         trashConfirmationURLs = sourceURLs
         return true
     }
 
     func cancelTrashConfirmation() {
         trashConfirmationURLs = []
+        trashConfirmationKind = .moveToTrash
     }
 
     @discardableResult
     func confirmTrash() -> Bool {
         let sourceURLs = trashConfirmationURLs
+        let expectedKind = trashConfirmationKind
         trashConfirmationURLs = []
+        trashConfirmationKind = .moveToTrash
+
+        guard destructiveConfirmationKind(for: sourceURLs) == expectedKind else {
+            errorMessage = "The item changed before it could be moved to Trash. "
+                + "Please review it and try again."
+            isErrorPresented = true
+            return false
+        }
+
         return moveToTrash(sourceURLs)
+    }
+
+    private func destructiveConfirmationKind(
+        for sourceURLs: [URL]
+    ) -> FileTrashConfirmationKind? {
+        guard sourceURLs.isEmpty == false else { return nil }
+
+        let availabilities = sourceURLs.map {
+            applicationUninstallPolicy.availability(for: $0)
+        }
+        guard availabilities.contains(.unavailable) == false else {
+            return nil
+        }
+
+        if availabilities.count == 1, availabilities[0] == .available {
+            return .uninstallApplication
+        }
+
+        return .moveToTrash
     }
 
     @discardableResult
@@ -950,9 +1028,7 @@ struct FileCommandContext {
     }
 
     var canRequestTrash: Bool {
-        selectedURLs.isEmpty == false
-            && coordinator.isPerforming == false
-            && coordinator.trashConfirmationURLs.isEmpty
+        coordinator.canRequestTrashConfirmation(for: selectedURLs)
     }
 
     func copySelection() {

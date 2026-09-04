@@ -55,6 +55,7 @@ private func exercisePreviewSelectionWhileResolvingAccessibilityLabels() async {
     let contentView = ContentView(
         workspace: workspace,
         fileOperations: FileOperationCoordinator(),
+        fileOpenApplications: FileOpenApplicationCoordinator(),
         terminalApplications: TerminalApplicationCoordinator(
             workspace: AccessibilityRegressionTerminalWorkspace()
         )

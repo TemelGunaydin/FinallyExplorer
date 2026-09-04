@@ -569,6 +569,144 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(infoPanel.waitForNonExistence(timeout: 5))
     }
 
+    func testFileContextMenuOffersCompatibleOpenWithApplication() throws {
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+
+        try rightClickRow(sourceRow)
+        let contextMenu = app.descendants(matching: .any)["file-item-context-menu"]
+        XCTAssertTrue(contextMenu.waitForExistence(timeout: 3))
+        let contextMenuFrame = contextMenu.frame
+        let openWith = fileContextMenuButton(named: "Open With")
+        XCTAssertTrue(openWith.waitForExistence(timeout: 3))
+        XCTAssertTrue(fileContextMenuButton(named: "Move to Trash").exists)
+        XCTAssertEqual(openWith.value as? String, "Closed")
+        openWith.click()
+
+        let applicationMenu = app.descendants(matching: .any)[
+            "open-with-application-menu"
+        ]
+        XCTAssertTrue(applicationMenu.waitForExistence(timeout: 5))
+        XCTAssertEqual(openWith.value as? String, "Open")
+        XCTAssertEqual(
+            contextMenu.frame.width,
+            contextMenuFrame.width,
+            accuracy: 4,
+            "Opening the side menu must not expand the main context menu"
+        )
+        XCTAssertEqual(
+            contextMenu.frame.height,
+            contextMenuFrame.height,
+            accuracy: 4,
+            "Opening the side menu must not add inline application rows"
+        )
+        let fixtureViewer = applicationMenu.buttons["Fixture Viewer"]
+        XCTAssertTrue(fixtureViewer.waitForExistence(timeout: 5))
+        XCTAssertTrue(fixtureViewer.isEnabled)
+        fixtureViewer.click()
+        XCTAssertTrue(applicationMenu.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(
+            contextMenu.waitForNonExistence(timeout: 5)
+        )
+
+        let destinationRow = rows(named: "Destination").firstMatch
+        XCTAssertTrue(destinationRow.waitForExistence(timeout: 3))
+        try rightClickRow(destinationRow)
+        XCTAssertFalse(fileContextMenuButton(named: "Open With").exists)
+    }
+
+    func testApplicationContextMenuOffersConfirmedUninstall() throws {
+        app.terminate()
+        try makeApplicationBundle(at: applicationBundleURL)
+        app.launch()
+
+        let applicationRow = rows(named: applicationBundleURL.lastPathComponent)
+            .firstMatch
+        XCTAssertTrue(
+            applicationRow.waitForExistence(timeout: 10),
+            "The application fixture did not appear after relaunch"
+        )
+
+        try rightClickRow(applicationRow)
+        let uninstall = fileContextMenuButton(named: "Uninstall Application")
+        XCTAssertTrue(uninstall.waitForExistence(timeout: 3))
+        XCTAssertTrue(uninstall.isEnabled)
+        XCTAssertFalse(fileContextMenuButton(named: "Move to Trash").exists)
+        uninstall.click()
+
+        let confirmationSheet = app.sheets.firstMatch
+        XCTAssertTrue(
+            confirmationSheet.staticTexts["Uninstall Fixture App?"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            confirmationSheet.staticTexts[
+                "“Fixture App.app” will be moved to Trash. "
+                    + "Its documents and settings will remain on this Mac."
+            ].exists
+        )
+        XCTAssertTrue(confirmationSheet.buttons["Uninstall"].exists)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: applicationBundleURL.path(percentEncoded: false)
+            )
+        )
+
+        confirmationSheet.buttons["Cancel"].click()
+        XCTAssertTrue(confirmationSheet.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(applicationRow.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: applicationBundleURL.path(percentEncoded: false)
+            ),
+            "Cancel must preserve the application bundle"
+        )
+
+        let applicationCell = try XCTUnwrap(containingCell(for: applicationRow))
+        applicationCell.click()
+        applicationCell.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(
+            app.staticTexts["Uninstall Fixture App?"]
+                .waitForExistence(timeout: 5),
+            "The Delete key must use the application uninstall confirmation"
+        )
+        confirmationSheet.buttons["Cancel"].click()
+        XCTAssertTrue(confirmationSheet.waitForNonExistence(timeout: 5))
+
+        let trashButton = app.buttons["trash-item-Fixture App.app"]
+        XCTAssertTrue(trashButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(trashButton.isEnabled)
+        trashButton.click()
+        XCTAssertTrue(
+            app.staticTexts["Uninstall Fixture App?"]
+                .waitForExistence(timeout: 5),
+            "The row Trash button must use the application uninstall confirmation"
+        )
+        confirmationSheet.buttons["Cancel"].click()
+        XCTAssertTrue(confirmationSheet.waitForNonExistence(timeout: 5))
+
+        try rightClickRow(applicationRow)
+        let confirmedUninstall = fileContextMenuButton(
+            named: "Uninstall Application"
+        )
+        XCTAssertTrue(confirmedUninstall.waitForExistence(timeout: 3))
+        confirmedUninstall.click()
+        XCTAssertTrue(
+            confirmationSheet.buttons["Uninstall"].waitForExistence(timeout: 5)
+        )
+        confirmationSheet.buttons["Uninstall"].click()
+
+        XCTAssertTrue(applicationRow.waitForNonExistence(timeout: 10))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: applicationBundleURL.path(percentEncoded: false)
+            )
+        )
+        let toast = app.descendants(matching: .any)["file-operation-toast"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 5))
+        XCTAssertEqual(toast.value as? String, "Moved to Trash")
+    }
+
     func testFolderInformationCalculatesItsRecursiveSize() throws {
         let folderRow = rows(named: "Global Results").firstMatch
         XCTAssertTrue(folderRow.waitForExistence(timeout: 10))
@@ -1132,6 +1270,13 @@ final class FinallyExplorerUITests: XCTestCase {
         fixtureRootURL.appending(path: "Global Results", directoryHint: .isDirectory)
     }
 
+    private var applicationBundleURL: URL {
+        fixtureRootURL.appending(
+            path: "Fixture App.app",
+            directoryHint: .isDirectory
+        )
+    }
+
     private var globalSearchAlphaURL: URL {
         globalSearchFolderURL.appending(
             path: "Global Needle Alpha.txt",
@@ -1375,6 +1520,43 @@ final class FinallyExplorerUITests: XCTestCase {
         let cell = try XCTUnwrap(containingCell(for: row))
         cell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .rightClick()
+    }
+
+    private func makeApplicationBundle(at applicationURL: URL) throws {
+        let contentsURL = applicationURL.appending(
+            path: "Contents",
+            directoryHint: .isDirectory
+        )
+        let executableDirectoryURL = contentsURL.appending(
+            path: "MacOS",
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: executableDirectoryURL,
+            withIntermediateDirectories: true
+        )
+
+        let info: [String: Any] = [
+            "CFBundleExecutable": "FixtureApp",
+            "CFBundleIdentifier": "dev.finallyexplorer.ui-fixture",
+            "CFBundleName": "Fixture App",
+            "CFBundlePackageType": "APPL",
+            "CFBundleVersion": "1",
+        ]
+        let infoData = try PropertyListSerialization.data(
+            fromPropertyList: info,
+            format: .xml,
+            options: 0
+        )
+        try infoData.write(to: contentsURL.appending(path: "Info.plist"))
+        let executableURL = executableDirectoryURL.appending(path: "FixtureApp")
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(
+            to: executableURL
+        )
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: executableURL.path(percentEncoded: false)
+        )
     }
 
     private func destinationContents() -> [String] {

@@ -46,6 +46,7 @@ private func exerciseWorkspaceGridInARealWindow() async {
     let contentView = ContentView(
         workspace: workspace,
         fileOperations: FileOperationCoordinator(),
+        fileOpenApplications: FileOpenApplicationCoordinator(),
         terminalApplications: TerminalApplicationCoordinator(
             workspace: PreviewLayoutTerminalWorkspace()
         )
@@ -149,6 +150,7 @@ private func exerciseGridSelectionInARealWindow() async {
     let contentView = ContentView(
         workspace: workspace,
         fileOperations: FileOperationCoordinator(),
+        fileOpenApplications: FileOpenApplicationCoordinator(),
         terminalApplications: TerminalApplicationCoordinator(
             workspace: PreviewLayoutTerminalWorkspace()
         )

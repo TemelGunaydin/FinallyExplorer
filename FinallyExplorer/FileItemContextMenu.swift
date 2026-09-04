@@ -7,6 +7,7 @@ import SwiftUI
 
 struct FileItemContextMenu: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(FileOpenApplicationCoordinator.self) private var fileOpenApplications
     @Environment(NearbyTransferCoordinator.self) private var nearbyTransfers
     @Environment(TerminalApplicationCoordinator.self) private var terminalApplications
     @Environment(\.explorerTheme) private var theme
@@ -29,7 +30,7 @@ struct FileItemContextMenu: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
 
-                        Text(item.isDirectory ? "Folder" : "File")
+                        Text(itemKindTitle)
                             .font(.caption)
                             .foregroundStyle(theme.textSecondary)
                     }
@@ -60,6 +61,16 @@ struct FileItemContextMenu: View {
                 ) {
                     perform {
                         fileOperations.copy([item.url])
+                    }
+                }
+
+                if item.isDirectory == false {
+                    Divider()
+                        .overlay(theme.divider)
+                        .padding(.vertical, 4)
+
+                    OpenWithApplicationSection(fileURL: item.url) { application in
+                        openFile(in: application)
                     }
                 }
 
@@ -180,15 +191,40 @@ struct FileItemContextMenu: View {
                     .overlay(theme.divider)
                     .padding(.vertical, 4)
 
-                ExplorerContextMenuActionButton(
-                    title: "Move to Trash",
-                    systemImage: "trash",
-                    shortcut: "⌘⌫",
-                    isEnabled: fileOperations.isPerforming == false,
-                    isDestructive: true
-                ) {
-                    perform {
-                        fileOperations.requestTrashConfirmation(for: [item.url])
+                switch fileOperations.applicationUninstallAvailability(for: item) {
+                case .available:
+                    ExplorerContextMenuActionButton(
+                        title: "Uninstall Application",
+                        systemImage: "trash",
+                        isEnabled: fileOperations.isPerforming == false,
+                        isDestructive: true
+                    ) {
+                        perform {
+                            fileOperations.requestApplicationUninstallConfirmation(
+                                for: item.url
+                            )
+                        }
+                    }
+
+                case .unavailable:
+                    ExplorerContextMenuActionButton(
+                        title: "Uninstall Unavailable",
+                        systemImage: "lock",
+                        isEnabled: false,
+                        isDestructive: true
+                    ) {}
+
+                case .notApplicable:
+                    ExplorerContextMenuActionButton(
+                        title: "Move to Trash",
+                        systemImage: "trash",
+                        shortcut: "⌘⌫",
+                        isEnabled: fileOperations.isPerforming == false,
+                        isDestructive: true
+                    ) {
+                        perform {
+                            fileOperations.requestTrashConfirmation(for: [item.url])
+                        }
                     }
                 }
             }
@@ -203,10 +239,37 @@ struct FileItemContextMenu: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Actions for \(item.name)")
         .accessibilityIdentifier("file-item-context-menu")
+        .task(id: item.url) {
+            refreshOpenWithApplications()
+        }
+    }
+
+    private var itemKindTitle: String {
+        if item.isApplicationBundle {
+            "Application"
+        } else if item.isDirectory {
+            "Folder"
+        } else {
+            "File"
+        }
     }
 
     private func perform(_ action: () -> Void) {
         onDismiss()
         action()
+    }
+
+    private func refreshOpenWithApplications() {
+        guard item.isDirectory == false else { return }
+        fileOpenApplications.refreshApplications(for: item.url)
+    }
+
+    private func openFile(in application: FileOpenApplication) {
+        onDismiss()
+
+        Task { @MainActor in
+            await Task.yield()
+            fileOpenApplications.open(item.url, in: application)
+        }
     }
 }

@@ -15,6 +15,7 @@ struct FinallyExplorerApp: App {
 
     @State private var workspace: WorkspaceModel
     @State private var fileOperations: FileOperationCoordinator
+    @State private var fileOpenApplications: FileOpenApplicationCoordinator
     @State private var terminalApplications: TerminalApplicationCoordinator
     @State private var nearbyTransfers: NearbyTransferCoordinator
     @State private var sidebar: SidebarModel
@@ -26,11 +27,20 @@ struct FinallyExplorerApp: App {
 
     init(launchConfiguration: ExplorerLaunchConfiguration) {
         self.launchConfiguration = launchConfiguration
+        let applicationUninstallPolicy = Self.applicationUninstallPolicy(
+            for: launchConfiguration
+        )
         _workspace = State(
             initialValue: WorkspaceModel(initialPlace: launchConfiguration.initialPlace)
         )
         _fileOperations = State(
             initialValue: Self.fileOperationCoordinator(
+                for: launchConfiguration,
+                applicationUninstallPolicy: applicationUninstallPolicy
+            )
+        )
+        _fileOpenApplications = State(
+            initialValue: Self.fileOpenApplicationCoordinator(
                 for: launchConfiguration
             )
         )
@@ -67,6 +77,7 @@ struct FinallyExplorerApp: App {
             ContentView(
                 workspace: workspace,
                 fileOperations: fileOperations,
+                fileOpenApplications: fileOpenApplications,
                 terminalApplications: terminalApplications,
                 nearbyTransfers: nearbyTransfers,
                 sidebar: sidebar,
@@ -93,6 +104,29 @@ struct FinallyExplorerApp: App {
         return UserDefaultsSidebarFavoriteStore(defaults: defaults)
     }
 
+    private static func fileOpenApplicationCoordinator(
+        for launchConfiguration: ExplorerLaunchConfiguration
+    ) -> FileOpenApplicationCoordinator {
+        guard launchConfiguration.isUITesting else {
+            return FileOpenApplicationCoordinator()
+        }
+
+        return FileOpenApplicationCoordinator(
+            applicationLoader: { _ in
+                [
+                    FileOpenApplication(
+                        name: "Fixture Viewer",
+                        applicationURL: URL(
+                            filePath: "/Applications/Fixture Viewer.app",
+                            directoryHint: .isDirectory
+                        )
+                    )
+                ]
+            },
+            fileOpener: { _, _ in }
+        )
+    }
+
     private static func sidebarVisibilityStore(
         for launchConfiguration: ExplorerLaunchConfiguration
     ) -> (any SidebarVisibilityStoring)? {
@@ -105,15 +139,31 @@ struct FinallyExplorerApp: App {
     }
 
     private static func fileOperationCoordinator(
-        for launchConfiguration: ExplorerLaunchConfiguration
+        for launchConfiguration: ExplorerLaunchConfiguration,
+        applicationUninstallPolicy: ApplicationUninstallPolicy
     ) -> FileOperationCoordinator {
         guard launchConfiguration.isUITesting else {
-            return FileOperationCoordinator()
+            return FileOperationCoordinator(
+                applicationUninstallPolicy: applicationUninstallPolicy
+            )
         }
 
-        return FileOperationCoordinator(noticeDelay: {
-            try await Task.sleep(for: .seconds(8))
-        })
+        return FileOperationCoordinator(
+            noticeDelay: {
+                try await Task.sleep(for: .seconds(8))
+            },
+            applicationUninstallPolicy: applicationUninstallPolicy
+        )
+    }
+
+    private static func applicationUninstallPolicy(
+        for launchConfiguration: ExplorerLaunchConfiguration
+    ) -> ApplicationUninstallPolicy {
+        .live(
+            additionalApplicationDirectoryURLs: launchConfiguration.fixtureRoot.map {
+                [$0]
+            } ?? []
+        )
     }
 
     private static func mountedVolumeMonitor(

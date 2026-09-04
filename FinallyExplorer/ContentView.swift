@@ -17,6 +17,7 @@ struct ContentView: View {
 
     @State private var workspace = WorkspaceModel()
     @State private var fileOperations = FileOperationCoordinator()
+    @State private var fileOpenApplications = FileOpenApplicationCoordinator()
     @State private var terminalApplications = TerminalApplicationCoordinator()
     @State private var nearbyTransfers = NearbyTransferCoordinator()
     @State private var sidebar = SidebarModel()
@@ -39,6 +40,7 @@ struct ContentView: View {
     init(
         workspace: WorkspaceModel,
         fileOperations: FileOperationCoordinator,
+        fileOpenApplications: FileOpenApplicationCoordinator,
         terminalApplications: TerminalApplicationCoordinator,
         nearbyTransfers: NearbyTransferCoordinator? = nil,
         sidebar: SidebarModel? = nil,
@@ -52,6 +54,7 @@ struct ContentView: View {
         self.globalSearchRootURL = globalSearchRootURL
         _workspace = State(initialValue: workspace)
         _fileOperations = State(initialValue: fileOperations)
+        _fileOpenApplications = State(initialValue: fileOpenApplications)
         _terminalApplications = State(initialValue: terminalApplications)
         if let nearbyTransfers {
             _nearbyTransfers = State(initialValue: nearbyTransfers)
@@ -119,18 +122,38 @@ struct ContentView: View {
     }
 
     private var trashConfirmationTitle: String {
-        fileOperations.trashConfirmationURLs.count == 1
+        if isApplicationUninstallConfirmation,
+           let applicationURL = fileOperations.trashConfirmationURLs.first {
+            return "Uninstall \(applicationDisplayName(for: applicationURL))?"
+        }
+
+        return fileOperations.trashConfirmationURLs.count == 1
             ? "Move to Trash?"
             : "Move \(fileOperations.trashConfirmationURLs.count) Items to Trash?"
     }
 
     private var trashConfirmationMessage: String {
+        if isApplicationUninstallConfirmation,
+           let applicationURL = fileOperations.trashConfirmationURLs.first {
+            return "“\(applicationURL.lastPathComponent)” will be moved to Trash. "
+                + "Its documents and settings will remain on this Mac."
+        }
+
         if let onlyURL = fileOperations.trashConfirmationURLs.first,
            fileOperations.trashConfirmationURLs.count == 1 {
-            "“\(onlyURL.lastPathComponent)” will be moved to Trash."
+            return "“\(onlyURL.lastPathComponent)” will be moved to Trash."
         } else {
-            "The selected items will be moved to Trash."
+            return "The selected items will be moved to Trash."
         }
+    }
+
+    private var trashConfirmationButtonTitle: String {
+        isApplicationUninstallConfirmation ? "Uninstall" : "Move to Trash"
+    }
+
+    private var isApplicationUninstallConfirmation: Bool {
+        fileOperations.trashConfirmationKind == .uninstallApplication
+            && fileOperations.trashConfirmationURLs.count == 1
     }
 
     private var fileCommandContext: FileCommandContext? {
@@ -274,6 +297,7 @@ struct ContentView: View {
         }
         .environment(\.explorerTheme, theme)
         .environment(fileOperations)
+        .fileOpenApplicationPresentation(coordinator: fileOpenApplications)
         .environment(terminalApplications)
         .environment(nearbyTransfers)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
@@ -321,7 +345,7 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {
                 fileOperations.cancelTrashConfirmation()
             }
-            Button("Move to Trash", role: .destructive) {
+            Button(trashConfirmationButtonTitle, role: .destructive) {
                 fileOperations.confirmTrash()
             }
         } message: {
@@ -381,6 +405,10 @@ struct ContentView: View {
             .environment(\.explorerTheme, theme)
             .interactiveDismissDisabled()
         }
+    }
+
+    private func applicationDisplayName(for url: URL) -> String {
+        url.deletingPathExtension().lastPathComponent
     }
 
     private func toggleSidebar() {
@@ -1279,7 +1307,7 @@ private struct DestinationView: View {
     private func requestTrashSelection() {
         let selectedURLs = pane.selectedCommandURLs
         guard selectedURLs.isEmpty == false,
-              fileOperations.isPerforming == false else {
+              fileOperations.canRequestTrashConfirmation(for: selectedURLs) else {
             return
         }
 
@@ -1609,6 +1637,12 @@ private struct TrashItemButton: View {
     let item: FileItem
 
     var body: some View {
+        let uninstallAvailability = fileOperations
+            .applicationUninstallAvailability(for: item)
+        let actionTitle = uninstallAvailability == .available
+            ? "Uninstall \(item.name)"
+            : "Move \(item.name) to Trash"
+
         Button {
             fileOperations.requestTrashConfirmation(for: [item.url])
         } label: {
@@ -1619,9 +1653,12 @@ private struct TrashItemButton: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.textSecondary)
-        .disabled(fileOperations.isPerforming)
-        .help("Move \(item.name) to Trash")
-        .accessibilityLabel("Move \(item.name) to Trash")
+        .disabled(
+            fileOperations.isPerforming
+                || uninstallAvailability == .unavailable
+        )
+        .help(actionTitle)
+        .accessibilityLabel(actionTitle)
         .accessibilityIdentifier("trash-item-\(item.name)")
     }
 }
