@@ -1179,6 +1179,32 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testSmartSearchWaitsForSubmitAndCanReturnToNormalSearch() throws {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        let field = app.descendants(matching: .any)["global-search-text-field"]
+        let smartButton = app.buttons["global-search-smart-toggle"]
+        XCTAssertTrue(waitForEnabled(field, timeout: 10))
+        XCTAssertTrue(smartButton.waitForExistence(timeout: 5))
+        smartButton.click()
+        let prompt = app.descendants(matching: .any)["smart-search-prompt"]
+        XCTAssertTrue(prompt.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText("Find the accounting report from 2 days ago")
+        XCTAssertTrue(prompt.exists, "Typing must not start model inference.")
+        XCTAssertTrue(app.buttons["smart-search-submit-button"].isEnabled)
+        XCTAssertFalse(app.descendants(matching: .any)["smart-search-filters"].exists)
+        app.buttons["smart-search-normal-button"].click()
+        field.click()
+        field.typeKey("a", modifierFlags: .command)
+        field.typeText("Global Needle")
+        XCTAssertTrue(app.staticTexts["Global Needle Alpha.txt"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Global Needle Beta.txt"].waitForExistence(timeout: 10))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Normal search preserved after Smart Search"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testGlobalSearchSupportsArrowSelectionAndReturnReveal() throws {
         XCTAssertTrue(
             rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)

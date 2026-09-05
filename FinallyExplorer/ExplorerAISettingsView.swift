@@ -9,10 +9,18 @@ struct ExplorerAISettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Label("AI & Smart Rename", systemImage: "sparkles")
+            Label("On-Device AI", systemImage: "sparkles")
                 .font(.system(.title2, design: .rounded).weight(.semibold))
 
             VStack(alignment: .leading, spacing: 14) {
+                Toggle("Enable Smart Search", isOn: $settings.isSmartSearchEnabled)
+                    .accessibilityIdentifier("ai-settings-smart-search-toggle")
+                Text("Describe a file in the top search bar, choose Smart, then press Return. Apple Intelligence interprets your words; Spotlight finds matching indexed files. No file contents are sent to the model for search.")
+                    .font(.callout)
+                    .foregroundStyle(theme.textSecondary)
+
+                Divider().overlay(theme.divider)
+
                 Toggle("Enable Smart Rename", isOn: $settings.isSmartRenameEnabled)
                     .accessibilityIdentifier("ai-settings-enabled-toggle")
                 Text("Suggest a name when you ask, then review it before renaming. Your files stay on this Mac.")
@@ -87,8 +95,8 @@ struct ExplorerAISettingsView: View {
             return "Checking model availability…"
         }
         return availability == .available
-            ? "Ready for on-device suggestions."
-            : SmartRenameServiceError.unavailable(availability).localizedDescription
+            ? "Ready for Smart Search and name suggestions."
+            : SmartSearchError.unavailable(availability).localizedDescription
     }
 
     private var statusSymbol: String {

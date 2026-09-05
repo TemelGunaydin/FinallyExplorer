@@ -281,6 +281,7 @@ struct ContentView: View {
             ToolbarItem(placement: .principal) {
                 GlobalSearchToolbar(
                     model: globalSearch,
+                    aiSettings: aiSettings,
                     rootURL: globalSearchRootURL,
                     onReveal: revealGlobalSearchResult
                 )

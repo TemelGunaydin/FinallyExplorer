@@ -11,6 +11,8 @@ nonisolated struct GlobalSearchRequest: Hashable, Sendable {
     let query: String
     let scope: ExplorerSearchScope
     let contentMode: FFFContentSearchMode
+    var usesSmartSearch = false
+    var smartSearchSubmission = 0
 }
 
 nonisolated enum GlobalSearchIndexState: Equatable, Sendable {
@@ -28,9 +30,22 @@ nonisolated enum GlobalSearchSelectionMovement: Sendable {
 @MainActor
 @Observable
 final class GlobalSearchModel {
-    var query = ""
+    var query = "" {
+        didSet {
+            if usesSmartSearch, query != oldValue { invalidateSmartSubmission() }
+        }
+    }
     var scope: ExplorerSearchScope = .names
     var contentMode: FFFContentSearchMode = .plain
+    var usesSmartSearch = false {
+        didSet {
+            if usesSmartSearch != oldValue { invalidateSmartSubmission() }
+        }
+    }
+    private(set) var isSmartSearchAllowed = true
+    private(set) var isInterpretingSearch = false
+    private(set) var smartSearchPlan: SmartSearchPlan?
+    private(set) var smartSearchSubmission = 0
 
     private(set) var results: [ExplorerSearchResult] = []
     private(set) var selectedResultID: ExplorerSearchResult.ID?
@@ -41,6 +56,9 @@ final class GlobalSearchModel {
     private(set) var message: ExplorerSearchMessage?
 
     @ObservationIgnored private let service: any GlobalSearchServicing
+    @ObservationIgnored private let smartInterpreter: any SmartSearchInterpreting
+    @ObservationIgnored private let smartService: any SmartSearchExecuting
+    @ObservationIgnored private var submittedSmartQuery: String?
     @ObservationIgnored private let debounce: @Sendable () async throws -> Void
     @ObservationIgnored private var lifecycleGeneration = 0
     @ObservationIgnored private var requestGeneration = 0
@@ -53,11 +71,15 @@ final class GlobalSearchModel {
     init(
         service: (any GlobalSearchServicing)? = nil,
         initialRootURL: URL? = nil,
+        smartInterpreter: any SmartSearchInterpreting = FoundationModelsSmartSearchService(),
+        smartService: any SmartSearchExecuting = SpotlightSmartSearchService(),
         debounce: @escaping @Sendable () async throws -> Void = {
             try await Task.sleep(for: .milliseconds(150))
         }
     ) {
         self.service = service ?? HybridGlobalSearchService()
+        self.smartInterpreter = smartInterpreter
+        self.smartService = smartService
         self.debounce = debounce
         if let initialRootURL {
             indexState = .ready(
@@ -78,6 +100,34 @@ final class GlobalSearchModel {
 
     var hasQuery: Bool {
         normalizedQuery.isEmpty == false
+    }
+
+    var isAwaitingSmartSubmission: Bool {
+        usesSmartSearch && submittedSmartQuery != normalizedQuery
+    }
+
+    var highlightQuery: String {
+        usesSmartSearch ? smartSearchPlan?.highlightQuery ?? "" : query
+    }
+
+    func setSmartSearchAllowed(_ allowed: Bool) {
+        isSmartSearchAllowed = allowed
+        if allowed == false { usesSmartSearch = false }
+    }
+
+    func submitSmartSearch() {
+        guard usesSmartSearch, isSmartSearchAllowed, hasQuery else { return }
+        requestGeneration += 1
+        resetVisibleState()
+        submittedSmartQuery = normalizedQuery
+        smartSearchSubmission += 1
+    }
+
+    private func invalidateSmartSubmission() {
+        requestGeneration += 1
+        submittedSmartQuery = nil
+        cancelWarmup()
+        resetVisibleState()
     }
 
     func isIndexReady(in rootURL: URL) -> Bool {
@@ -112,7 +162,9 @@ final class GlobalSearchModel {
             rootURL: rootURL,
             query: query,
             scope: scope,
-            contentMode: contentMode
+            contentMode: contentMode,
+            usesSmartSearch: usesSmartSearch,
+            smartSearchSubmission: smartSearchSubmission
         )
     }
 
@@ -191,6 +243,21 @@ final class GlobalSearchModel {
             return
         }
 
+        if usesSmartSearch {
+            guard isSmartSearchAllowed, submittedSmartQuery == requestedQuery else {
+                resetVisibleState()
+                return
+            }
+            await runSmartSearch(
+                in: rootURL,
+                query: requestedQuery,
+                scope: requestedScope,
+                contentMode: requestedContentMode,
+                generation: generation
+            )
+            return
+        }
+
         isSearching = true
         isPreparingResults = false
         results = []
@@ -253,6 +320,44 @@ final class GlobalSearchModel {
         }
     }
 
+    private func runSmartSearch(
+        in rootURL: URL,
+        query: String,
+        scope: ExplorerSearchScope,
+        contentMode: FFFContentSearchMode,
+        generation: Int
+    ) async {
+        resetVisibleState()
+        isSearching = true
+        isInterpretingSearch = true
+        do {
+            let plan = try await smartInterpreter.interpret(query)
+            try Task.checkCancellation()
+            guard isCurrent(generation: generation, query: query, scope: scope,
+                            contentMode: contentMode, usesSmartSearch: true) else { return }
+            smartSearchPlan = plan
+            isInterpretingSearch = false
+
+            let page = try await smartService.search(rootURL: rootURL, plan: plan)
+            try Task.checkCancellation()
+            guard isCurrent(generation: generation, query: query, scope: scope,
+                            contentMode: contentMode, usesSmartSearch: true) else { return }
+            results = page.results
+            selectedResultID = page.results.first?.id
+            message = page.message
+            isSearching = false
+        } catch is CancellationError {
+            guard generation == requestGeneration else { return }
+            isSearching = false
+            isInterpretingSearch = false
+        } catch {
+            guard generation == requestGeneration, Task.isCancelled == false else { return }
+            message = .error(error.localizedDescription)
+            isSearching = false
+            isInterpretingSearch = false
+        }
+    }
+
     func select(_ result: ExplorerSearchResult) {
         guard results.contains(where: { $0.id == result.id }) else { return }
         selectedResultID = result.id
@@ -288,12 +393,13 @@ final class GlobalSearchModel {
 
     func clear() {
         requestGeneration += 1
+        submittedSmartQuery = nil
         query = ""
         resetVisibleState()
     }
 
     func rebuildContentIndex(in rootURL: URL) {
-        guard isIndexReady(in: rootURL), isRebuildingContentIndex == false else {
+        guard usesSmartSearch == false, isIndexReady(in: rootURL), isRebuildingContentIndex == false else {
             return
         }
 
@@ -358,6 +464,7 @@ final class GlobalSearchModel {
         rebuildTask?.cancel()
         rebuildTask = nil
         isRebuildingContentIndex = false
+        submittedSmartQuery = nil
         resetVisibleState()
         indexState = .idle
         await service.shutdown()
@@ -416,12 +523,14 @@ final class GlobalSearchModel {
         generation: Int,
         query: String,
         scope: ExplorerSearchScope,
-        contentMode: FFFContentSearchMode
+        contentMode: FFFContentSearchMode,
+        usesSmartSearch: Bool = false
     ) -> Bool {
         generation == requestGeneration
             && normalizedQuery == query
             && self.scope == scope
             && self.contentMode == contentMode
+            && self.usesSmartSearch == usesSmartSearch
     }
 
     private func resetVisibleState() {
@@ -430,5 +539,7 @@ final class GlobalSearchModel {
         isSearching = false
         isPreparingResults = false
         message = nil
+        smartSearchPlan = nil
+        isInterpretingSearch = false
     }
 }

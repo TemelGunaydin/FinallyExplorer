@@ -4,6 +4,9 @@ import Observation
 @MainActor
 @Observable
 final class ExplorerAISettings {
+    var isSmartSearchEnabled: Bool {
+        didSet { defaults.set(isSmartSearchEnabled, forKey: Self.searchKey) }
+    }
     var isSmartRenameEnabled: Bool {
         didSet { defaults.set(isSmartRenameEnabled, forKey: Self.enabledKey) }
     }
@@ -19,6 +22,7 @@ final class ExplorerAISettings {
 
     private static let enabledKey = "smartRename.enabled"
     private static let contentsKey = "smartRename.useFileContentsByDefault"
+    private static let searchKey = "smartSearch.enabled"
 
     init(
         defaults: UserDefaults = .standard,
@@ -26,6 +30,7 @@ final class ExplorerAISettings {
     ) {
         self.defaults = defaults
         self.service = service
+        isSmartSearchEnabled = defaults.object(forKey: Self.searchKey) as? Bool ?? true
         isSmartRenameEnabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
         usesFileContentsByDefault = defaults.object(forKey: Self.contentsKey) as? Bool ?? true
     }

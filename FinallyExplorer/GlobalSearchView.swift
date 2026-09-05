@@ -9,6 +9,7 @@ struct GlobalSearchToolbar: View {
     @Environment(\.explorerTheme) private var theme
 
     let model: GlobalSearchModel
+    let aiSettings: ExplorerAISettings
     let rootURL: URL
     let onReveal: (ExplorerSearchResult) -> Void
 
@@ -59,13 +60,28 @@ struct GlobalSearchToolbar: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 } else if model.query.isEmpty {
-                    Text("Search this Mac")
+                    Text(model.usesSmartSearch ? "Describe a file…" : "Search this Mac")
                         .foregroundStyle(theme.chromeText.opacity(0.58))
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button("Smart", systemImage: "sparkles", action: toggleSmartSearch)
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(model.usesSmartSearch ? theme.accent : theme.chromeText.opacity(0.80))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(model.usesSmartSearch ? theme.accent.opacity(0.18) : .clear, in: .capsule)
+                .disabled(isIndexReady == false || aiSettings.isSmartSearchEnabled == false)
+                .accessibilityLabel(model.usesSmartSearch ? "Use Normal Search" : "Use Smart Search")
+                .accessibilityValue(model.usesSmartSearch ? "On" : "Off")
+                .accessibilityIdentifier("global-search-smart-toggle")
+                .help(aiSettings.isSmartSearchEnabled
+                      ? "Describe a file, date or type, then press Return. Uses on-device Apple Intelligence."
+                      : "Enable Smart Search in AI Settings.")
 
             if isIndexing {
                 ProgressView()
@@ -138,6 +154,12 @@ struct GlobalSearchToolbar: View {
         .onChange(of: model.hasQuery) { _, hasQuery in
             isResultsPresented = hasQuery && model.isIndexReady(in: rootURL)
         }
+        .onChange(of: aiSettings.isSmartSearchEnabled, initial: true) { _, enabled in
+            model.setSmartSearchAllowed(enabled)
+        }
+        .onChange(of: model.usesSmartSearch) {
+            isResultsPresented = (model.hasQuery || model.usesSmartSearch) && model.isIndexReady(in: rootURL)
+        }
         .onChange(of: isIndexReady) { _, isReady in
             if isReady {
                 isResultsPresented = model.hasQuery
@@ -149,8 +171,18 @@ struct GlobalSearchToolbar: View {
     }
 
     private func activateSelection() {
+        guard model.isSearching == false else { return }
+        if model.usesSmartSearch, model.smartSearchPlan == nil || model.selectedResult == nil {
+            model.submitSmartSearch()
+            return
+        }
         guard let result = model.selectedResult else { return }
         reveal(result)
+    }
+
+    private func toggleSmartSearch() {
+        model.usesSmartSearch.toggle()
+        isSearchFocused = true
     }
 
     private var searchFieldAccessibilityValue: String {
@@ -169,7 +201,9 @@ struct GlobalSearchToolbar: View {
         } else if let message = model.indexFailureMessage(in: rootURL) {
             "Search preparation failed: \(message) Use the retry button to try again."
         } else {
-            "Searches file names and contents on this Mac."
+            model.usesSmartSearch
+                ? "Describe a file and press Return to interpret and search on this Mac."
+                : "Searches file names and contents on this Mac."
         }
     }
 
@@ -198,15 +232,19 @@ private struct GlobalSearchResultsPopover: View {
         @Bindable var model = model
 
         VStack(spacing: 0) {
-            GlobalSearchScopeBar(
-                scope: $model.scope,
-                contentMode: $model.contentMode,
-                resultCount: model.results.count,
-                isRebuildingContentIndex: model.isRebuildingContentIndex,
-                onRebuildContentIndex: {
-                    model.rebuildContentIndex(in: rootURL)
-                }
-            )
+            if model.usesSmartSearch {
+                SmartSearchControls(model: model)
+            } else {
+                GlobalSearchScopeBar(
+                    scope: $model.scope,
+                    contentMode: $model.contentMode,
+                    resultCount: model.results.count,
+                    isRebuildingContentIndex: model.isRebuildingContentIndex,
+                    onRebuildContentIndex: {
+                        model.rebuildContentIndex(in: rootURL)
+                    }
+                )
+            }
 
             Divider()
                 .overlay(theme.divider)
@@ -225,11 +263,17 @@ private struct GlobalSearchResultsPopover: View {
 
     @ViewBuilder
     private var resultsBody: some View {
-        if (model.isSearching || model.isPreparingResults), model.results.isEmpty {
+        if model.isAwaitingSmartSubmission {
+            ContentUnavailableView(
+                "Find Files in Your Own Words",
+                systemImage: "sparkles",
+                description: Text("Try “Find the accounting report from 2 days ago” or “PDFs in Downloads from last week”. Press Return or Search to begin.")
+            )
+            .accessibilityIdentifier("smart-search-prompt")
+        } else if (model.isSearching || model.isPreparingResults), model.results.isEmpty {
             ProgressView(
-                model.isPreparingResults
-                    ? preparationMessage
-                    : "Searching this Mac…"
+                model.isInterpretingSearch ? "Understanding your search on this Mac…"
+                    : model.isPreparingResults ? preparationMessage : "Searching this Mac…"
             )
             .tint(theme.accent)
             .foregroundStyle(theme.textPrimary)
@@ -242,14 +286,22 @@ private struct GlobalSearchResultsPopover: View {
                 description: Text(message.text)
             )
         } else if model.results.isEmpty {
-            ContentUnavailableView.search(text: model.query)
+            if model.usesSmartSearch {
+                ContentUnavailableView(
+                    "No Matching Indexed Files",
+                    systemImage: "doc.text.magnifyingglass",
+                    description: Text("Check the interpreted filters above or edit your description. Smart Search can only find files and contents indexed by Spotlight.")
+                )
+            } else {
+                ContentUnavailableView.search(text: model.query)
+            }
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         ForEach(model.results) { result in
                             GlobalSearchResultRow(
-                                query: model.query,
+                                query: model.highlightQuery,
                                 result: result,
                                 isSelected: model.selectedResultID == result.id,
                                 onSelect: { model.select(result) },

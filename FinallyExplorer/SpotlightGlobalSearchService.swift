@@ -123,6 +123,18 @@ nonisolated struct SpotlightGlobalSearchService:
         )
     }
 
+    func search(
+        rootURL: URL,
+        plan: SmartSearchPlan,
+        maximumCandidateCount: Int = 800
+    ) async throws -> Page {
+        try await QuerySession.run(
+            rootURL: rootURL,
+            plan: plan,
+            maximumCandidateCount: maximumCandidateCount
+        )
+    }
+
     private actor QuerySession {
         /// `NSMetadataQuery` is not `Sendable`, but after initialization its
         /// lifecycle and result APIs run only on `resultQueue`. The unchecked
@@ -161,7 +173,8 @@ nonisolated struct SpotlightGlobalSearchService:
         private init(
             rootURL: URL,
             queryText: String,
-            maximumCandidateCount: Int
+            maximumCandidateCount: Int,
+            plan: SmartSearchPlan? = nil
         ) {
             self.rootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
             self.maximumCandidateCount = max(1, maximumCandidateCount)
@@ -171,9 +184,11 @@ nonisolated struct SpotlightGlobalSearchService:
             resultQueue.qualityOfService = .userInitiated
 
             let metadataQuery = queryHandle.value
-            metadataQuery.predicate = SpotlightNamePredicateBuilder.predicate(
-                for: queryText
-            )
+            if let plan {
+                metadataQuery.predicate = SmartSearchPredicateBuilder.predicate(for: plan)
+            } else {
+                metadataQuery.predicate = SpotlightNamePredicateBuilder.predicate(for: queryText)
+            }
             metadataQuery.searchScopes = Self.searchScopes(for: self.rootURL)
             metadataQuery.sortDescriptors = [
                 NSSortDescriptor(
@@ -202,6 +217,23 @@ nonisolated struct SpotlightGlobalSearchService:
                 rootURL: rootURL,
                 queryText: normalizedQuery,
                 maximumCandidateCount: maximumCandidateCount
+            )
+            return try await session.collect()
+        }
+
+        static func run(
+            rootURL: URL,
+            plan: SmartSearchPlan,
+            maximumCandidateCount: Int
+        ) async throws -> Page {
+            try Task.checkCancellation()
+            // Metadata conditions are applied by Spotlight BEFORE the candidate
+            // limit, so a date match cannot be lost behind unrelated name hits.
+            let session = QuerySession(
+                rootURL: rootURL,
+                queryText: "",
+                maximumCandidateCount: maximumCandidateCount,
+                plan: plan
             )
             return try await session.collect()
         }
@@ -387,7 +419,9 @@ nonisolated struct SpotlightGlobalSearchService:
             _ candidateURL: URL,
             rootURL: URL
         ) -> Bool {
-            let rootPath = rootURL.standardizedFileURL.path(percentEncoded: false)
+            let rawRootPath = rootURL.standardizedFileURL.path(percentEncoded: false)
+            let rootPath = rawRootPath != "/" && rawRootPath.hasSuffix("/")
+                ? String(rawRootPath.dropLast()) : rawRootPath
             guard rootPath != "/" else { return true }
 
             let candidatePath = candidateURL.standardizedFileURL.path(

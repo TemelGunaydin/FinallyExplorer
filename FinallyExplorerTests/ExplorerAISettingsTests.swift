@@ -12,10 +12,26 @@ struct ExplorerAISettingsTests {
         let settings = ExplorerAISettings(defaults: defaults)
         settings.isSmartRenameEnabled = false
         settings.usesFileContentsByDefault = false
+        settings.isSmartSearchEnabled = false
 
         let reopened = ExplorerAISettings(defaults: defaults)
         #expect(reopened.isSmartRenameEnabled == false)
         #expect(reopened.usesFileContentsByDefault == false)
+        #expect(reopened.isSmartSearchEnabled == false)
+    }
+
+    @Test("Smart Search and Smart Rename have independent switches")
+    func independentFeatures() throws {
+        let suite = "FinallyExplorer.AISettingsTests.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ExplorerAISettings(defaults: defaults)
+        #expect(settings.isSmartSearchEnabled)
+        settings.isSmartRenameEnabled = false
+        #expect(settings.isSmartSearchEnabled)
+        settings.isSmartRenameEnabled = true
+        settings.isSmartSearchEnabled = false
+        #expect(settings.isSmartRenameEnabled)
     }
 
     @Test("Availability refresh does not run a name generation")
