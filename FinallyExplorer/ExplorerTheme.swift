@@ -60,7 +60,7 @@ struct ExplorerTheme {
     static let navigationFont = Font.system(.body, design: .rounded).bold()
     static let sidebarNavigationFont = Font.system(
         size: 16,
-        weight: .bold,
+        weight: .semibold,
         design: .rounded
     )
     static let actionFont = Font.system(.callout, design: .rounded).bold()

@@ -74,6 +74,11 @@ nonisolated enum FileItemIconKind: Equatable, Sendable {
     }
 }
 
+nonisolated enum DeveloperFileIcon: Equatable, Hashable, Sendable {
+    case asset(name: String, needsContrastBackground: Bool = false)
+    case systemSymbol(name: String)
+}
+
 nonisolated enum FileItemIconResolver {
     private static let videoExtensions: Set<String> = [
         "3gp", "avi", "flv", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg",
@@ -88,7 +93,7 @@ nonisolated enum FileItemIconResolver {
         "exs", "fish", "go", "h", "hh", "hpp", "html", "java", "js", "jsx",
         "json", "kt", "kts", "lua", "m", "mm", "php", "pl", "py", "r", "rb",
         "rs", "scala", "scss", "sh", "sql", "svelte", "swift", "toml", "ts",
-        "tsx", "vue", "xml", "yaml", "yml", "zsh",
+        "tsx", "vue", "xml", "yaml", "yml", "zsh", "md", "markdown",
     ]
     private static let archiveExtensions: Set<String> = [
         "7z", "bz2", "cab", "gz", "rar", "tar", "tbz", "tbz2", "tgz",
@@ -115,6 +120,76 @@ nonisolated enum FileItemIconResolver {
     private static let databaseExtensions: Set<String> = [
         "db", "realm", "sqlite", "sqlite3",
     ]
+
+    private static let developerIcons: [String: DeveloperFileIcon] = [
+        "asm": .systemSymbol(name: "memorychip.fill"),
+        "bash": .asset(name: "DeviconBash"),
+        "c": .asset(name: "DeviconC"),
+        "cc": .asset(name: "DeviconCPlusPlus"),
+        "clj": .asset(name: "DeviconClojure"),
+        "cpp": .asset(name: "DeviconCPlusPlus"),
+        "cs": .asset(name: "DeviconCSharp"),
+        "css": .asset(name: "DeviconCSS3"),
+        "cxx": .asset(name: "DeviconCPlusPlus"),
+        "dart": .asset(name: "DeviconDart"),
+        "ex": .asset(name: "DeviconElixir"),
+        "exs": .asset(name: "DeviconElixir"),
+        "fish": .systemSymbol(name: "terminal.fill"),
+        "go": .asset(name: "DeviconGo"),
+        "h": .asset(name: "DeviconC"),
+        "hh": .asset(name: "DeviconCPlusPlus"),
+        "hpp": .asset(name: "DeviconCPlusPlus"),
+        "html": .asset(name: "DeviconHTML5"),
+        "java": .asset(name: "DeviconJava"),
+        "js": .asset(name: "DeviconJavaScript"),
+        "json": .asset(name: "DeviconJSON"),
+        "jsx": .asset(name: "DeviconJavaScript"),
+        "kt": .asset(name: "DeviconKotlin"),
+        "kts": .asset(name: "DeviconKotlin"),
+        "lua": .asset(name: "DeviconLua"),
+        "m": .asset(name: "DeviconObjectiveC"),
+        "markdown": .asset(
+            name: "DeviconMarkdown",
+            needsContrastBackground: true
+        ),
+        "md": .asset(
+            name: "DeviconMarkdown",
+            needsContrastBackground: true
+        ),
+        "mm": .asset(name: "DeviconObjectiveC"),
+        "php": .asset(name: "DeviconPHP"),
+        "pl": .asset(name: "DeviconPerl"),
+        "py": .asset(name: "DeviconPython"),
+        "r": .asset(name: "DeviconR"),
+        "rb": .asset(name: "DeviconRuby"),
+        "rs": .asset(name: "DeviconRust", needsContrastBackground: true),
+        "scala": .asset(name: "DeviconScala"),
+        "scss": .asset(name: "DeviconSass"),
+        "sh": .asset(name: "DeviconBash"),
+        "sql": .systemSymbol(name: "cylinder.fill"),
+        "svelte": .asset(name: "DeviconSvelte"),
+        "swift": .asset(name: "DeviconSwift"),
+        "toml": .systemSymbol(name: "list.bullet.rectangle.fill"),
+        "ts": .asset(name: "DeviconTypeScript"),
+        "tsx": .asset(name: "DeviconTypeScript"),
+        "vue": .asset(name: "DeviconVue"),
+        "xml": .asset(name: "DeviconXML"),
+        "yaml": .asset(name: "DeviconYAML"),
+        "yml": .asset(name: "DeviconYAML"),
+        "zsh": .asset(name: "DeviconZsh", needsContrastBackground: true),
+    ]
+
+    static func developerIcon(for item: FileItem) -> DeveloperFileIcon? {
+        guard item.isDirectory == false, item.isImage == false else { return nil }
+        return developerIcons[item.url.pathExtension.lowercased()]
+    }
+
+    static var developerAssetNames: Set<String> {
+        Set(developerIcons.values.compactMap { icon in
+            guard case let .asset(name, _) = icon else { return nil }
+            return name
+        })
+    }
 
     static func kind(for item: FileItem) -> FileItemIconKind {
         if item.isDirectory {
@@ -183,6 +258,10 @@ struct FileItemIconView: View {
             .interpolation(.high)
             .scaledToFit()
             .frame(width: 30, height: 30)
+        } else if let developerIcon = FileItemIconResolver.developerIcon(
+            for: item
+        ) {
+            developerIconView(developerIcon)
         } else if let customAssetName = kind.customAssetName {
             Image(customAssetName)
                 .resizable()
@@ -202,6 +281,35 @@ struct FileItemIconView: View {
                 )
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(iconColor)
+        }
+    }
+
+    @ViewBuilder
+    private func developerIconView(_ icon: DeveloperFileIcon) -> some View {
+        switch icon {
+        case let .asset(assetName, needsContrastBackground):
+            Image(assetName)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .padding(needsContrastBackground ? 3 : 1)
+                .frame(width: 29, height: 29)
+                .background {
+                    if needsContrastBackground {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(0.9))
+                    }
+                }
+        case let .systemSymbol(systemName):
+            Image(systemName: systemName)
+                .font(
+                    .system(
+                        size: ExplorerTheme.fileRowIconSize,
+                        weight: .medium
+                    )
+                )
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(theme.codeIcon)
         }
     }
 
