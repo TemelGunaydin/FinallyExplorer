@@ -176,7 +176,9 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: protectedColumnVisibility) {
             explorerSidebar
                 .background {
-                    SidebarSplitViewBehaviorInstaller()
+                    SidebarSplitViewBehaviorInstaller(
+                        isSidebarVisible: columnVisibility != .detailOnly
+                    )
                 }
                 .navigationSplitViewColumnWidth(
                     min: SidebarSplitViewBehaviorInstaller.minimumWidth,
@@ -500,6 +502,7 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        .accessibilityIdentifier("explorer-sidebar")
         .headerProminence(.increased)
         .scrollContentBackground(.hidden)
         .background(themeController.activeTheme.sidebarBackground)

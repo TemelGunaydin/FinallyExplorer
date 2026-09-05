@@ -357,6 +357,60 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(favoritesHeader.waitForExistence(timeout: 5))
     }
 
+    func testSidebarResizeStaysBoundedAfterDraggingAndToggling() throws {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        let sidebar = app.descendants(matching: .any)["explorer-sidebar"].firstMatch
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+
+        func dragSidebarDivider(by delta: CGFloat) throws {
+            let divider = try XCTUnwrap(
+                app.descendants(matching: .splitter).allElementsBoundByIndex
+                    .filter { $0.isHittable && $0.frame.height > $0.frame.width }
+                    .min { $0.frame.minX < $1.frame.minX }
+            )
+            let start = divider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.click(
+                forDuration: 0.2,
+                thenDragTo: start.withOffset(CGVector(dx: delta, dy: 0)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
+        }
+
+        func expectSidebarWidth(in range: ClosedRange<CGFloat>) {
+            let expectation = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    sidebar.exists && range.contains(sidebar.frame.width)
+                },
+                object: sidebar
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed)
+        }
+
+        expectSidebarWidth(in: 209...281)
+        try dragSidebarDivider(by: 450)
+        expectSidebarWidth(in: 279...281)
+        try dragSidebarDivider(by: -450)
+        expectSidebarWidth(in: 209...211)
+
+        let toggle = app.buttons["window-sidebar-toggle"]
+        toggle.click()
+        XCTAssertTrue(app.staticTexts["FAVORITES"].waitForNonExistence(timeout: 5))
+        toggle.click()
+        XCTAssertTrue(app.staticTexts["FAVORITES"].waitForExistence(timeout: 5))
+        expectSidebarWidth(in: 209...281)
+
+        app.buttons["Split Right"].click()
+        XCTAssertTrue(waitForElementCount(rows(named: "Source Item.txt"), toEqual: 2, timeout: 5))
+        try dragSidebarDivider(by: 450)
+        expectSidebarWidth(in: 279...281)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Sidebar remains bounded with a split workspace"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testWindowUsesLargerCustomTrafficLightControls() {
         XCTAssertTrue(
             rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)

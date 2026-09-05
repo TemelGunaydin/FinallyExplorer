@@ -10,6 +10,17 @@ final class SidebarSplitViewAttachmentView: NSView {
     private let minimumThickness: CGFloat
     private let maximumThickness: CGFloat
     private var configurationTask: Task<Void, Never>?
+    private weak var constrainedSidebarView: NSView?
+    private var minimumWidthConstraint: NSLayoutConstraint?
+    private var maximumWidthConstraint: NSLayoutConstraint?
+
+    var isSidebarVisible = true {
+        didSet {
+            guard isSidebarVisible != oldValue else { return }
+            minimumWidthConstraint?.isActive = isSidebarVisible
+            scheduleConfiguration()
+        }
+    }
 
     init(minimumThickness: CGFloat, maximumThickness: CGFloat) {
         self.minimumThickness = minimumThickness
@@ -36,22 +47,110 @@ final class SidebarSplitViewAttachmentView: NSView {
         scheduleConfiguration()
     }
 
+    override func layout() {
+        super.layout()
+        scheduleConfiguration()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleConfiguration()
+    }
+
     func scheduleConfiguration() {
-        configurationTask?.cancel()
+        guard window != nil else {
+            detach()
+            return
+        }
+        // Layout can call this many times during a divider drag. Coalesce the
+        // work instead of continually canceling the task before it can run.
+        guard configurationTask == nil else { return }
         configurationTask = Task { @MainActor [weak self] in
             await Task.yield()
-            guard Task.isCancelled == false else { return }
-            self?.configureSidebarItemIfAvailable()
+            guard Task.isCancelled == false, let self else { return }
+            configurationTask = nil
+            guard window != nil else { return }
+            configureSidebarIfAvailable()
         }
     }
 
-    private func configureSidebarItemIfAvailable() {
-        guard let sidebarItem = enclosingSidebarItem else { return }
+    func detach() {
+        configurationTask?.cancel()
+        configurationTask = nil
+        removeWidthConstraints()
+    }
 
-        sidebarItem.minimumThickness = minimumThickness
-        sidebarItem.maximumThickness = maximumThickness
-        sidebarItem.canCollapse = false
-        sidebarItem.canCollapseFromWindowResize = false
+    private func configureSidebarIfAvailable() {
+        if let sidebarItem = enclosingSidebarItem {
+            // SwiftUI can reapply its split-item settings after initial setup.
+            // Only write changed values to avoid triggering a layout loop.
+            if sidebarItem.minimumThickness != minimumThickness {
+                sidebarItem.minimumThickness = minimumThickness
+            }
+            if sidebarItem.maximumThickness != maximumThickness {
+                sidebarItem.maximumThickness = maximumThickness
+            }
+            if sidebarItem.canCollapse { sidebarItem.canCollapse = false }
+            if sidebarItem.canCollapseFromWindowResize {
+                sidebarItem.canCollapseFromWindowResize = false
+            }
+        }
+
+        guard let (splitView, sidebarView) = enclosingSplitColumn else { return }
+        installWidthConstraints(on: sidebarView)
+
+        // Also repair an oversized width restored before the attachment existed.
+        guard isSidebarVisible, sidebarView.isHidden == false,
+              sidebarView.frame.width > 0,
+              let index = splitView.subviews.firstIndex(of: sidebarView) else { return }
+        let width = sidebarView.frame.width
+        let boundedWidth = min(max(width, minimumThickness), maximumThickness)
+        guard abs(width - boundedWidth) > 0.5 else { return }
+
+        if index < splitView.subviews.count - 1 {
+            splitView.setPosition(sidebarView.frame.minX + boundedWidth, ofDividerAt: index)
+        } else if index > 0 {
+            splitView.setPosition(
+                sidebarView.frame.maxX - boundedWidth - splitView.dividerThickness,
+                ofDividerAt: index - 1
+            )
+        }
+    }
+
+    private func installWidthConstraints(on sidebarView: NSView) {
+        guard constrainedSidebarView !== sidebarView else { return }
+        removeWidthConstraints()
+        constrainedSidebarView = sidebarView
+
+        // The SwiftUI split delegate isn't always an NSSplitViewController.
+        // Constrain the actual column, without replacing its native delegate.
+        let minimum = sidebarView.widthAnchor.constraint(greaterThanOrEqualToConstant: minimumThickness)
+        let maximum = sidebarView.widthAnchor.constraint(lessThanOrEqualToConstant: maximumThickness)
+        minimum.identifier = "FinallyExplorer.sidebar.minimumWidth"
+        maximum.identifier = "FinallyExplorer.sidebar.maximumWidth"
+        minimumWidthConstraint = minimum
+        maximumWidthConstraint = maximum
+        minimum.isActive = isSidebarVisible
+        maximum.isActive = true
+    }
+
+    private func removeWidthConstraints() {
+        minimumWidthConstraint?.isActive = false
+        maximumWidthConstraint?.isActive = false
+        minimumWidthConstraint = nil
+        maximumWidthConstraint = nil
+        constrainedSidebarView = nil
+    }
+
+    private var enclosingSplitColumn: (NSSplitView, NSView)? {
+        var candidate: NSView = self
+        while let parent = candidate.superview {
+            if let splitView = parent as? NSSplitView, splitView.isVertical {
+                return (splitView, candidate)
+            }
+            candidate = parent
+        }
+        return nil
     }
 
     private var enclosingSidebarItem: NSSplitViewItem? {
