@@ -8,16 +8,18 @@ import SwiftUI
 struct FileRenameSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.explorerTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var isNameFocused: Bool
 
     let request: FileRenameRequest
     let coordinator: FileOperationCoordinator
+    let aiSettings: ExplorerAISettings
 
     @State private var name: String
     @State private var nameSelection: TextSelection?
     @State private var smartRenameModel: SmartRenameModel
-    @State private var smartRenameAvailability: SmartRenameAvailability?
     @State private var includesFileContents = true
+    @State private var refreshGeneration = 0
 
     private let sourceIsDirectory: Bool
     private let sourceIsPackage: Bool
@@ -27,11 +29,13 @@ struct FileRenameSheet: View {
     init(
         request: FileRenameRequest,
         coordinator: FileOperationCoordinator,
+        aiSettings: ExplorerAISettings,
         smartRenameService: any SmartRenameServicing =
             FoundationModelsSmartRenameService()
     ) {
         self.request = request
         self.coordinator = coordinator
+        self.aiSettings = aiSettings
         let itemMetadata = Self.itemMetadata(at: request.sourceURL)
         sourceIsDirectory = itemMetadata.isDirectory
         sourceIsPackage = itemMetadata.isPackage
@@ -43,7 +47,7 @@ struct FileRenameSheet: View {
         _smartRenameModel = State(
             initialValue: SmartRenameModel(service: smartRenameService)
         )
-        _smartRenameAvailability = State(initialValue: nil)
+        _includesFileContents = State(initialValue: aiSettings.usesFileContentsByDefault)
     }
 
     private var validationMessage: String? {
@@ -109,9 +113,15 @@ struct FileRenameSheet: View {
             isNameFocused = true
             await Task.yield()
             nameSelection = TextSelection(range: name.startIndex..<name.endIndex)
-            if supportsSmartRename {
-                smartRenameAvailability = await smartRenameModel.availability()
-            }
+        }
+        .task(id: refreshGeneration) {
+            if supportsSmartRename { await aiSettings.refreshAvailability() }
+        }
+        .onChange(of: scenePhase) {
+            if scenePhase == .active { refreshGeneration += 1 }
+        }
+        .onChange(of: aiSettings.isSmartRenameEnabled) {
+            smartRenameModel.clear()
         }
         .onDisappear {
             smartRenameModel.cancelSuggestion()
@@ -137,9 +147,18 @@ struct FileRenameSheet: View {
                         theme.supportAccent.opacity(0.14),
                         in: .capsule
                     )
+
+                SettingsLink {
+                    Label("AI Settings", systemImage: "gearshape")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.textSecondary)
+                .help("AI settings and model status")
+                .accessibilityIdentifier("rename-ai-settings-button")
             }
 
-            if smartRenameAvailability == .available {
+            if aiSettings.isSmartRenameEnabled, aiSettings.availability == .available {
                 Text("Get a concise suggestion without uploading this item. Review it before applying it to the name field.")
                     .font(.callout)
                     .foregroundStyle(theme.textSecondary)
@@ -194,7 +213,19 @@ struct FileRenameSheet: View {
 
     @ViewBuilder
     private var smartRenameControls: some View {
-        switch smartRenameAvailability {
+        if aiSettings.isSmartRenameEnabled == false {
+            Text("Smart Rename is off. You can turn it on in AI Settings.")
+                .font(.callout)
+                .foregroundStyle(theme.textSecondary)
+                .accessibilityIdentifier("smart-rename-disabled")
+        } else {
+            enabledSmartRenameControls
+        }
+    }
+
+    @ViewBuilder
+    private var enabledSmartRenameControls: some View {
+        switch aiSettings.availability {
         case .available:
             if sourceIsDirectory == false {
                 Toggle("Use supported file contents", isOn: $includesFileContents)
@@ -239,6 +270,16 @@ struct FileRenameSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("smart-rename-unavailable")
 
+            HStack {
+                Button("Apple Intelligence Settings") {
+                    SystemPrivacySettingsOpener.openAppleIntelligence()
+                }
+                Spacer()
+                Button("Check Again") { refreshGeneration += 1 }
+                    .disabled(aiSettings.isCheckingAvailability)
+            }
+            .font(.callout)
+
         case nil:
             HStack(spacing: 8) {
                 ProgressView()
@@ -270,6 +311,7 @@ struct FileRenameSheet: View {
     }
 
     private func requestSmartRenameSuggestion() {
+        guard aiSettings.isSmartRenameEnabled else { return }
         smartRenameModel.generateSuggestion(
             for: SmartRenameRequest(
                 itemURL: request.sourceURL,

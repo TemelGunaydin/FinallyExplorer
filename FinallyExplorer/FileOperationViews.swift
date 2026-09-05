@@ -8,6 +8,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum InternalFileTransferProvider {
+    static let typeIdentifiers = [UTType.data.identifier]
+
     // Canceled drags remain resolvable for a later retry, but the registry is
     // bounded so repeated abandoned drags cannot retain paths indefinitely.
     private static let maximumActiveTransferCount = 256
@@ -61,6 +63,33 @@ enum InternalFileTransferProvider {
         }
 
         return transfers
+    }
+
+    @discardableResult
+    static func acceptDrop(
+        from providers: [NSItemProvider],
+        into destinationDirectoryURL: URL?,
+        destinationPaneID: UUID,
+        coordinator: FileOperationCoordinator
+    ) -> Bool {
+        guard let destinationDirectoryURL,
+              coordinator.isPerforming == false else { return false }
+
+        let internalProviders = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.data.identifier)
+        }
+        guard internalProviders.isEmpty == false else { return false }
+
+        Task {
+            let transfers = await load(from: internalProviders)
+            guard transfers.isEmpty == false else { return }
+            coordinator.drop(
+                transfers,
+                into: destinationDirectoryURL,
+                destinationPaneID: destinationPaneID
+            )
+        }
+        return true
     }
 
     private static func load(from provider: NSItemProvider) async throws -> InternalFileTransfer {
@@ -119,6 +148,7 @@ private struct InternalFileInteractionModifier: ViewModifier {
     let item: FileItem
     let paneID: UUID
     let sidebar: SidebarModel
+    let displayedDirectoryURL: URL?
 
     @State private var isInfoPresented = false
     @State private var isContextMenuPresented = false
@@ -139,7 +169,9 @@ private struct InternalFileInteractionModifier: ViewModifier {
             }
             .modifier(
                 InternalDirectoryRowDropModifier(
-                    destinationDirectoryURL: item.isDirectory ? item.url : nil,
+                    destinationDirectoryURL: item.isDirectory
+                        && item.isApplicationBundle == false
+                        ? item.url : displayedDirectoryURL,
                     paneID: paneID
                 )
             )
@@ -190,8 +222,6 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if let destinationDirectoryURL {
-            let acceptsDrop = fileOperations.isPerforming == false
-
             content
                 .overlay {
                     if isDropTargeted {
@@ -208,10 +238,12 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
                     of: [.data],
                     isTargeted: $isDropTargeted
                 ) { providers in
-                    acceptDrop(
+                    isDropTargeted = false
+                    return InternalFileTransferProvider.acceptDrop(
                         from: providers,
                         into: destinationDirectoryURL,
-                        acceptsDrop: acceptsDrop
+                        destinationPaneID: paneID,
+                        coordinator: fileOperations
                     )
                 }
         } else {
@@ -219,33 +251,6 @@ private struct InternalDirectoryRowDropModifier: ViewModifier {
         }
     }
 
-    private func acceptDrop(
-        from providers: [NSItemProvider],
-        into destinationDirectoryURL: URL,
-        acceptsDrop: Bool
-    ) -> Bool {
-        let internalProviders = providers.filter {
-            $0.hasItemConformingToTypeIdentifier(
-                UTType.data.identifier
-            )
-        }
-        guard acceptsDrop, internalProviders.isEmpty == false else { return false }
-
-        isDropTargeted = false
-        Task {
-            let transfers = await InternalFileTransferProvider.load(
-                from: internalProviders
-            )
-            guard transfers.isEmpty == false else { return }
-
-            fileOperations.drop(
-                transfers,
-                into: destinationDirectoryURL,
-                destinationPaneID: paneID
-            )
-        }
-        return true
-    }
 }
 
 private struct InternalFolderDropModifier: ViewModifier {
@@ -262,9 +267,6 @@ private struct InternalFolderDropModifier: ViewModifier {
     @State private var isDropTargeted = false
 
     func body(content: Content) -> some View {
-        let acceptsDrop = destinationDirectoryURL != nil
-            && fileOperations.isPerforming == false
-
         content
             .contentShape(Rectangle())
             .overlay {
@@ -283,7 +285,13 @@ private struct InternalFolderDropModifier: ViewModifier {
                 of: [.data],
                 isTargeted: $isDropTargeted
             ) { providers in
-                acceptDrop(from: providers, acceptsDrop: acceptsDrop)
+                isDropTargeted = false
+                return InternalFileTransferProvider.acceptDrop(
+                    from: providers,
+                    into: destinationDirectoryURL,
+                    destinationPaneID: paneID,
+                    coordinator: fileOperations
+                )
             }
             .contextMenu {
                 if showsNewFolderCommand {
@@ -314,33 +322,6 @@ private struct InternalFolderDropModifier: ViewModifier {
             }
     }
 
-    private func acceptDrop(
-        from providers: [NSItemProvider],
-        acceptsDrop: Bool
-    ) -> Bool {
-        guard let destinationDirectoryURL else { return false }
-        let internalProviders = providers.filter {
-            $0.hasItemConformingToTypeIdentifier(
-                UTType.data.identifier
-            )
-        }
-        guard acceptsDrop, internalProviders.isEmpty == false else { return false }
-
-        isDropTargeted = false
-        Task {
-            let transfers = await InternalFileTransferProvider.load(
-                from: internalProviders
-            )
-            guard transfers.isEmpty == false else { return }
-
-            fileOperations.drop(
-                transfers,
-                into: destinationDirectoryURL,
-                destinationPaneID: paneID
-            )
-        }
-        return true
-    }
 }
 
 private struct TerminalContextMenuCommands: View {
@@ -368,13 +349,15 @@ extension View {
     func internalFileInteraction(
         for item: FileItem,
         paneID: UUID,
-        sidebar: SidebarModel
+        sidebar: SidebarModel,
+        displayedDirectoryURL: URL? = nil
     ) -> some View {
         modifier(
             InternalFileInteractionModifier(
                 item: item,
                 paneID: paneID,
-                sidebar: sidebar
+                sidebar: sidebar,
+                displayedDirectoryURL: displayedDirectoryURL
             )
         )
     }

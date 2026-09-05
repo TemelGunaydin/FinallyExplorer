@@ -7,6 +7,14 @@ import AppKit
 
 @MainActor
 enum SystemPrivacySettingsOpener {
+    static func openAppleIntelligence() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension"),
+           NSWorkspace.shared.open(url) {
+            return
+        }
+        openSystemSettings()
+    }
+
     static func openFilesAndFolders() {
         guard let filesAndFoldersURL = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"

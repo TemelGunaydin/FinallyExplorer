@@ -198,6 +198,102 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(toast.waitForNonExistence(timeout: 10))
     }
 
+    func testCrossPaneDropIntoPopulatedFolderBackgroundAndFileRow() throws {
+        app.terminate()
+        let existingURL = destinationFolderURL.appending(path: "Existing.txt")
+        let secondSourceURL = fixtureRootURL.appending(path: "Another Source.json")
+        try Data("Keep this destination file".utf8).write(to: existingURL)
+        try Data("{\"copied\":true}".utf8).write(to: secondSourceURL)
+        app.launch()
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Split Right"].click()
+        XCTAssertTrue(waitForElementCount(rows(named: "Destination"), toEqual: 2, timeout: 5))
+        let rightFolder = try XCTUnwrap(existingElements(in: rows(named: "Destination"))
+            .sorted(by: leftToRight).last)
+        try XCTUnwrap(containingCell(for: rightFolder)).doubleClick()
+        XCTAssertTrue(rows(named: "Existing.txt").firstMatch.waitForExistence(timeout: 5))
+
+        let bodies = app.descendants(matching: .any).matching(identifier: "pane-directory-body")
+        let rightBody = try XCTUnwrap(existingElements(in: bodies).sorted(by: leftToRight).last)
+        let source = try XCTUnwrap(containingCell(for: rows(named: "Source Item.txt").firstMatch))
+        source.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            .click(forDuration: 0.5,
+                   thenDragTo: rightBody.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.85)),
+                   withVelocity: .slow, thenHoldForDuration: 0.8)
+        XCTAssertTrue(waitForElementCount(rows(named: "Source Item.txt"), toEqual: 2, timeout: 10))
+        XCTAssertEqual(try Data(contentsOf: copiedFileURL), try Data(contentsOf: sourceFileURL))
+
+        let secondSource = try XCTUnwrap(containingCell(for: rows(named: "Another Source.json").firstMatch))
+        let existingRow = try XCTUnwrap(containingCell(for: rows(named: "Existing.txt").firstMatch))
+        secondSource.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            .click(forDuration: 0.5,
+                   thenDragTo: existingRow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)),
+                   withVelocity: .slow, thenHoldForDuration: 0.8)
+        XCTAssertTrue(waitForElementCount(rows(named: "Another Source.json"), toEqual: 2, timeout: 10))
+        XCTAssertEqual(try Data(contentsOf: existingURL), Data("Keep this destination file".utf8))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondSourceURL.path))
+    }
+
+    func testCodeAndJSONFilesShowReadablePreview() throws {
+        app.terminate()
+        let swiftText = "struct PreviewFixture { let message = \"Hello Swift\" }"
+        let jsonText = "{\"previewMessage\": \"Hello JSON\", \"count\": 42}"
+        try Data(swiftText.utf8).write(to: fixtureRootURL.appending(path: "Preview.swift"))
+        try Data(jsonText.utf8).write(to: fixtureRootURL.appending(path: "Preview.json"))
+        app.launch()
+        let swiftRow = rows(named: "Preview.swift").firstMatch
+        XCTAssertTrue(swiftRow.waitForExistence(timeout: 10))
+        swiftRow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).click()
+        let preview = app.textViews["text-file-preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(swiftText, on: preview, timeout: 5))
+
+        rows(named: "Preview.json").firstMatch
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).click()
+        XCTAssertTrue(waitForValue(jsonText, on: preview, timeout: 5))
+        XCTAssertGreaterThan(preview.frame.width, 100)
+        XCTAssertGreaterThan(preview.frame.height, 0)
+        let previewViewport = app.scrollViews["text-file-preview-scroll"]
+        XCTAssertTrue(previewViewport.exists)
+        XCTAssertGreaterThan(previewViewport.frame.height, 100)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "JSON preview and developer file icons"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testAISettingsCanDisableSmartRenameAndPersist() throws {
+        let settingsButton = app.buttons["window-settings-button"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 10))
+        settingsButton.click()
+        let enabledToggle = app.descendants(matching: .any)["ai-settings-enabled-toggle"]
+        XCTAssertTrue(enabledToggle.waitForExistence(timeout: 5))
+        enabledToggle.click()
+        let settingsWindow = app.windows.containing(
+            .any, identifier: "ai-settings-view"
+        ).firstMatch
+        XCTAssertTrue(settingsWindow.exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "AI settings"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
+
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        try rightClickRow(sourceRow)
+        fileContextMenuButton(named: "Rename").click()
+        XCTAssertTrue(app.staticTexts["smart-rename-disabled"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["smart-rename-suggest-button"].exists)
+        app.buttons["Cancel"].click()
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        try rightClickRow(rows(named: "Source Item.txt").firstMatch)
+        fileContextMenuButton(named: "Rename").click()
+        XCTAssertTrue(app.staticTexts["smart-rename-disabled"].waitForExistence(timeout: 5))
+    }
+
     func testSidebarToolbarButtonAlignsWithSidebarAndOmitsRetiredControls() {
         XCTAssertTrue(
             rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10)

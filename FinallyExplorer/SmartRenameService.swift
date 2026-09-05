@@ -51,7 +51,7 @@ nonisolated enum SmartRenameServiceError: LocalizedError, Equatable, Sendable {
         case .unavailable(.appleIntelligenceNotEnabled):
             "Turn on Apple Intelligence to use Smart Rename."
         case .unavailable(.modelNotReady):
-            "Apple Intelligence is still preparing its on-device model."
+            "The on-device model isn’t ready yet. Check Apple Intelligence in System Settings."
         }
     }
 }

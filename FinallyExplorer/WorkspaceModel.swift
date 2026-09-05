@@ -444,8 +444,7 @@ final class WorkspacePaneState: Identifiable {
                   let selectedSearchResultID,
                   let result = searchModel.results.first(where: {
                       $0.id == selectedSearchResultID
-                  }),
-                  result.item.isDirectory || result.item.isImage else {
+                  }) else {
                 return nil
             }
 
@@ -454,7 +453,7 @@ final class WorkspacePaneState: Identifiable {
 
         guard selectedURLs.count == 1, let selectedURL else { return nil }
         return directoryContents.first {
-            $0.url == selectedURL && ($0.isDirectory || $0.isImage)
+            $0.url == selectedURL
         }
     }
 

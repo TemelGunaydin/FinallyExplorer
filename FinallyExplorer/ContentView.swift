@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var nearbyTransfers = NearbyTransferCoordinator()
     @State private var sidebar = SidebarModel()
     @State private var themeController = ExplorerThemeController()
+    @State private var aiSettings = ExplorerAISettings()
     @State private var globalSearch = GlobalSearchModel()
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -45,6 +46,7 @@ struct ContentView: View {
         nearbyTransfers: NearbyTransferCoordinator? = nil,
         sidebar: SidebarModel? = nil,
         themeController: ExplorerThemeController? = nil,
+        aiSettings: ExplorerAISettings? = nil,
         globalSearch: GlobalSearchModel? = nil,
         globalSearchRootURL: URL = URL(
             filePath: "/",
@@ -65,6 +67,9 @@ struct ContentView: View {
         }
         if let themeController {
             _themeController = State(initialValue: themeController)
+        }
+        if let aiSettings {
+            _aiSettings = State(initialValue: aiSettings)
         }
         _globalSearch = State(
             initialValue: globalSearch
@@ -284,6 +289,17 @@ struct ContentView: View {
                 ExplorerThemePicker(controller: themeController)
             }
             .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem(placement: .primaryAction) {
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(ExplorerChromeIconButtonStyle())
+                .help("Settings — AI & Smart Rename")
+                .accessibilityIdentifier("window-settings-button")
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         .containerBackground(theme.windowChrome, for: .window)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -387,7 +403,8 @@ struct ContentView: View {
         .sheet(item: $fileOperations.renameRequest) { request in
             FileRenameSheet(
                 request: request,
-                coordinator: fileOperations
+                coordinator: fileOperations,
+                aiSettings: aiSettings
             )
             .environment(\.explorerTheme, theme)
         }
@@ -590,7 +607,7 @@ struct ContentView: View {
                     sidebar: sidebar
                 )
             } else {
-                ImagePreviewInspector(image: selectedItem)
+                FilePreviewInspector(item: selectedItem)
             }
         } else {
             EmptyPreviewInspector()
@@ -1030,6 +1047,12 @@ private struct DestinationView: View {
 
             if let displayedDirectory = pane.displayedDirectory {
                 PaneCurrentPathView(directoryURL: displayedDirectory)
+                    .internalFolderDropTarget(
+                        destinationDirectoryURL: displayedDirectory,
+                        paneID: pane.id,
+                        showsPasteCommand: false
+                    )
+                    .help("Drop files into this folder")
             }
 
             HStack(spacing: 8) {
@@ -1095,6 +1118,7 @@ private struct DestinationView: View {
             ExplorerSearchResultsView(
                 paneID: pane.id,
                 sidebar: sidebar,
+                displayedDirectoryURL: pane.displayedDirectory,
                 query: pane.searchModel.query,
                 results: pane.searchModel.results,
                 isSearching: pane.searchModel.isSearching,
@@ -1121,28 +1145,41 @@ private struct DestinationView: View {
             )
         } else {
             ZStack {
-                List(pane.directoryContents, selection: $pane.selectedURLs) { item in
-                    FileRowView(
-                        item: item,
-                        sidebar: sidebar,
-                        onOpen: {
-                            open(item)
-                        }
-                    )
-                    .tag(item.url)
-                    .background(
-                        ExplorerRowBackground(
-                            isSelected: pane.selectedURLs.contains(item.url),
-                            isHidden: item.isHidden
+                List(selection: $pane.selectedURLs) {
+                    ForEach(pane.directoryContents) { item in
+                        FileRowView(
+                            item: item,
+                            sidebar: sidebar,
+                            onOpen: {
+                                open(item)
+                            }
                         )
-                    )
-                    .listRowBackground(theme.row)
-                    .internalFileInteraction(
-                        for: item,
-                        paneID: pane.id,
-                        sidebar: sidebar
-                    )
-                    .accessibilityIdentifier("file-row-\(pane.id)-\(item.name)")
+                        .tag(item.url)
+                        .background(
+                            ExplorerRowBackground(
+                                isSelected: pane.selectedURLs.contains(item.url),
+                                isHidden: item.isHidden
+                            )
+                        )
+                        .listRowBackground(theme.row)
+                        .internalFileInteraction(
+                            for: item,
+                            paneID: pane.id,
+                            sidebar: sidebar,
+                            displayedDirectoryURL: pane.displayedDirectory
+                        )
+                        .accessibilityIdentifier("file-row-\(pane.id)-\(item.name)")
+                    }
+                    // Native List insertion handles drops between rows and in
+                    // the unused table area; the index doesn't affect file order.
+                    .onInsert(of: InternalFileTransferProvider.typeIdentifiers) { _, providers in
+                        InternalFileTransferProvider.acceptDrop(
+                            from: providers,
+                            into: pane.displayedDirectory,
+                            destinationPaneID: pane.id,
+                            coordinator: fileOperations
+                        )
+                    }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -1157,6 +1194,12 @@ private struct DestinationView: View {
                     }
                 )
                 .onDeleteCommand(perform: requestTrashSelection)
+                .internalFolderDropTarget(
+                    destinationDirectoryURL: pane.displayedDirectory,
+                    paneID: pane.id,
+                    showsNewFolderCommand: true,
+                    onCreateFolder: createFolder
+                )
                 .animation(
                     reduceMotion ? nil : .easeOut(duration: 0.18),
                     value: pane.directoryContents.map(\.id)
@@ -1401,26 +1444,41 @@ struct FolderContentsInspector: View {
             )
         } else {
             ZStack {
-                List(directoryContents) { item in
-                    HStack(spacing: 2) {
-                        FavoriteToggleButton(item: item, sidebar: sidebar)
+                List {
+                    ForEach(directoryContents) { item in
+                        HStack(spacing: 2) {
+                            FavoriteToggleButton(item: item, sidebar: sidebar)
 
-                        FileRowContent(item: item)
-                    }
+                            FileRowContent(item: item)
+                        }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .listRowBackground(theme.row)
                         .internalFileInteraction(
                             for: item,
                             paneID: paneID,
-                            sidebar: sidebar
+                            sidebar: sidebar,
+                            displayedDirectoryURL: folder.url
                         )
                         .accessibilityIdentifier("file-row-\(paneID)-\(item.name)")
+                    }
+                    .onInsert(of: InternalFileTransferProvider.typeIdentifiers) { _, providers in
+                        InternalFileTransferProvider.acceptDrop(
+                            from: providers,
+                            into: folder.url,
+                            destinationPaneID: paneID,
+                            coordinator: fileOperations
+                        )
+                    }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .background(theme.inspector)
                 .listRowSeparatorTint(theme.divider)
+                .internalFolderDropTarget(
+                    destinationDirectoryURL: folder.url,
+                    paneID: paneID
+                )
                 .animation(
                     reduceMotion ? nil : .easeOut(duration: 0.18),
                     value: directoryContents.map(\.id)
@@ -1490,20 +1548,28 @@ struct FolderContentsInspector: View {
     }
 }
 
-private struct ImagePreviewInspector: View {
+private struct FilePreviewInspector: View {
     @Environment(\.explorerTheme) private var theme
 
-    let image: FileItem
+    let item: FileItem
 
     var body: some View {
         VStack(spacing: 0) {
-            InspectorHeader(item: image, systemImage: "photo.fill")
+            InspectorHeader(
+                item: item,
+                systemImage: FileItemIconResolver.kind(for: item).systemName
+            )
 
             Divider()
                 .overlay(theme.divider)
 
-            QuickLookPreview(url: image.url)
-                .accessibilityLabel("Preview of \(image.name)")
+            if TextFilePreviewService.supports(item) {
+                TextFilePreviewView(item: item)
+                    .id(item.url)
+            } else {
+                QuickLookPreview(url: item.url)
+                    .accessibilityLabel("Preview of \(item.name)")
+            }
         }
     }
 }

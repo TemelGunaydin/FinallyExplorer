@@ -40,7 +40,7 @@ private func exerciseWorkspaceGridInARealWindow() async {
     )
     let secondPaneID = workspace.activePaneID
     precondition(
-        workspace.split(paneID: secondPaneID, direction: .right) != nil
+        workspace.split(paneID: secondPaneID, direction: .below) != nil
     )
 
     let contentView = ContentView(

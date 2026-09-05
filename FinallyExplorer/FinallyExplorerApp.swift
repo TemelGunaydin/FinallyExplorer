@@ -20,6 +20,7 @@ struct FinallyExplorerApp: App {
     @State private var nearbyTransfers: NearbyTransferCoordinator
     @State private var sidebar: SidebarModel
     @State private var themeController: ExplorerThemeController
+    @State private var aiSettings: ExplorerAISettings
 
     init() {
         self.init(launchConfiguration: ExplorerLaunchConfiguration())
@@ -70,6 +71,9 @@ struct FinallyExplorerApp: App {
                 store: Self.themeStore(for: launchConfiguration)
             )
         )
+        _aiSettings = State(initialValue: ExplorerAISettings(
+            defaults: Self.isolatedDefaults(for: launchConfiguration) ?? .standard
+        ))
     }
 
     var body: some Scene {
@@ -82,6 +86,7 @@ struct FinallyExplorerApp: App {
                 nearbyTransfers: nearbyTransfers,
                 sidebar: sidebar,
                 themeController: themeController,
+                aiSettings: aiSettings,
                 globalSearchRootURL: launchConfiguration.fixtureRoot
                     ?? URL(filePath: "/", directoryHint: .isDirectory)
             )
@@ -91,6 +96,12 @@ struct FinallyExplorerApp: App {
         .commands {
             FileEditCommands()
         }
+
+        Settings {
+            ExplorerAISettingsView(settings: aiSettings)
+                .environment(\.explorerTheme, themeController.activeTheme)
+        }
+        .windowResizability(.contentSize)
     }
 
     private static func sidebarStore(

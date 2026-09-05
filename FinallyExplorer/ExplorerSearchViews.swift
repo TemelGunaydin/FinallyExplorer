@@ -117,10 +117,12 @@ struct ExplorerSearchControlBar: View {
 
 struct ExplorerSearchResultsView: View {
     @Environment(\.explorerTheme) private var theme
+    @Environment(FileOperationCoordinator.self) private var fileOperations
     @FocusState private var isListFocused: Bool
 
     let paneID: UUID
     let sidebar: SidebarModel
+    let displayedDirectoryURL: URL?
     let query: String
     let results: [ExplorerSearchResult]
     let isSearching: Bool
@@ -150,22 +152,33 @@ struct ExplorerSearchResultsView: View {
             } else if results.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
-                List(results, selection: $selection) { result in
-                    ExplorerSearchRowView(
-                        paneID: paneID,
-                        sidebar: sidebar,
-                        query: query,
-                        result: result,
-                        onOpen: { onOpen(result) }
-                    )
-                    .tag(result.id)
-                    .background(
-                        ExplorerRowBackground(
-                            isSelected: selection.contains(result.id),
-                            isHidden: result.item.isHidden
+                List(selection: $selection) {
+                    ForEach(results) { result in
+                        ExplorerSearchRowView(
+                            paneID: paneID,
+                            sidebar: sidebar,
+                            displayedDirectoryURL: displayedDirectoryURL,
+                            query: query,
+                            result: result,
+                            onOpen: { onOpen(result) }
                         )
-                    )
-                    .listRowBackground(theme.row)
+                        .tag(result.id)
+                        .background(
+                            ExplorerRowBackground(
+                                isSelected: selection.contains(result.id),
+                                isHidden: result.item.isHidden
+                            )
+                        )
+                        .listRowBackground(theme.row)
+                    }
+                    .onInsert(of: InternalFileTransferProvider.typeIdentifiers) { _, providers in
+                        InternalFileTransferProvider.acceptDrop(
+                            from: providers,
+                            into: displayedDirectoryURL,
+                            destinationPaneID: paneID,
+                            coordinator: fileOperations
+                        )
+                    }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
@@ -180,6 +193,10 @@ struct ExplorerSearchResultsView: View {
                     }
                 )
                 .onDeleteCommand(perform: onDelete)
+                .internalFolderDropTarget(
+                    destinationDirectoryURL: displayedDirectoryURL,
+                    paneID: paneID
+                )
             }
         }
         .background(theme.panel)
@@ -216,6 +233,7 @@ private struct ExplorerSearchRowView: View {
 
     let paneID: UUID
     let sidebar: SidebarModel
+    let displayedDirectoryURL: URL?
     let query: String
     let result: ExplorerSearchResult
     let onOpen: () -> Void
@@ -291,7 +309,8 @@ private struct ExplorerSearchRowView: View {
         .internalFileInteraction(
             for: result.item,
             paneID: paneID,
-            sidebar: sidebar
+            sidebar: sidebar,
+            displayedDirectoryURL: displayedDirectoryURL
         )
         .accessibilityIdentifier("file-row-\(paneID)-\(result.item.name)")
     }

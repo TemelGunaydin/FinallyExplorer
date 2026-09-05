@@ -712,6 +712,19 @@ struct WorkspaceModelTests {
         #expect(pane.selectedInspectorItem == folder)
     }
 
+    @Test("Selecting a code file exposes it to the preview inspector")
+    func codeFileSelectionHasPreview() throws {
+        let pane = try #require(WorkspaceModel().activePane)
+        let item = FileItem(
+            url: URL(filePath: "/tmp/Settings.json"),
+            isDirectory: false, isImage: false,
+            fileSize: 20, modificationDate: nil
+        )
+        pane.directoryContents = [item]
+        pane.selectedURL = item.url
+        #expect(pane.selectedInspectorItem == item)
+    }
+
     @Test("Global search reveal activates the target pane and selects the item in its parent")
     func revealGlobalResultUsesTransientLocation() throws {
         let firstID = uuid(90)
