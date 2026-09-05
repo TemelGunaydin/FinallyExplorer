@@ -587,7 +587,7 @@ struct ContentView: View {
 
     private func sidebarSectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(.caption, design: .rounded).bold())
+            .font(ExplorerTheme.sidebarSectionHeaderFont)
             .tracking(0.7)
             .foregroundStyle(themeController.activeTheme.chromeSecondaryText)
             .padding(.top, 4)

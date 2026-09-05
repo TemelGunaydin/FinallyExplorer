@@ -59,7 +59,12 @@ struct ExplorerTheme {
     static let paneTitleFont = Font.system(.title3, design: .rounded).bold()
     static let navigationFont = Font.system(.body, design: .rounded).bold()
     static let sidebarNavigationFont = Font.system(
-        size: 16,
+        size: 15,
+        weight: .medium,
+        design: .rounded
+    )
+    static let sidebarSectionHeaderFont = Font.system(
+        size: 11,
         weight: .semibold,
         design: .rounded
     )
