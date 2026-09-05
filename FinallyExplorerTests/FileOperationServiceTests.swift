@@ -36,6 +36,47 @@ struct FileOperationServiceTests {
         }
     }
 
+    @Test("Trash delegates to the Finder-style recycler")
+    func trashUsesFinderStyleRecycler() async throws {
+        let root = try makeFileOperationTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appending(path: "note.txt")
+        try Data("Finally Explorer".utf8).write(to: sourceURL)
+        let expectedSourceURL = sourceURL.standardizedFileURL
+        let resultingURL = URL(filePath: "/tmp/.Trash/note.txt")
+        let service = FileOperationService { sourceURLs in
+            #expect(sourceURLs == [expectedSourceURL])
+            return [expectedSourceURL: resultingURL]
+        }
+
+        let outcome = try await service.trashItem(at: sourceURL)
+
+        #expect(outcome == FileOperationOutcome(
+            destinationURL: resultingURL,
+            didChange: true
+        ))
+    }
+
+    @Test("Trash reports when Finder does not move the item")
+    func trashRejectsMissingFinderResult() async throws {
+        let root = try makeFileOperationTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let sourceURL = root.appending(path: "note.txt")
+        try Data().write(to: sourceURL)
+        let service = FileOperationService { _ in [:] }
+
+        await #expect(
+            throws: FileOperationError.trashFailed(
+                sourcePath: sourceURL.path,
+                reason: "Finder did not move the item to Trash."
+            )
+        ) {
+            try await service.trashItem(at: sourceURL)
+        }
+    }
+
     @Test("A file is copied into an empty destination")
     func copiesFile() async throws {
         let root = try makeFileOperationTemporaryDirectory()

@@ -3,6 +3,7 @@
 //  FinallyExplorer
 //
 
+import AppKit
 import Darwin
 import Foundation
 import UniformTypeIdentifiers
@@ -154,6 +155,16 @@ nonisolated enum FileOperationError: LocalizedError, Equatable, Sendable {
 
 /// Performs non-destructive file operations away from the caller's executor.
 nonisolated struct FileOperationService: FileOperationServicing, Sendable {
+    private let recycleItems: @Sendable ([URL]) async throws -> [URL: URL]
+
+    init(
+        recycleItems: @escaping @Sendable ([URL]) async throws -> [URL: URL] = {
+            try await NSWorkspace.shared.recycle($0)
+        }
+    ) {
+        self.recycleItems = recycleItems
+    }
+
     /// Moves an item to the current volume's Trash without deleting it permanently.
     @concurrent
     func trashItem(at sourceURL: URL) async throws -> FileOperationOutcome {
@@ -175,13 +186,14 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
         }
 
         try Task.checkCancellation()
-        var resultingURL: NSURL?
+        let recycledURLs: [URL: URL]
 
         do {
-            try fileManager.trashItem(
-                at: sourceURL,
-                resultingItemURL: &resultingURL
-            )
+            // NSWorkspace performs the operation with Finder semantics and may
+            // present system UI when the destination requires authorization.
+            recycledURLs = try await recycleItems([sourceURL])
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw FileOperationError.trashFailed(
                 sourcePath: sourceURL.path,
@@ -189,8 +201,18 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
             )
         }
 
+        try Task.checkCancellation()
+        guard let resultingURL = recycledURLs.first(where: {
+            $0.key.standardizedFileURL == sourceURL
+        })?.value else {
+            throw FileOperationError.trashFailed(
+                sourcePath: sourceURL.path,
+                reason: "Finder did not move the item to Trash."
+            )
+        }
+
         return FileOperationOutcome(
-            destinationURL: (resultingURL as URL?) ?? sourceURL,
+            destinationURL: resultingURL,
             didChange: true
         )
     }
