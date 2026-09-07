@@ -1179,6 +1179,51 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testFolderComparisonRequiresApprovalAndCopiesOnlyMissingFiles() throws {
+        app.terminate()
+        let sourceFolder = fixtureRootURL.appending(path: "Comparison Source")
+        try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+        let source = sourceFolder.appending(path: "Verified.txt")
+        let destination = destinationFolderURL.appending(path: "Verified.txt")
+        try Data("verified fixture".utf8).write(to: source)
+        app.launch()
+        XCTAssertTrue(rows(named: "Comparison Source").firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Split Right"].click()
+        XCTAssertTrue(waitForElementCount(rows(named: "Destination"), toEqual: 2, timeout: 5))
+        let rightFolder = try XCTUnwrap(existingElements(in: rows(named: "Destination")).sorted(by: leftToRight).last)
+        try XCTUnwrap(containingCell(for: rightFolder)).doubleClick()
+        XCTAssertTrue(app.staticTexts["Folder Is Empty"].waitForExistence(timeout: 5))
+        let leftFolder = rows(named: "Comparison Source").firstMatch
+        try XCTUnwrap(containingCell(for: leftFolder)).doubleClick()
+        XCTAssertTrue(rows(named: "Verified.txt").firstMatch.waitForExistence(timeout: 5))
+
+        app.buttons["window-compare-folders-button"].click()
+        let compare = app.buttons["folder-comparison-start"]
+        XCTAssertTrue(compare.waitForExistence(timeout: 5))
+        XCTAssertTrue(compare.isEnabled)
+        compare.click()
+        let review = app.buttons["folder-comparison-review-copy"]
+        XCTAssertTrue(waitForEnabled(review, timeout: 10))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        review.click()
+        let confirm = app.buttons["verified-copy-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        app.buttons["verified-copy-cancel"].click()
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        review.click()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(app.descendants(matching: .any)["verified-copy-report"].waitForExistence(timeout: 10))
+        XCTAssertEqual(try Data(contentsOf: destination), try Data(contentsOf: source))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Verified copy completion"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["folder-comparison-close"].click()
+        XCTAssertTrue(waitForElementCount(rows(named: "Verified.txt"), toEqual: 2, timeout: 10))
+    }
+
     func testAskAIPanelIsExplicitSubmitAndKeepsNormalSearchAvailable() throws {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         app.buttons["window-ask-ai-button"].click()

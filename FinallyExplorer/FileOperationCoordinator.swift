@@ -41,6 +41,7 @@ final class FileOperationCoordinator {
     @ObservationIgnored private var operationTask: Task<Void, Never>?
     @ObservationIgnored private var noticeDismissalTask: Task<Void, Never>?
     @ObservationIgnored private let service: any FileOperationServicing
+    @ObservationIgnored private let verifiedCopyService: any VerifiedCopyServicing
     @ObservationIgnored private let noticeDelay: @Sendable () async throws -> Void
     @ObservationIgnored private let applicationUninstallPolicy: ApplicationUninstallPolicy
     @ObservationIgnored private var clipboardRevision = UUID()
@@ -50,11 +51,13 @@ final class FileOperationCoordinator {
         noticeDelay: @escaping @Sendable () async throws -> Void = {
             try await Task.sleep(for: .seconds(2.2))
         },
-        applicationUninstallPolicy: ApplicationUninstallPolicy = .live()
+        applicationUninstallPolicy: ApplicationUninstallPolicy = .live(),
+        verifiedCopyService: any VerifiedCopyServicing = VerifiedCopyService()
     ) {
         self.service = service
         self.noticeDelay = noticeDelay
         self.applicationUninstallPolicy = applicationUninstallPolicy
+        self.verifiedCopyService = verifiedCopyService
     }
 
     deinit {
@@ -454,6 +457,54 @@ final class FileOperationCoordinator {
             renameRequest = nil
         }
         return started
+    }
+
+    /// Shares the mutation gate and refresh pipeline with normal paste/rename/trash.
+    /// Call only after the user has reviewed and confirmed this immutable plan.
+    @discardableResult
+    func startVerifiedCopy(
+        _ plan: VerifiedCopyPlan,
+        onProgress: @escaping @MainActor (FolderWorkProgress) -> Void,
+        onCompletion: @escaping @MainActor (VerifiedCopyReport) -> Void
+    ) -> Bool {
+        guard isPerforming == false, plan.entries.isEmpty == false else { return false }
+        isPerforming = true
+        statusMessage = "Copying and verifying…"
+        statusSystemImage = "checkmark.shield"
+        isErrorPresented = false
+        errorMessage = ""
+        completedItemCount = 0
+        totalItemCount = plan.entries.count
+        operationTask = Task { [weak self, verifiedCopyService] in
+            let report = await verifiedCopyService.copy(plan) { [weak self] progress in
+                await self?.updateVerifiedCopyProgress(progress, onProgress: onProgress)
+            }
+            guard let self else { return }
+            if report.changedDirectories.isEmpty == false {
+                await publishFileSystemChange(directlyAffecting: report.changedDirectories)
+            }
+            isPerforming = false
+            statusMessage = nil
+            statusSystemImage = nil
+            completedItemCount = 0
+            totalItemCount = 0
+            operationTask = nil
+            presentNotice(
+                message: report.summary,
+                systemImage: report.errorMessage == nil && report.wasCancelled == false
+                    ? "checkmark.shield" : "exclamationmark.circle"
+            )
+            onCompletion(report)
+        }
+        return true
+    }
+
+    private func updateVerifiedCopyProgress(
+        _ progress: FolderWorkProgress,
+        onProgress: @MainActor (FolderWorkProgress) -> Void
+    ) {
+        completedItemCount = progress.completedItems
+        onProgress(progress)
     }
 
     /// Requests cancellation and lets the current operation unwind safely.

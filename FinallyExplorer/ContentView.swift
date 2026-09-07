@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var globalSearch = GlobalSearchModel()
     @State private var askAISearch = AskAISearchModel()
     @State private var isAskAIPresented = false
+    @State private var folderComparison: FolderComparisonModel?
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -304,6 +305,17 @@ struct ContentView: View {
             .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
+                Button("Compare Folders", systemImage: "arrow.left.arrow.right") {
+                    presentFolderComparison()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(ExplorerChromeIconButtonStyle())
+                .help("Compare open folders and copy missing files with verification")
+                .accessibilityIdentifier("window-compare-folders-button")
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem(placement: .primaryAction) {
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -428,6 +440,10 @@ struct ContentView: View {
             )
             .environment(\.explorerTheme, theme)
         }
+        .sheet(item: $folderComparison) { model in
+            FolderComparisonSheet(model: model)
+                .environment(\.explorerTheme, theme)
+        }
         .sheet(item: $nearbyTransfers.presentation) { presentation in
             NearbyTransferSheet(
                 presentation: presentation,
@@ -446,6 +462,16 @@ struct ContentView: View {
 
     private func applicationDisplayName(for url: URL) -> String {
         url.deletingPathExtension().lastPathComponent
+    }
+
+    private func presentFolderComparison() {
+        let locations = workspace.layoutRoot.paneIDs.enumerated().compactMap { index, id -> FolderComparisonLocation? in
+            guard let url = workspace.pane(id)?.displayedDirectory else { return nil }
+            return FolderComparisonLocation(id: id, title: "Panel \(index + 1) · \(url.lastPathComponent)", url: url)
+        }
+        folderComparison = FolderComparisonModel(
+            locations: locations, preferredSourceID: workspace.activePaneID, operations: fileOperations
+        )
     }
 
     private func toggleSidebar() {

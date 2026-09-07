@@ -33,9 +33,12 @@ Use XcodeBuildMCP's macOS build/test workflow. Regression suites cover:
 
 The SwiftUI, Swift Concurrency, and Swift Testing guides informed the themed/accessibility-labelled panel, off-main metadata reads, cancellation/generation guards, injected test doubles, and explicit task-completion assertions.
 
+## Related tools — second delivery
+
+[Compare Folders & Verified Copy](FOLDER_COMPARISON.md) is now available as a separate toolbar tool. It compares regular file data between open panes and adds missing items only after review and confirmation. It does not require AI, and Ask AI cannot invoke file-changing commands.
+
 ## Next deliveries (not implemented here)
 
-1. Folder comparison and hash-verified copying between panes, with a reviewable plan and explicit confirmation for writes.
-2. Exact duplicates and batch organization with a dry-run preview.
-3. An offline catalog for disconnected drives.
-4. Visual search / richer document questions with a separately scoped local index and explicit permission boundaries.
+1. Exact duplicates and batch organization with a dry-run preview.
+2. An offline catalog for disconnected drives.
+3. Visual search / richer document questions with a separately scoped local index and explicit permission boundaries.
