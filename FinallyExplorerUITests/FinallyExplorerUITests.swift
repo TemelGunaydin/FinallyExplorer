@@ -1179,6 +1179,32 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testAskAIPanelIsExplicitSubmitAndKeepsNormalSearchAvailable() throws {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        app.buttons["window-ask-ai-button"].click()
+        let input = app.textFields["ask-ai-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.click()
+        input.typeText("Find the accounting report from two days ago")
+        XCTAssertTrue(app.buttons["ask-ai-submit"].isEnabled)
+        XCTAssertFalse(app.descendants(matching: .any)["ask-ai-current-filters"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Ask AI panel"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["ask-ai-new-search"].click()
+        XCTAssertEqual(input.value as? String, "")
+        XCTAssertFalse(app.buttons["ask-ai-submit"].isEnabled)
+        app.buttons["ask-ai-close"].click()
+        XCTAssertTrue(input.waitForNonExistence(timeout: 5))
+        let field = app.descendants(matching: .any)["global-search-text-field"]
+        XCTAssertTrue(waitForEnabled(field, timeout: 10))
+        field.click()
+        field.typeText("Global Needle")
+        XCTAssertTrue(app.staticTexts["Global Needle Alpha.txt"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Global Needle Beta.txt"].waitForExistence(timeout: 10))
+    }
+
     func testSmartSearchWaitsForSubmitAndCanReturnToNormalSearch() throws {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let field = app.descendants(matching: .any)["global-search-text-field"]

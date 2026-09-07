@@ -24,6 +24,8 @@ struct ContentView: View {
     @State private var themeController = ExplorerThemeController()
     @State private var aiSettings = ExplorerAISettings()
     @State private var globalSearch = GlobalSearchModel()
+    @State private var askAISearch = AskAISearchModel()
+    @State private var isAskAIPresented = false
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -289,6 +291,14 @@ struct ContentView: View {
             .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
+                Button("Ask AI", systemImage: "sparkles") { isAskAIPresented = true }
+                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .help("Find files with on-device AI and follow-up questions")
+                    .accessibilityIdentifier("window-ask-ai-button")
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem(placement: .primaryAction) {
                 ExplorerThemePicker(controller: themeController)
             }
             .sharedBackgroundVisibility(.hidden)
@@ -299,7 +309,7 @@ struct ContentView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerChromeIconButtonStyle())
-                .help("Settings — AI & Smart Rename")
+                .help("Settings — Ask AI & Smart Rename")
                 .accessibilityIdentifier("window-settings-button")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -408,6 +418,13 @@ struct ContentView: View {
                 request: request,
                 coordinator: fileOperations,
                 aiSettings: aiSettings
+            )
+            .environment(\.explorerTheme, theme)
+        }
+        .sheet(isPresented: $isAskAIPresented) {
+            AskAISearchSheet(
+                model: askAISearch, settings: aiSettings,
+                rootURL: globalSearchRootURL, onReveal: revealGlobalSearchResult
             )
             .environment(\.explorerTheme, theme)
         }

@@ -23,6 +23,9 @@ nonisolated struct SmartSearchInterpretation: Equatable, Sendable {
     @Guide(description: "Preserve ALL topic/subject nouns, including report, notes, invoice. Remove only commands and the extracted type/location/date words. 'Find financial report from yesterday' -> [financial, report]. 'PDFs in Downloads from last week' -> []. Keep the user's language.", .maximumCount(6))
     var keywords: [String]
 
+    @Guide(description: "Only specific extensions such as heic, jpg, swift, json. Lowercase, no dot. For PDFs use kind pdf and EMPTY fileExtensions. For photos/images use kind image and EMPTY fileExtensions. Empty unless a particular extension is requested. Never put extensions in keywords.", .maximumCount(6))
+    var fileExtensions: [String] = []
+
     @Guide(description: "Only extra requests that the fields above cannot represent: e.g. delete, move, size over 2 GB, or excluding a type. Empty array when all criteria are represented. A type/date-only search with no keywords IS valid; use an empty array.", .maximumCount(3))
     var unsupportedCriteria: [String]
 
@@ -45,7 +48,7 @@ nonisolated struct SmartSearchInterpretation: Equatable, Sendable {
 
     @Generable
     enum DateField: String, Equatable, Sendable {
-        case modified, created
+        case modified, created, captured
     }
 
     @Generable

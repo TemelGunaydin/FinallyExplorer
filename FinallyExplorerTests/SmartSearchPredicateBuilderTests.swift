@@ -65,6 +65,30 @@ struct SmartSearchPredicateBuilderTests {
         #expect(predicate.evaluate(with: [NSMetadataItemFSNameKey: term + ".txt"]))
     }
 
+    @Test("Extension-only filters are case-insensitive and accepted by Spotlight")
+    func extensionPredicate() throws {
+        var interpretation = SmartSearchTestFixtures.interpretation(keywords: [], dateRule: .none)
+        interpretation.fileExtensions = ["HEIC"]
+        let predicate = SmartSearchPredicateBuilder.predicate(for: try SmartSearchTestFixtures.plan(interpretation))
+        #expect(predicate.evaluate(with: [NSMetadataItemFSNameKey: "IMG_1.heic"]))
+        #expect(predicate.evaluate(with: [NSMetadataItemFSNameKey: "IMG_1.HEIC"]))
+        #expect(predicate.evaluate(with: [NSMetadataItemFSNameKey: "IMG_1.jpg"]) == false)
+        let query = NSMetadataQuery()
+        query.predicate = predicate
+        #expect(query.predicate != nil)
+    }
+
+    @Test("Capture-date candidate predicates use content creation, not filesystem dates")
+    func capturePredicate() throws {
+        let plan = try SmartSearchTestFixtures.plan(SmartSearchTestFixtures.interpretation(keywords: [], kind: .image, dateField: .captured))
+        let predicate = SmartSearchPredicateBuilder.predicate(for: plan)
+        let query = NSMetadataQuery()
+        query.predicate = predicate
+        #expect(predicate.predicateFormat.contains("kMDItemContentCreationDate"))
+        #expect(predicate.predicateFormat.contains("kMDItemFSCreationDate") == false)
+        #expect(query.predicate != nil)
+    }
+
     @Test("Every file-kind predicate is accepted by the real Spotlight query parser", arguments: [
         SmartSearchInterpretation.Kind.any, .pdf, .document, .spreadsheet, .presentation,
         .image, .video, .audio, .folder, .archive, .code,

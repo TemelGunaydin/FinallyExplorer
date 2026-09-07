@@ -38,6 +38,7 @@ nonisolated struct ExplorerSearchResult: Identifiable, Hashable, Sendable {
     let item: FileItem
     let relativePath: String
     let contentMatch: ExplorerContentMatch?
+    var captureDate: PhotoCaptureDate? = nil
 
     var isContentMatch: Bool { contentMatch != nil }
 }

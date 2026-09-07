@@ -13,9 +13,9 @@ struct ExplorerAISettingsView: View {
                 .font(.system(.title2, design: .rounded).weight(.semibold))
 
             VStack(alignment: .leading, spacing: 14) {
-                Toggle("Enable Smart Search", isOn: $settings.isSmartSearchEnabled)
+                Toggle("Enable Ask AI & Smart Search", isOn: $settings.isSmartSearchEnabled)
                     .accessibilityIdentifier("ai-settings-smart-search-toggle")
-                Text("Describe a file in the top search bar, choose Smart, then press Return. Apple Intelligence interprets your words; Spotlight finds matching indexed files. No file contents are sent to the model for search.")
+                Text("Open Ask AI for a search you can refine with follow-up questions, or choose Smart in the top search bar. Apple Intelligence interprets your words; Spotlight finds indexed files. No file contents are sent to the model for search.")
                     .font(.callout)
                     .foregroundStyle(theme.textSecondary)
 
@@ -95,7 +95,7 @@ struct ExplorerAISettingsView: View {
             return "Checking model availability…"
         }
         return availability == .available
-            ? "Ready for Smart Search and name suggestions."
+            ? "Ready for Ask AI, Smart Search, and name suggestions."
             : SmartSearchError.unavailable(availability).localizedDescription
     }
 

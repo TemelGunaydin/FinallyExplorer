@@ -13,9 +13,15 @@ nonisolated enum SmartSearchPredicateBuilder {
             }
         }
         if let typePredicate = kindPredicate(plan.kind) { conditions.append(typePredicate) }
+        if plan.fileExtensions.isEmpty == false { conditions.append(extensions(plan.fileExtensions)) }
         if let interval = plan.dateInterval {
-            let key = plan.dateField == .created
-                ? "kMDItemFSCreationDate" : NSMetadataItemContentModificationDateKey
+            let key = switch plan.dateField {
+            case .created: "kMDItemFSCreationDate"
+            case .modified: NSMetadataItemContentModificationDateKey
+            // Spotlight supplies candidates; the service verifies the original
+            // EXIF timestamp before presenting a captured-date match.
+            case .captured: "kMDItemContentCreationDate"
+            }
             conditions.append(NSPredicate(format: "%K >= %@", key, interval.start as NSDate))
             conditions.append(NSPredicate(format: "%K < %@", key, interval.end as NSDate))
         }
