@@ -27,6 +27,8 @@ struct ContentView: View {
     @State private var askAISearch = AskAISearchModel()
     @State private var isAskAIPresented = false
     @State private var folderComparison: FolderComparisonModel?
+    @State private var duplicateFiles: DuplicateFilesModel?
+    @State private var folderOrganization: FolderOrganizationModel?
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -170,13 +172,10 @@ struct ContentView: View {
         return FileCommandContext(pane: pane, coordinator: fileOperations)
     }
 
-    var body: some View {
-        @Bindable var fileOperations = fileOperations
-        @Bindable var terminalApplications = terminalApplications
-        @Bindable var nearbyTransfers = nearbyTransfers
+    private var configuredWorkspace: some View {
         let theme = themeController.activeTheme
 
-        NavigationSplitView(columnVisibility: protectedColumnVisibility) {
+        return NavigationSplitView(columnVisibility: protectedColumnVisibility) {
             explorerSidebar
                 .background {
                     SidebarSplitViewBehaviorInstaller(
@@ -316,6 +315,27 @@ struct ContentView: View {
             .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
+                Menu("File Tools", systemImage: "wrench.and.screwdriver") {
+                    Button("Find Duplicates…", systemImage: "doc.on.doc") {
+                        guard let root = workspace.activePane?.displayedDirectory else { return }
+                        duplicateFiles = DuplicateFilesModel(rootURL: root, operations: fileOperations)
+                    }
+                    .accessibilityIdentifier("file-tools-duplicates")
+                    Button("Organize Folder (Preview)…", systemImage: "folder.badge.gearshape") {
+                        guard let root = workspace.activePane?.displayedDirectory else { return }
+                        folderOrganization = FolderOrganizationModel(rootURL: root)
+                    }
+                    .accessibilityIdentifier("file-tools-organize")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(ExplorerChromeIconButtonStyle())
+                .disabled(workspace.activePane?.displayedDirectory == nil || fileOperations.isPerforming)
+                .help("File tools for the active folder")
+                .accessibilityIdentifier("window-file-tools-button")
+            }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem(placement: .primaryAction) {
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -342,6 +362,15 @@ struct ContentView: View {
         .environment(terminalApplications)
         .environment(nearbyTransfers)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
+    }
+
+    var body: some View {
+        @Bindable var fileOperations = fileOperations
+        @Bindable var terminalApplications = terminalApplications
+        @Bindable var nearbyTransfers = nearbyTransfers
+        let theme = themeController.activeTheme
+
+        configuredWorkspace
         .onChange(of: scenePhase, initial: true) {
             guard scenePhase == .active else { return }
             terminalApplications.refresh()
@@ -442,6 +471,16 @@ struct ContentView: View {
         }
         .sheet(item: $folderComparison) { model in
             FolderComparisonSheet(model: model)
+                .environment(\.explorerTheme, theme)
+        }
+        .sheet(item: $duplicateFiles) { model in
+            DuplicateFilesSheet(model: model) { url in
+                workspace.reveal(FileItem(url: url, isDirectory: false, isImage: false, fileSize: nil, modificationDate: nil))
+            }
+            .environment(\.explorerTheme, theme)
+        }
+        .sheet(item: $folderOrganization) { model in
+            FolderOrganizationSheet(model: model)
                 .environment(\.explorerTheme, theme)
         }
         .sheet(item: $nearbyTransfers.presentation) { presentation in

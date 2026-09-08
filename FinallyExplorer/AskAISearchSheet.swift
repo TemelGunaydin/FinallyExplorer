@@ -81,6 +81,7 @@ struct AskAISearchSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ask-ai-sheet")
         .task {
             model.setEnabled(settings.isSmartSearchEnabled)

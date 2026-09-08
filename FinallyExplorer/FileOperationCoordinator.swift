@@ -42,6 +42,7 @@ final class FileOperationCoordinator {
     @ObservationIgnored private var noticeDismissalTask: Task<Void, Never>?
     @ObservationIgnored private let service: any FileOperationServicing
     @ObservationIgnored private let verifiedCopyService: any VerifiedCopyServicing
+    @ObservationIgnored private let duplicateTrashService: any DuplicateTrashing
     @ObservationIgnored private let noticeDelay: @Sendable () async throws -> Void
     @ObservationIgnored private let applicationUninstallPolicy: ApplicationUninstallPolicy
     @ObservationIgnored private var clipboardRevision = UUID()
@@ -52,12 +53,14 @@ final class FileOperationCoordinator {
             try await Task.sleep(for: .seconds(2.2))
         },
         applicationUninstallPolicy: ApplicationUninstallPolicy = .live(),
-        verifiedCopyService: any VerifiedCopyServicing = VerifiedCopyService()
+        verifiedCopyService: any VerifiedCopyServicing = VerifiedCopyService(),
+        duplicateTrashService: any DuplicateTrashing = DuplicateTrashService()
     ) {
         self.service = service
         self.noticeDelay = noticeDelay
         self.applicationUninstallPolicy = applicationUninstallPolicy
         self.verifiedCopyService = verifiedCopyService
+        self.duplicateTrashService = duplicateTrashService
     }
 
     deinit {
@@ -505,6 +508,41 @@ final class FileOperationCoordinator {
     ) {
         completedItemCount = progress.completedItems
         onProgress(progress)
+    }
+
+    /// Only accepts a reviewed duplicate plan; normal Trash behavior is unchanged.
+    @discardableResult
+    func startDuplicateTrash(
+        _ plan: DuplicateTrashPlan,
+        onProgress: @escaping @MainActor (FolderWorkProgress) -> Void,
+        onCompletion: @escaping @MainActor (DuplicateTrashReport) -> Void
+    ) -> Bool {
+        guard isPerforming == false, plan.pairs.isEmpty == false else { return false }
+        isPerforming = true
+        statusMessage = "Checking approved duplicates…"
+        statusSystemImage = "trash"
+        isErrorPresented = false
+        errorMessage = ""
+        completedItemCount = 0
+        totalItemCount = plan.pairs.count
+        operationTask = Task { [weak self, duplicateTrashService] in
+            let report = await duplicateTrashService.trash(plan) { [weak self] progress in
+                await self?.updateVerifiedCopyProgress(progress, onProgress: onProgress)
+            }
+            guard let self else { return }
+            if report.changedDirectories.isEmpty == false {
+                await publishFileSystemChange(directlyAffecting: report.changedDirectories)
+            }
+            isPerforming = false
+            statusMessage = nil
+            statusSystemImage = nil
+            completedItemCount = 0
+            totalItemCount = 0
+            operationTask = nil
+            presentNotice(message: report.summary, systemImage: "trash")
+            onCompletion(report)
+        }
+        return true
     }
 
     /// Requests cancellation and lets the current operation unwind safely.

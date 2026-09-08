@@ -59,6 +59,7 @@ struct VerifiedCopyReviewSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("verified-copy-review")
     }
 }

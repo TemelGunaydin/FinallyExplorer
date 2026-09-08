@@ -39,4 +39,6 @@ Build and test using XcodeBuildMCP, as required by the project owner.
 
 Delivery validation (2026-09-07): 199 selected new and regression tests passed, with zero failures or skips. The regression selection includes file operations, rename, workspace layout/model, FFF/name/content search, Ask AI and Smart Rename. Both sheet appearances were rendered offscreen and visually inspected. The interactive XCTest was compiled but not executed; foreground automation approval was not provided.
 
+Follow-up validation (2026-09-08): the interactive two-panel comparison test now passes, including cancelling the review without writing, approving a verified copy and seeing both panels refresh. Explicit accessibility containers prevent sheet identifiers from overriding the controls inside them. The shared read-only scanner also powers [Local File Tools](FILE_TOOLS.md); its existing comparison regressions pass in the full unit/integration run.
+
 The SwiftUI, Swift Concurrency and Swift Testing guides shaped theme/accessibility reuse, off-main bounded I/O, cancellable tasks with stale-result guards, and deterministic fixture-based tests.

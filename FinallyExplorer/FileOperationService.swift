@@ -201,7 +201,9 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
             )
         }
 
-        try Task.checkCancellation()
+        // Once Finder reports a completed move, return that outcome even when
+        // cancellation arrived during recycling. The coordinator must refresh
+        // and report the committed item before stopping the next one.
         guard let resultingURL = recycledURLs.first(where: {
             $0.key.standardizedFileURL == sourceURL
         })?.value else {

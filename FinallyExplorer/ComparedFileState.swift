@@ -12,6 +12,7 @@ nonisolated struct ComparedFileState: Equatable, Sendable {
     let changedSeconds: Int64
     let changedNanoseconds: Int64
     let flags: UInt32
+    let linkCount: UInt16
 
     init(_ value: stat) {
         device = value.st_dev
@@ -23,6 +24,7 @@ nonisolated struct ComparedFileState: Equatable, Sendable {
         changedSeconds = Int64(value.st_ctimespec.tv_sec)
         changedNanoseconds = Int64(value.st_ctimespec.tv_nsec)
         flags = value.st_flags
+        linkCount = value.st_nlink
     }
 
     var isDirectory: Bool { mode & UInt16(S_IFMT) == UInt16(S_IFDIR) }

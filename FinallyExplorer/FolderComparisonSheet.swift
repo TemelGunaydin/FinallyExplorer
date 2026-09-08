@@ -40,6 +40,7 @@ struct FolderComparisonSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("folder-comparison-sheet")
         .interactiveDismissDisabled(model.isCopying)
         .onDisappear { model.cancel() }

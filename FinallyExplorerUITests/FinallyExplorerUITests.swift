@@ -82,6 +82,13 @@ final class FinallyExplorerUITests: XCTestCase {
         defaultsSuiteName = nil
     }
 
+    override func record(_ issue: XCTIssue) {
+        if issue.type == .assertionFailure, let app {
+            print("UI failure hierarchy: \(app.windows.firstMatch.debugDescription)")
+        }
+        super.record(issue)
+    }
+
     func testFullRowSelectionAndCrossPaneDrag() throws {
         let sourceRows = rows(named: "Source Item.txt")
         let destinationRows = rows(named: "Destination")
@@ -257,10 +264,7 @@ final class FinallyExplorerUITests: XCTestCase {
         let previewViewport = app.scrollViews["text-file-preview-scroll"]
         XCTAssertTrue(previewViewport.exists)
         XCTAssertGreaterThan(previewViewport.frame.height, 100)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "JSON preview and developer file icons"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
+        recordWindowHierarchy("JSON preview and developer file icons")
     }
 
     func testAISettingsCanDisableSmartRenameAndPersist() throws {
@@ -274,10 +278,7 @@ final class FinallyExplorerUITests: XCTestCase {
             .any, identifier: "ai-settings-view"
         ).firstMatch
         XCTAssertTrue(settingsWindow.exists)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "AI settings"
-        screenshot.lifetime = .keepAlways
-        add(screenshot)
+        recordWindowHierarchy("AI settings")
         settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
 
         let sourceRow = rows(named: "Source Item.txt").firstMatch
@@ -405,10 +406,7 @@ final class FinallyExplorerUITests: XCTestCase {
         try dragSidebarDivider(by: 450)
         expectSidebarWidth(in: 279...281)
 
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Sidebar remains bounded with a split workspace"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        recordWindowHierarchy("Sidebar remains bounded with a split workspace")
     }
 
     func testWindowUsesLargerCustomTrafficLightControls() {
@@ -1179,6 +1177,75 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(destinationRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testDuplicatesRequireSelectionAndConfirmationAndRetainOneCopy() throws {
+        app.terminate()
+        let first = fixtureRootURL.appending(path: "Duplicate A.txt")
+        let second = fixtureRootURL.appending(path: "Duplicate B.txt")
+        let data = Data("Exact duplicate UI fixture".utf8)
+        try data.write(to: first)
+        try data.write(to: second)
+        app.launch()
+        XCTAssertTrue(rows(named: "Duplicate A.txt").firstMatch.waitForExistence(timeout: 10))
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Find Duplicates…"].click()
+        let scan = app.buttons["duplicates-scan"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 5))
+        let review = app.buttons["duplicates-review"]
+        XCTAssertFalse(review.isEnabled)
+        scan.click()
+        let chooseFirst = app.buttons["duplicate-select-Duplicate A.txt"]
+        XCTAssertTrue(chooseFirst.waitForExistence(timeout: 10))
+        XCTAssertFalse(review.isEnabled, "Scanning must not select a removal automatically")
+        chooseFirst.click()
+        XCTAssertFalse(app.buttons["duplicate-select-Duplicate B.txt"].isEnabled, "At least one copy must stay")
+        XCTAssertTrue(review.isEnabled)
+        recordWindowHierarchy("Duplicates")
+        review.click()
+        let confirm = app.buttons["duplicate-trash-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        app.buttons["duplicate-trash-cancel"].click()
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(try Data(contentsOf: first), data)
+        XCTAssertEqual(try Data(contentsOf: second), data)
+        review.click()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(app.staticTexts["duplicate-trash-report"].waitForExistence(timeout: 10))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path))
+        XCTAssertEqual(try Data(contentsOf: second), data)
+        app.buttons["duplicates-close"].click()
+        XCTAssertTrue(rows(named: "Duplicate A.txt").firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(rows(named: "Duplicate B.txt").firstMatch.waitForExistence(timeout: 5))
+    }
+
+    func testOrganizationPreviewShowsDestinationsWithoutChangingFiles() throws {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        let before = fixtureContents()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Organize Folder (Preview)…"].click()
+        let preview = app.buttons["organization-preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        preview.click()
+        XCTAssertTrue(app.staticTexts["organization-summary"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Documents/Source Item.txt"].exists)
+        XCTAssertTrue(app.staticTexts["PREVIEW ONLY"].exists)
+        XCTAssertEqual(fixtureContents(), before)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixtureRootURL.appending(path: "Documents").path))
+        recordWindowHierarchy("Organization")
+        app.buttons["organization-close"].click()
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(fixtureContents(), before)
+    }
+
+    /// App screenshots can capture an unrelated display in multi-monitor setups.
+    /// Keep diagnostics scoped to this app; offscreen tests render the visual fixtures.
+    private func recordWindowHierarchy(_ name: String) {
+        let attachment = XCTAttachment(string: app.windows.firstMatch.debugDescription)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFolderComparisonRequiresApprovalAndCopiesOnlyMissingFiles() throws {
         app.terminate()
         let sourceFolder = fixtureRootURL.appending(path: "Comparison Source")
@@ -1191,10 +1258,10 @@ final class FinallyExplorerUITests: XCTestCase {
         app.buttons["Split Right"].click()
         XCTAssertTrue(waitForElementCount(rows(named: "Destination"), toEqual: 2, timeout: 5))
         let rightFolder = try XCTUnwrap(existingElements(in: rows(named: "Destination")).sorted(by: leftToRight).last)
-        try XCTUnwrap(containingCell(for: rightFolder)).doubleClick()
+        rightFolder.staticTexts["Destination"].doubleClick()
         XCTAssertTrue(app.staticTexts["Folder Is Empty"].waitForExistence(timeout: 5))
         let leftFolder = rows(named: "Comparison Source").firstMatch
-        try XCTUnwrap(containingCell(for: leftFolder)).doubleClick()
+        leftFolder.staticTexts["Comparison Source"].doubleClick()
         XCTAssertTrue(rows(named: "Verified.txt").firstMatch.waitForExistence(timeout: 5))
 
         app.buttons["window-compare-folders-button"].click()
@@ -1216,10 +1283,7 @@ final class FinallyExplorerUITests: XCTestCase {
         confirm.click()
         XCTAssertTrue(app.descendants(matching: .any)["verified-copy-report"].waitForExistence(timeout: 10))
         XCTAssertEqual(try Data(contentsOf: destination), try Data(contentsOf: source))
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Verified copy completion"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        recordWindowHierarchy("Verified copy completion")
         app.buttons["folder-comparison-close"].click()
         XCTAssertTrue(waitForElementCount(rows(named: "Verified.txt"), toEqual: 2, timeout: 10))
     }
@@ -1233,10 +1297,7 @@ final class FinallyExplorerUITests: XCTestCase {
         input.typeText("Find the accounting report from two days ago")
         XCTAssertTrue(app.buttons["ask-ai-submit"].isEnabled)
         XCTAssertFalse(app.descendants(matching: .any)["ask-ai-current-filters"].exists)
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Ask AI panel"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        recordWindowHierarchy("Ask AI panel")
         app.buttons["ask-ai-new-search"].click()
         XCTAssertEqual(input.value as? String, "")
         XCTAssertFalse(app.buttons["ask-ai-submit"].isEnabled)
@@ -1270,10 +1331,7 @@ final class FinallyExplorerUITests: XCTestCase {
         field.typeText("Global Needle")
         XCTAssertTrue(app.staticTexts["Global Needle Alpha.txt"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Global Needle Beta.txt"].waitForExistence(timeout: 10))
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Normal search preserved after Smart Search"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        recordWindowHierarchy("Normal search preserved after Smart Search")
     }
 
     func testGlobalSearchSupportsArrowSelectionAndReturnReveal() throws {

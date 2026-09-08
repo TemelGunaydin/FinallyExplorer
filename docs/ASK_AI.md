@@ -37,8 +37,12 @@ The SwiftUI, Swift Concurrency, and Swift Testing guides informed the themed/acc
 
 [Compare Folders & Verified Copy](FOLDER_COMPARISON.md) is now available as a separate toolbar tool. It compares regular file data between open panes and adds missing items only after review and confirmation. It does not require AI, and Ask AI cannot invoke file-changing commands.
 
+## Related tools — third delivery
+
+Exact duplicates and read-only organization previews are now available through [Local File Tools](FILE_TOOLS.md). Duplicate removal requires manual selection and a separate confirmation; organization does not move files yet.
+
 ## Next deliveries (not implemented here)
 
-1. Exact duplicates and batch organization with a dry-run preview.
+1. Applying a reviewed organization plan with collision checks and explicit confirmation.
 2. An offline catalog for disconnected drives.
 3. Visual search / richer document questions with a separately scoped local index and explicit permission boundaries.
