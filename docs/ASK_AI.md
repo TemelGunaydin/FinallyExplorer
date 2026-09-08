@@ -39,10 +39,13 @@ The SwiftUI, Swift Concurrency, and Swift Testing guides informed the themed/acc
 
 ## Related tools — third delivery
 
-Exact duplicates and read-only organization previews are now available through [Local File Tools](FILE_TOOLS.md). Duplicate removal requires manual selection and a separate confirmation; organization does not move files yet.
+Exact duplicates and read-only organization previews were introduced through [Local File Tools](FILE_TOOLS.md). Duplicate removal requires manual selection and a separate confirmation. The next delivery below adds reviewed organization moves.
+
+## Related tools — fourth delivery
+
+**Organize Folder** now applies a reviewed plan only after a separate **Move Files** confirmation. Immediate files move into file-type or modification-month subfolders on the same disk, with fresh change/collision checks and no overwrites. Cancellation reports partial completion; completed moves remain in place. The preview is still read-only, and Ask AI cannot execute these operations. See [Local File Tools](FILE_TOOLS.md) for exclusions and safety limits.
 
 ## Next deliveries (not implemented here)
 
-1. Applying a reviewed organization plan with collision checks and explicit confirmation.
-2. An offline catalog for disconnected drives.
-3. Visual search / richer document questions with a separately scoped local index and explicit permission boundaries.
+1. An offline catalog for disconnected drives.
+2. Visual search / richer document questions with a separately scoped local index and explicit permission boundaries.

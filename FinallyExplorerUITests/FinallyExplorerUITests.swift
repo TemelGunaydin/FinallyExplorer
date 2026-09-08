@@ -1222,19 +1222,56 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let before = fixtureContents()
         app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Organize Folder (Preview)…"].click()
+        app.menuItems["Organize Folder…"].click()
         let preview = app.buttons["organization-preview"]
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
         preview.click()
         XCTAssertTrue(app.staticTexts["organization-summary"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Documents/Source Item.txt"].exists)
-        XCTAssertTrue(app.staticTexts["PREVIEW ONLY"].exists)
+        XCTAssertTrue(app.buttons["organization-review-button"].isEnabled)
         XCTAssertEqual(fixtureContents(), before)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixtureRootURL.appending(path: "Documents").path))
         recordWindowHierarchy("Organization")
         app.buttons["organization-close"].click()
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(fixtureContents(), before)
+    }
+
+    func testOrganizationRequiresReviewAndConfirmationThenRefreshesTheFolder() throws {
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
+        let source = fixtureRootURL.appending(path: "Source Item.txt")
+        let data = try Data(contentsOf: source)
+        let destination = fixtureRootURL.appending(path: "Documents/Source Item.txt")
+        let before = fixtureContents()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Organize Folder…"].click()
+        let preview = app.buttons["organization-preview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        let review = app.buttons["organization-review-button"]
+        XCTAssertFalse(review.isEnabled)
+        preview.click()
+        XCTAssertTrue(app.staticTexts["organization-summary"].waitForExistence(timeout: 10))
+        review.click()
+        let confirm = app.buttons["organization-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Files to move: 1 · New folders: 1"].exists)
+        recordWindowHierarchy("Organization move review")
+        app.buttons["organization-review-cancel"].click()
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(fixtureContents(), before)
+        XCTAssertEqual(try Data(contentsOf: source), data)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.deletingLastPathComponent().path))
+        review.click()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(app.staticTexts["organization-report"].waitForExistence(timeout: 10))
+        XCTAssertFalse(review.isEnabled, "A completed plan must not be reused")
+        XCTAssertEqual(try Data(contentsOf: destination), data)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        app.buttons["organization-close"].click()
+        XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(rows(named: "Documents").firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(rows(named: "Destination").firstMatch.exists)
     }
 
     /// App screenshots can capture an unrelated display in multi-monitor setups.

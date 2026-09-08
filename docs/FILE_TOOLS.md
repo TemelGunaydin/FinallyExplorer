@@ -18,24 +18,34 @@ Before any removal the service revalidates every selected file and its retained 
 
 Cancellation stops at safe boundaries. Already completed removals are reported and directory views are refreshed; remaining files are left alone. If cancellation arrives while Finder is completing a removal, that completed item is still counted. After success, failure or cancellation, rescan before another removal. These checks are not a transactional filesystem lock or a guarantee against concurrent external modifications between validation and Finder's path-based recycle operation.
 
-## Organize Folder — preview only
+## Organize Folder — reviewed moves
 
-Choose **Organize Folder (Preview)…** and group by **File Type** or **Modified Month**. **Preview Changes** shows source → destination paths inside the selected root.
+1. Choose **Organize Folder…** and group by **File Type** or **Modified Month**. **Preview Changes** shows source → destination paths inside the selected root. This step is read-only: no files move and no folders are created.
+2. **Review Moves…** lists the files to move and the subfolders to create. **Cancel** changes nothing.
+3. Only **Move Files** authorizes changes. Files stay on the same disk, inside the selected root; their names remain unchanged. A completion report lists the moves and created folders. Open panels and cached folder sizes are refreshed through the existing shared file-operation coordinator.
 
 - Only immediate regular files are considered. Existing folders and their contents stay in place; project trees are not recursively reorganized.
 - File type uses the application's existing extension/UTType classification. It does not infer document topics.
 - Dates use filesystem modification time and the Mac's calendar/timezone, not photo capture or download/import dates.
 - Existing target names and unsafe destination folders are listed as skipped; no overwrite or automatic renaming is proposed.
-- This delivery is deliberately read-only: **no files move and no folders are created**. Applying a reviewed organization plan is the next phase and needs fresh validation and explicit approval at execution time.
+- Hidden files are opt-in. Hard-linked files, symlinks, packages, special files, cloud placeholders and nested mounts are excluded. Hidden destination folders are also excluded unless hidden items are enabled. Existing safe category folders are reused, including filesystem case aliases such as `documents`/`Documents`.
+
+All approved sources and destinations are revalidated before the first write, then again at each move boundary. Source identity and change tokens must still match the preview; existing destination folders must keep their identity. A previously absent folder that appears after preview requires a new preview. Child directory traversal and source opens use no-follow descriptors. A same-volume, exclusive `renameatx_np(RENAME_EXCL)` moves each file without copying its data and preserves its inode, attributes and resource fork. There is no cross-volume copy/delete fallback, silent overwrite, or automatic renaming.
+
+Cancellation and errors stop before the next file. **Completed moves and newly created folders remain in place**, including a created folder that is still empty; there is no automatic rollback or Undo in this delivery. The report records completed writes even if cancellation arrives immediately afterward. After success, cancellation or failure, generate a fresh preview before another operation. These checks are not a multi-file transaction or a filesystem lock against concurrent external changes in the interval between the final check and rename.
+
+Organization shares the window's ordinary write gate, so it cannot overlap paste, rename, duplicate removal or verified copy in that window. It does not consume or replace the clipboard. Changes from other windows or applications are subject to the same revalidation limits above. Ask AI cannot trigger it, and no model or network access is involved.
 
 ## Validation and design
 
 Use XcodeBuildMCP for builds and tests. Synthetic fixtures cover grouping, size prefiltering, hard links/resource forks, hidden entries, traversal exclusions, bounds, cancellation, changed keepers/sources/parents, partial completion, confirmation guards, directory refresh, grouping rules and no-write previews.
 
-Offscreen light/dark renders check sheet sizing. XCTest covers selection, keeping one copy, cancelling and approving removal, refreshing the file panel, and the read-only organization preview. Interactive tests operate on temporary fixtures, never the user's working files.
+Offscreen light/dark renders check sheet sizing. XCTest covers selection, keeping one copy, cancelling and approving removal, the read-only organization preview, cancelling its review, confirming moves and refreshing the file panel. Interactive tests operate on temporary fixtures, never the user's working files.
 
-Delivery validation (2026-09-08): **435 tests passed, zero failures or skips** in the final XcodeBuildMCP run: 425 unit/integration/offscreen tests across 57 suites, plus 10 interactive UI scenarios. The UI selection covers both new tools, Ask AI, folder comparison, split/reset layout, copy/paste feedback, rename, cancelling new-folder creation, content-search controls and compact-name matching. All three new sheets were also rendered and inspected in light/dark appearances.
+Previous delivery validation (2026-09-08): **435 tests passed, zero failures or skips**: 425 unit/integration/offscreen tests across 57 suites, plus 10 interactive UI scenarios. The UI selection covers both tools, Ask AI, folder comparison, split/reset layout, copy/paste feedback, rename, cancelling new-folder creation, content-search controls and compact-name matching.
 
-Final result bundle: `test_macos_2026-09-08T10-48-22-770Z_pid46433_a95b7f96.xcresult` in the XcodeBuildMCP workspace. UI diagnostics use app-window accessibility text instead of explicit desktop screenshots, which can capture an unrelated monitor on multi-display Macs. Offscreen render fixtures provide visual artifacts without capturing other applications.
+Reviewed-move validation (2026-09-08): **440 unit/integration/offscreen tests passed across 59 suites** in `test_macos_2026-09-08T12-27-13-030Z_pid65103_58f0060a.xcresult`. That run's UI checks failed with automation permission/connection errors. The two organization UI scenarios were then rerun successfully, with zero failures or skips, in `test_macos_2026-09-08T13-34-19-083Z_pid13719_c7f3ce09.xcresult`. They verify read-only preview, cancelled confirmation, approved moves and panel refresh. Previews, reviews and completion states were rendered and inspected in light/dark appearances.
+
+Result bundles are in the XcodeBuildMCP workspace. UI diagnostics use app-window accessibility text instead of explicit desktop screenshots, which can capture an unrelated monitor on multi-display Macs. Offscreen render fixtures provide visual artifacts without capturing other applications.
 
 The SwiftUI, Swift Concurrency and Swift Testing guides informed the shared theme, explicit accessibility containers, lazy results, off-main bounded I/O, cancellation/generation guards and deterministic tests. Accessibility containers also fix identifier propagation in the existing Ask AI and folder-comparison sheets.

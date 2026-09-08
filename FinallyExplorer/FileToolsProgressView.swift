@@ -5,6 +5,7 @@ struct FileToolsProgressView: View {
     let progress: FolderWorkProgress
     var isCancelling = false
     var isTrashing = false
+    var detail: String?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -16,9 +17,9 @@ struct FileToolsProgressView: View {
             if let fraction = progress.fraction {
                 ProgressView(value: fraction).frame(maxWidth: 360)
             }
-            Text(isTrashing
+            Text(detail ?? (isTrashing
                  ? "If you cancel, files already moved to Trash stay there. Remaining files are left alone."
-                 : "Only this folder is being scanned. Large folders can take time; you can cancel at any point.")
+                 : "Only this folder is being scanned. Large folders can take time; you can cancel at any point."))
                 .font(.callout).foregroundStyle(theme.textSecondary)
                 .multilineTextAlignment(.center)
         }

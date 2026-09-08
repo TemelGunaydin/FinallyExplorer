@@ -25,9 +25,11 @@ nonisolated struct FolderOrganizationService: FolderOrganizationPlanning {
             root, rootURL: url, includesHidden: includesHidden, entryLimit: entryLimit, recursive: false, progress: progress
         )
         var proposed: [FolderOrganizationRow] = [], skipped: [FolderOrganizationRow] = []
+        var destinationFolders: [String: ComparedFileState] = [:]
         for entry in entries.values.sorted(by: { $0.relativePath < $1.relativePath }) {
             try Task.checkCancellation()
-            let reason = entry.skippedReason ?? (entry.state.isDirectory ? "Folder — contents left in place" : nil)
+            let reason = entry.skippedReason ?? (entry.state.isDirectory ? "Folder — contents left in place"
+                : entry.state.linkCount != 1 ? "Hard-linked file — left in place" : nil)
             if let reason {
                 skipped.append(FolderOrganizationRow(sourcePath: entry.relativePath, destinationPath: nil, skippedReason: reason))
                 continue
@@ -36,9 +38,14 @@ nonisolated struct FolderOrganizationService: FolderOrganizationPlanning {
             let target = "\(folder)/\(entry.relativePath)"
             var conflict: String?
             if let existing = try root.state(of: folder) {
-                if existing.isDirectory == false || existing.isPlaceholder || existing.device != state.device {
-                    conflict = "Destination folder is a link, special item, cloud placeholder or mounted folder"
+                if existing.isDirectory == false || existing.isPlaceholder || existing.device != state.device
+                    || (includesHidden == false && existing.isHidden)
+                    || (try? url.appending(path: folder).resourceValues(forKeys: [.isPackageKey]).isPackage) == true {
+                    conflict = "Destination is a link, special item, package, excluded hidden folder, cloud placeholder or mounted folder"
                 } else {
+                    // Capture the actual filesystem identity even if its spelling/case
+                    // differs from the generated category name (e.g. documents/Documents).
+                    destinationFolders[folder] = existing
                     let parent = try root.directory([folder])
                     if try parent.state(of: entry.relativePath) != nil { conflict = "Destination already exists — never overwrite" }
                 }
@@ -48,7 +55,8 @@ nonisolated struct FolderOrganizationService: FolderOrganizationPlanning {
         }
         try FolderTreeScanner.validate(root, root: state, entries: entries)
         guard try ScopedFolderDescriptor(rootURL: url).state().hasSameIdentity(as: state) else { throw FileToolsError.scanAgain(url.path) }
-        return FolderOrganizationPlan(rootURL: url, rule: rule, proposed: proposed, skipped: skipped, excludedHiddenCount: excluded)
+        return FolderOrganizationPlan(rootURL: url, rootState: state, entries: entries, destinationFolders: destinationFolders,
+            rule: rule, proposed: proposed, skipped: skipped, excludedHiddenCount: excluded)
     }
 
     private func destinationFolder(for entry: ComparedFolderEntry, rootURL: URL, rule: FolderOrganizationRule) -> String {

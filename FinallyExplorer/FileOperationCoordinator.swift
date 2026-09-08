@@ -43,6 +43,7 @@ final class FileOperationCoordinator {
     @ObservationIgnored private let service: any FileOperationServicing
     @ObservationIgnored private let verifiedCopyService: any VerifiedCopyServicing
     @ObservationIgnored private let duplicateTrashService: any DuplicateTrashing
+    @ObservationIgnored private let organizationService: any FolderOrganizationApplying
     @ObservationIgnored private let noticeDelay: @Sendable () async throws -> Void
     @ObservationIgnored private let applicationUninstallPolicy: ApplicationUninstallPolicy
     @ObservationIgnored private var clipboardRevision = UUID()
@@ -54,13 +55,15 @@ final class FileOperationCoordinator {
         },
         applicationUninstallPolicy: ApplicationUninstallPolicy = .live(),
         verifiedCopyService: any VerifiedCopyServicing = VerifiedCopyService(),
-        duplicateTrashService: any DuplicateTrashing = DuplicateTrashService()
+        duplicateTrashService: any DuplicateTrashing = DuplicateTrashService(),
+        organizationService: any FolderOrganizationApplying = FolderOrganizationApplyService()
     ) {
         self.service = service
         self.noticeDelay = noticeDelay
         self.applicationUninstallPolicy = applicationUninstallPolicy
         self.verifiedCopyService = verifiedCopyService
         self.duplicateTrashService = duplicateTrashService
+        self.organizationService = organizationService
     }
 
     deinit {
@@ -540,6 +543,42 @@ final class FileOperationCoordinator {
             totalItemCount = 0
             operationTask = nil
             presentNotice(message: report.summary, systemImage: "trash")
+            onCompletion(report)
+        }
+        return true
+    }
+
+    /// Shares the ordinary mutation gate and refresh pipeline, without changing the clipboard.
+    @discardableResult
+    func startOrganization(
+        _ plan: FolderOrganizationMovePlan,
+        onProgress: @escaping @MainActor (FolderWorkProgress) -> Void,
+        onCompletion: @escaping @MainActor (FolderOrganizationReport) -> Void
+    ) -> Bool {
+        guard isPerforming == false, plan.moves.isEmpty == false else { return false }
+        isPerforming = true
+        statusMessage = "Organizing approved files…"
+        statusSystemImage = "folder.badge.gearshape"
+        isErrorPresented = false
+        errorMessage = ""
+        completedItemCount = 0
+        totalItemCount = plan.moves.count
+        operationTask = Task { [weak self, organizationService] in
+            let report = await organizationService.apply(plan) { [weak self] progress in
+                await self?.updateVerifiedCopyProgress(progress, onProgress: onProgress)
+            }
+            guard let self else { return }
+            if report.changedDirectories.isEmpty == false {
+                await publishFileSystemChange(directlyAffecting: report.changedDirectories)
+            }
+            isPerforming = false
+            statusMessage = nil
+            statusSystemImage = nil
+            completedItemCount = 0
+            totalItemCount = 0
+            operationTask = nil
+            presentNotice(message: report.summary, systemImage: report.errorMessage == nil && report.wasCancelled == false
+                ? "checkmark.circle" : "exclamationmark.circle")
             onCompletion(report)
         }
         return true

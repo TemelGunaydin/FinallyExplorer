@@ -1,21 +1,12 @@
 import Foundation
 
-nonisolated enum FolderOrganizationRule: String, CaseIterable, Identifiable, Sendable {
-    case fileType = "File Type"
-    case modifiedMonth = "Modified Month"
-    var id: Self { self }
-}
-
-nonisolated struct FolderOrganizationRow: Identifiable, Sendable {
-    let sourcePath: String
-    let destinationPath: String?
-    let skippedReason: String?
-    var id: String { sourcePath }
-}
-
-/// A read-only proposal. There is deliberately no execution method in this delivery.
-nonisolated struct FolderOrganizationPlan: Sendable {
+/// A read-only snapshot. A separate, reviewed move plan is required to authorize changes.
+nonisolated struct FolderOrganizationPlan: Identifiable, Sendable {
+    let id = UUID()
     let rootURL: URL
+    let rootState: ComparedFileState
+    let entries: [String: ComparedFolderEntry]
+    let destinationFolders: [String: ComparedFileState]
     let rule: FolderOrganizationRule
     let proposed: [FolderOrganizationRow]
     let skipped: [FolderOrganizationRow]

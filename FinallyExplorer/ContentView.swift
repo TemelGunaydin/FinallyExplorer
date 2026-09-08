@@ -321,9 +321,9 @@ struct ContentView: View {
                         duplicateFiles = DuplicateFilesModel(rootURL: root, operations: fileOperations)
                     }
                     .accessibilityIdentifier("file-tools-duplicates")
-                    Button("Organize Folder (Preview)…", systemImage: "folder.badge.gearshape") {
+                    Button("Organize Folder…", systemImage: "folder.badge.gearshape") {
                         guard let root = workspace.activePane?.displayedDirectory else { return }
-                        folderOrganization = FolderOrganizationModel(rootURL: root)
+                        folderOrganization = FolderOrganizationModel(rootURL: root, operations: fileOperations)
                     }
                     .accessibilityIdentifier("file-tools-organize")
                 }

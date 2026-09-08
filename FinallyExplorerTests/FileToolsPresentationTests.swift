@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
-    @Test("Duplicate results, removal review and organization preview fit in light and dark", arguments: [false, true])
+    @Test("Duplicate and organization previews, reviews and completion fit in light and dark", arguments: [false, true])
     func offscreenLayout(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
@@ -18,9 +18,25 @@ struct FileToolsPresentationTests {
         let plan = try DuplicateTrashPlan(snapshot: snapshot, selection: ["Archived accounting report.pdf"])
         try render(DuplicateFilesSheet(model: duplicates, onReveal: { _ in }), name: "Duplicates", width: 760, height: 660, dark: dark)
         try render(DuplicateTrashReviewSheet(plan: plan, onConfirm: {}), name: "DuplicateReview", width: 620, height: 540, dark: dark)
-        let organization = FolderOrganizationModel(rootURL: fixture.source)
+        let operations = FileOperationCoordinator()
+        let organization = FolderOrganizationModel(rootURL: fixture.source, operations: operations)
         await organization.preview()?.value
         try render(FolderOrganizationSheet(model: organization), name: "Organization", width: 760, height: 660, dark: dark)
+        organization.reviewMoves()
+        let moves = try #require(organization.review)
+        try render(FolderOrganizationReviewSheet(plan: moves, onConfirm: {}), name: "OrganizationReview", width: 620, height: 560, dark: dark)
+        // A rendered sheet is torn down when its offscreen window closes and
+        // legitimately calls cancel(). Do not reuse that lifecycle owner for work.
+        let completion = FolderOrganizationModel(rootURL: fixture.source, operations: operations)
+        await completion.preview()?.value
+        completion.reviewMoves()
+        let approved = try #require(completion.review)
+        #expect(completion.confirmMoves(approved))
+        await operations.waitForCurrentOperation()
+        #expect(completion.report?.movedFiles.count == approved.moves.count)
+        #expect(completion.report?.errorMessage == nil)
+        #expect(completion.report?.wasCancelled == false)
+        try render(FolderOrganizationSheet(model: completion), name: "OrganizationReport", width: 760, height: 660, dark: dark)
     }
 
     private func render(_ view: some View, name: String, width: CGFloat, height: CGFloat, dark: Bool) throws {
