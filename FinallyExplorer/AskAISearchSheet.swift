@@ -137,7 +137,7 @@ struct AskAISearchSheet: View {
                 .foregroundStyle(theme.textPrimary)
                 .disabled(model.isEnabled == false)
             }
-            Text("Search only: no files are changed. Search uses Spotlight’s index, not the Photos library. Visual-subject search and document Q&A are not available yet. Your descriptions stay on-device; no file contents are sent to the model for search.")
+            Text("Search only: no files are changed. This conversation uses Spotlight’s index, not the Photos library. For visual labels and text inside images, use File Tools → Visual Search. Document Q&A is not available yet. Your descriptions stay on-device; no file contents enter this search conversation.")
                 .font(.callout)
                 .foregroundStyle(theme.textSecondary)
         }

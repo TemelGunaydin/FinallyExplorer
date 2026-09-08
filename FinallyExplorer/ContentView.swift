@@ -30,6 +30,8 @@ struct ContentView: View {
     @State private var duplicateFiles: DuplicateFilesModel?
     @State private var folderOrganization: FolderOrganizationModel?
     @State private var offlineCatalog: OfflineCatalogModel?
+    @State private var visualSearch = VisualSearchModel()
+    @State private var isVisualSearchPresented = false
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -342,6 +344,13 @@ struct ContentView: View {
                         offlineCatalog = OfflineCatalogModel(store: offlineCatalogStore, volumes: offlineVolumes)
                     }
                     .accessibilityIdentifier("file-tools-offline-catalogs")
+                    Button("Visual Search…", systemImage: "photo.badge.magnifyingglass") {
+                        if visualSearch.sourceURL == nil, let root = workspace.activePane?.displayedDirectory {
+                            visualSearch.setSource(root)
+                        }
+                        isVisualSearchPresented = true
+                    }
+                    .accessibilityIdentifier("file-tools-visual-search")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerChromeIconButtonStyle())
@@ -502,6 +511,12 @@ struct ContentView: View {
         .sheet(item: $offlineCatalog) { model in
             OfflineCatalogSheet(model: model, mountedVolumes: sidebar.mountedVolumeMonitor) { url, isDirectory in
                 workspace.reveal(FileItem(url: url, isDirectory: isDirectory, isImage: false, fileSize: nil, modificationDate: nil))
+            }
+            .environment(\.explorerTheme, theme)
+        }
+        .sheet(isPresented: $isVisualSearchPresented) {
+            VisualSearchSheet(model: visualSearch) { url in
+                workspace.reveal(FileItem(url: url, isDirectory: false, isImage: true, fileSize: nil, modificationDate: nil))
             }
             .environment(\.explorerTheme, theme)
         }

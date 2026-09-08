@@ -4,6 +4,10 @@
 //
 
 import XCTest
+import CoreGraphics
+import CoreText
+import ImageIO
+import UniformTypeIdentifiers
 
 final class FinallyExplorerUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -1335,6 +1339,82 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertFalse(remove.exists)
         XCTAssertEqual(try Data(contentsOf: file), data)
         recordWindowHierarchy("Saved catalog removed without touching originals")
+    }
+
+    func testVisualSearchRequiresAnalysisFindsImageTextAndCanForgetIt() throws {
+        app.terminate()
+        let file = fixtureRootURL.appending(path: "ZXQ-Visual-Fixture.png")
+        let data = try visualReceiptImage()
+        try data.write(to: file)
+        app.launch()
+        openVisualSearch()
+        XCTAssertFalse(app.textFields["visual-search-query"].exists, "Opening the tool must not analyze images")
+        app.buttons["visual-search-analyze"].click()
+        let query = app.textFields["visual-search-query"]
+        XCTAssertTrue(query.waitForExistence(timeout: 45))
+        XCTAssertFalse(app.staticTexts["visual-search-error"].exists)
+        typeCatalogQuery("invoice", in: query)
+        XCTAssertEqual(query.value as? String, "invoice")
+        let reveal = app.buttons["visual-search-reveal-ZXQ-Visual-Fixture.png"]
+        XCTAssertTrue(reveal.waitForExistence(timeout: 5))
+        recordWindowHierarchy("Real local OCR result with its evidence")
+        app.buttons["visual-search-close"].click()
+        openVisualSearch()
+        XCTAssertEqual(app.textFields["visual-search-query"].value as? String, "invoice")
+        XCTAssertTrue(reveal.waitForExistence(timeout: 5), "Reopening reuses memory without another scan")
+        app.buttons["visual-search-clear"].click()
+        XCTAssertFalse(app.textFields["visual-search-query"].exists)
+        XCTAssertEqual(try Data(contentsOf: file), data)
+        app.buttons["visual-search-close"].click()
+        XCTAssertTrue(element(withIdentifier: "global-search-text-field").waitForExistence(timeout: 5))
+        app.terminate()
+        app.launch()
+        openVisualSearch()
+        XCTAssertFalse(app.textFields["visual-search-query"].exists, "Image evidence must not persist across launches")
+    }
+
+    func testVisualSearchRejectsAChangedResultWithoutNavigating() throws {
+        app.terminate()
+        let file = fixtureRootURL.appending(path: "Changed-Visual-Fixture.png")
+        try visualReceiptImage().write(to: file)
+        app.launch()
+        openVisualSearch()
+        app.buttons["visual-search-analyze"].click()
+        XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
+        let reveal = app.buttons["visual-search-reveal-Changed-Visual-Fixture.png"]
+        XCTAssertTrue(reveal.waitForExistence(timeout: 5))
+        try Data("Replaced fixture".utf8).write(to: file)
+        reveal.click()
+        XCTAssertTrue(app.staticTexts["visual-search-error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["visual-search-close"].exists)
+        recordWindowHierarchy("Changed image cannot be revealed from stale evidence")
+    }
+
+    private func openVisualSearch() {
+        let tools = app.menuButtons["window-file-tools-button"]
+        XCTAssertTrue(tools.waitForExistence(timeout: 10))
+        tools.click()
+        app.menuItems["Visual Search…"].click()
+        XCTAssertTrue(app.buttons["visual-search-close"].waitForExistence(timeout: 5))
+    }
+
+    private func visualReceiptImage() throws -> Data {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 1_000, height: 500, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 1_000, height: 500))
+        let line = NSAttributedString(string: "INVOICE 4827", attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica-Bold" as CFString, 80, nil),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+        ])
+        context.textPosition = CGPoint(x: 100, y: 250)
+        CTLineDraw(CTLineCreateWithAttributedString(line), context)
+        let image = try XCTUnwrap(context.makeImage())
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return data as Data
     }
 
     private func openOfflineCatalogs() throws {

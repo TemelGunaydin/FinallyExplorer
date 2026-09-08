@@ -18,7 +18,7 @@ Photo capture dates are separate from filesystem creation/modification dates. Sp
 
 This is **not a complete photo-library search**. It cannot find Photos-library-only or unindexed assets, and incorrect/missing Spotlight content dates can omit otherwise valid images. Searches remain bounded to the existing Spotlight candidate limit and 120 displayed results. There is no new full-disk scan.
 
-Visual scene/person recognition, document Q&A, download/import dates, size/exclusion filters, and file-changing commands are not implemented in this delivery. Common unsupported requests are rejected before inference; image-topic requests require an explicit filename query rather than masquerading as visual search.
+Visual scene/person recognition, document Q&A, download/import dates, size/exclusion filters, and file-changing commands are not implemented in this conversation. Common unsupported requests are rejected before inference; image-topic requests require an explicit filename query rather than masquerading as visual search. The separate Visual Search tool described below now provides scoped visual-label/OCR retrieval, not conversation-based image search.
 
 ## Validation
 
@@ -49,6 +49,10 @@ Exact duplicates and read-only organization previews were introduced through [Lo
 
 [Offline Catalogs](OFFLINE_CATALOGS.md) keeps explicit metadata snapshots of selected external disk folders searchable when the disk is disconnected. It has its own name/path, extension, size and modification-date filters; normal FFF/grep and Ask AI remain unchanged. No file contents are copied or sent to a model.
 
+## Related tools — sixth delivery
+
+[Visual Search](VISUAL_SEARCH.md) analyzes up to 300 supported still images in an explicitly chosen local folder using Vision classification and English OCR. It searches observed evidence rather than filenames and shows why each result matched. Analysis is opt-in and memory-only, with cancel/clear controls and no startup scan. The existing Ask AI conversation is unchanged; full natural-language visual conversation and document Q&A remain future work.
+
 ## Next delivery (not implemented here)
 
-Visual search / richer document questions with a separately scoped local index and explicit permission boundaries. Offline Catalogs is not a content, photo-scene or document-Q&A index.
+Questions over explicitly selected documents, with bounded local extraction and inspectable source references. Offline Catalogs remains metadata-only.

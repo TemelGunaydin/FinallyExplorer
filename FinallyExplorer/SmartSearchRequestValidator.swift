@@ -31,8 +31,8 @@ nonisolated enum SmartSearchRequestValidator {
     }
 
     static func validateCapabilities(_ plan: SmartSearchPlan, query: String, previousPlan: SmartSearchPlan? = nil) throws {
-        // Image subjects need a visual index, which is not implemented. A name
-        // query must be explicit; never masquerade keyword matches as vision.
+        // This conversation does not consume the separate Visual Search index.
+        // A name query must be explicit; never masquerade keyword matches as vision.
         if plan.kind == .image, plan.keywords.isEmpty == false {
             let inheritsValidatedKeywords = previousPlan?.kind == .image
                 && previousPlan?.keywords == plan.keywords && previousPlan?.area == plan.area

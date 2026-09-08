@@ -10,7 +10,7 @@ nonisolated struct AskAISearchInterpreterStub: AskAISearchInterpreting {
     }
 }
 
-actor AskAISearchGate: AskAISearchInterpreting {
+actor AskAISearchGate {
     private var continuation: CheckedContinuation<SmartSearchPlan, any Error>?
     private var waiter: CheckedContinuation<Void, Never>?
     private var requested = false
@@ -34,3 +34,7 @@ actor AskAISearchGate: AskAISearchInterpreting {
         continuation = nil
     }
 }
+
+// Keep the actor's declaration independent of the nonisolated protocol. The
+// beta compiler otherwise infers nonisolated isolation for the actor itself.
+extension AskAISearchGate: AskAISearchInterpreting {}

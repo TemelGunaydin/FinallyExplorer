@@ -5,6 +5,24 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("Visual search empty and analyzed states fit in light and dark", arguments: [false, true])
+    func visualSearchLayout(_ dark: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        let image = fixture.source.appending(path: "Receipt.png")
+        try VisualSearchTestFixtures.receiptImage().write(to: image)
+        let empty = VisualSearchModel()
+        empty.setSource(fixture.source)
+        try render(VisualSearchSheet(model: empty, onReveal: { _ in }), name: "VisualSearchEmpty", width: 820, height: 720, dark: dark)
+        let populated = VisualSearchModel(service: VisualSearchService(analyzer: PresentationVisualAnalyzer()))
+        populated.setSource(fixture.source)
+        await populated.analyze()?.value
+        populated.query = "invoice"
+        await populated.waitForSearch()
+        #expect(populated.matches.count == 1)
+        try render(VisualSearchSheet(model: populated, onReveal: { _ in }), name: "VisualSearchResults", width: 820, height: 720, dark: dark)
+    }
+
     @Test("Offline catalogs fit in light and dark without accessing a live disk", arguments: [false, true])
     func offlineCatalogLayout(_ dark: Bool) async throws {
         let fixture = try OfflineCatalogTestFixture()
@@ -76,5 +94,12 @@ struct FileToolsPresentationTests {
         let png = try #require(bitmap.representation(using: .png, properties: [:]))
         #expect(png.count > 1_000)
         try png.write(to: URL(filePath: "/tmp/FinallyExplorer-\(name)-\(dark ? "dark" : "light").png"), options: .atomic)
+    }
+}
+
+private nonisolated struct PresentationVisualAnalyzer: VisualImageAnalyzing {
+    func analyze(_ data: Data) async throws -> VisualImageEvidence {
+        VisualImageEvidence(labels: [.init(name: "document", confidence: 0.9)],
+            text: "INVOICE 4827", textWasTruncated: false, thumbnail: data)
     }
 }
