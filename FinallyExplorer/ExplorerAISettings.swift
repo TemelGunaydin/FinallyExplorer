@@ -4,6 +4,9 @@ import Observation
 @MainActor
 @Observable
 final class ExplorerAISettings {
+    var isDocumentQuestionsEnabled: Bool {
+        didSet { defaults.set(isDocumentQuestionsEnabled, forKey: "documentQuestions.enabled") }
+    }
     var isSmartSearchEnabled: Bool {
         didSet { defaults.set(isSmartSearchEnabled, forKey: Self.searchKey) }
     }
@@ -31,6 +34,7 @@ final class ExplorerAISettings {
         self.defaults = defaults
         self.service = service
         isSmartSearchEnabled = defaults.object(forKey: Self.searchKey) as? Bool ?? true
+        isDocumentQuestionsEnabled = defaults.object(forKey: "documentQuestions.enabled") as? Bool ?? true
         isSmartRenameEnabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
         usesFileContentsByDefault = defaults.object(forKey: Self.contentsKey) as? Bool ?? true
     }

@@ -13,11 +13,13 @@ struct ExplorerAISettingsTests {
         settings.isSmartRenameEnabled = false
         settings.usesFileContentsByDefault = false
         settings.isSmartSearchEnabled = false
+        settings.isDocumentQuestionsEnabled = false
 
         let reopened = ExplorerAISettings(defaults: defaults)
         #expect(reopened.isSmartRenameEnabled == false)
         #expect(reopened.usesFileContentsByDefault == false)
         #expect(reopened.isSmartSearchEnabled == false)
+        #expect(reopened.isDocumentQuestionsEnabled == false)
     }
 
     @Test("Smart Search and Smart Rename have independent switches")
@@ -32,6 +34,7 @@ struct ExplorerAISettingsTests {
         settings.isSmartRenameEnabled = true
         settings.isSmartSearchEnabled = false
         #expect(settings.isSmartRenameEnabled)
+        #expect(settings.isDocumentQuestionsEnabled)
     }
 
     @Test("Availability refresh does not run a name generation")

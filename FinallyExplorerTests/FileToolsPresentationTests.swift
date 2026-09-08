@@ -5,6 +5,26 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("Document questions, source excerpts, and AI settings fit in both themes", arguments: [false, true])
+    func documentLayout(_ dark: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        var urls: [URL] = []
+        for index in 1...5 { urls.append(try fixture.write("Quarterly Invoice Report \(index).txt", "The payment deadline is 30 September 2026.")) }
+        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        model.select(urls)
+        await model.readDocuments()?.value
+        model.question = "What is the payment deadline?"
+        await model.ask()?.value
+        let claim = try #require(model.claims.first)
+        try render(DocumentQuestionSheet(model: model, onReveal: { _ in }), name: "DocumentAnswer", width: 820, height: 720, dark: dark)
+        try render(DocumentCitationSheet(claim: claim, onReveal: {}), name: "DocumentCitation", width: 600, height: 380, dark: dark)
+        let suite = "FinallyExplorer.AISettings.Layout.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try render(ExplorerAISettingsView(settings: ExplorerAISettings(defaults: defaults)), name: "ExpandedAISettings", width: 580, height: 720, dark: dark)
+    }
+
     @Test("Visual search empty and analyzed states fit in light and dark", arguments: [false, true])
     func visualSearchLayout(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()
@@ -21,6 +41,13 @@ struct FileToolsPresentationTests {
         await populated.waitForSearch()
         #expect(populated.matches.count == 1)
         try render(VisualSearchSheet(model: populated, onReveal: { _ in }), name: "VisualSearchResults", width: 820, height: 720, dark: dark)
+        let natural = VisualSearchModel(service: VisualSearchService(analyzer: FixedVisualAnalyzer()))
+        natural.setSource(fixture.source)
+        await natural.analyze()?.value
+        natural.naturalDraft = "Find photos taken by the sea"
+        await natural.findPhotos()?.value
+        #expect(natural.matches.count == 1)
+        try render(VisualSearchSheet(model: natural, onReveal: { _ in }), name: "NaturalVisualSearch", width: 820, height: 720, dark: dark)
     }
 
     @Test("Offline catalogs fit in light and dark without accessing a live disk", arguments: [false, true])

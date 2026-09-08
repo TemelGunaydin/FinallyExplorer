@@ -5,8 +5,13 @@ import Observation
 final class VisualSearchModel {
     private(set) var sourceURL: URL?
     var includesHidden = false { didSet { if includesHidden != oldValue { clearIndex() } } }
-    var query = "" { didSet { if query != oldValue { search() } } }
-    var mode: VisualSearchMode = .both { didSet { if mode != oldValue { search() } } }
+    var query = "" { didSet { if query != oldValue { resetDescription(); search() } } }
+    var mode: VisualSearchMode = .both { didSet { if mode != oldValue { resetDescription(); search() } } }
+    var naturalDraft = ""
+    private(set) var naturalRequest: String?
+    private(set) var naturalPlan: VisualDescriptionPlan?
+    private(set) var isDescribing = false
+    private(set) var isNaturalEnabled = true
     private(set) var snapshot: VisualSearchSnapshot?
     private(set) var matches: [VisualSearchMatch] = []
     private(set) var progress: FolderWorkProgress?
@@ -14,11 +19,16 @@ final class VisualSearchModel {
     private(set) var isCancelling = false
     private(set) var errorMessage: String?
     @ObservationIgnored private let service: any VisualSearchScanning
+    @ObservationIgnored private let interpreter: any VisualDescriptionInterpreting
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var searchGeneration = 0
 
-    init(service: any VisualSearchScanning = VisualSearchService()) { self.service = service }
+    init(service: any VisualSearchScanning = VisualSearchService(),
+         interpreter: any VisualDescriptionInterpreting = FoundationModelsVisualInterpreter()) {
+        self.service = service
+        self.interpreter = interpreter
+    }
     deinit { task?.cancel(); searchTask?.cancel() }
 
     func setSource(_ url: URL) {
@@ -83,6 +93,52 @@ final class VisualSearchModel {
         matches = []
         errorMessage = nil
         query = ""
+        naturalDraft = ""
+        naturalRequest = nil
+        naturalPlan = nil
+    }
+
+    func setNaturalEnabled(_ enabled: Bool) {
+        isNaturalEnabled = enabled
+        if enabled == false { resetDescription(); naturalDraft = ""; search() }
+    }
+
+    @discardableResult func findPhotos() -> Task<Void, Never>? {
+        guard isNaturalEnabled, isWorking == false, let snapshot else { return nil }
+        let request = naturalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard request.isEmpty == false, request.count <= 500 else {
+            errorMessage = VisualDescriptionError.invalidRequest.localizedDescription; return nil
+        }
+        searchGeneration += 1
+        searchTask?.cancel()
+        isWorking = true
+        isDescribing = true
+        errorMessage = nil
+        task = Task { [weak self, interpreter] in
+            do {
+                let plan = try await interpreter.interpret(request)
+                let result = try await plan.search(snapshot.entries)
+                try Task.checkCancellation()
+                guard let self, self.snapshot?.id == snapshot.id, isNaturalEnabled else { return }
+                naturalRequest = request
+                naturalPlan = plan
+                matches = result
+                finish()
+            } catch {
+                guard let self else { return }
+                if Task.isCancelled == false {
+                    errorMessage = "Could not complete this photo request. \(error.localizedDescription) Previous results are unchanged."
+                }
+                finish()
+            }
+        }
+        return task
+    }
+
+    private func resetDescription() {
+        if isDescribing { cancel() }
+        naturalRequest = nil
+        naturalPlan = nil
     }
 
     @discardableResult func reveal(_ entry: VisualSearchSnapshot.Entry,
@@ -113,12 +169,14 @@ final class VisualSearchModel {
         progress = value
     }
 
-    private func finish() { task = nil; progress = nil; isWorking = false; isCancelling = false }
+    private func finish() { task = nil; progress = nil; isWorking = false; isCancelling = false; isDescribing = false }
 
     private func search() {
         searchTask?.cancel()
         searchGeneration += 1
         matches = []
+        naturalRequest = nil
+        naturalPlan = nil
         guard let snapshot else { searchTask = nil; return }
         let generation = searchGeneration, query = query, mode = mode
         searchTask = Task { [weak self] in

@@ -32,6 +32,8 @@ struct ContentView: View {
     @State private var offlineCatalog: OfflineCatalogModel?
     @State private var visualSearch = VisualSearchModel()
     @State private var isVisualSearchPresented = false
+    @State private var documentQuestions = DocumentQuestionModel()
+    @State private var isDocumentQuestionsPresented = false
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -351,6 +353,13 @@ struct ContentView: View {
                         isVisualSearchPresented = true
                     }
                     .accessibilityIdentifier("file-tools-visual-search")
+                    Button("Ask Documents…", systemImage: "text.bubble") {
+                        let selected = workspace.activePane?.selectedCommandURLs ?? []
+                        if selected.isEmpty == false, Set(selected) != Set(documentQuestions.selection) {
+                            documentQuestions.select(selected)
+                        }
+                        isDocumentQuestionsPresented = true
+                    }.accessibilityIdentifier("file-tools-documents")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerChromeIconButtonStyle())
@@ -490,7 +499,9 @@ struct ContentView: View {
         .sheet(isPresented: $isAskAIPresented) {
             AskAISearchSheet(
                 model: askAISearch, settings: aiSettings,
-                rootURL: globalSearchRootURL, onReveal: revealGlobalSearchResult
+                rootURL: globalSearchRootURL, onReveal: revealGlobalSearchResult,
+                visualSearch: visualSearch, photoRoot: workspace.activePane?.displayedDirectory,
+                documentQuestions: documentQuestions, documentSelection: workspace.activePane?.selectedCommandURLs ?? []
             )
             .environment(\.explorerTheme, theme)
         }
@@ -515,11 +526,18 @@ struct ContentView: View {
             .environment(\.explorerTheme, theme)
         }
         .sheet(isPresented: $isVisualSearchPresented) {
-            VisualSearchSheet(model: visualSearch) { url in
+            VisualSearchSheet(model: visualSearch, onReveal: { url in
                 workspace.reveal(FileItem(url: url, isDirectory: false, isImage: true, fileSize: nil, modificationDate: nil))
-            }
+            }, settings: aiSettings)
             .environment(\.explorerTheme, theme)
         }
+        .sheet(isPresented: $isDocumentQuestionsPresented) {
+            DocumentQuestionSheet(model: documentQuestions, settings: aiSettings) { url in
+                workspace.reveal(FileItem(url: url, isDirectory: false, isImage: false, fileSize: nil, modificationDate: nil))
+            }.environment(\.explorerTheme, theme)
+        }
+        .onChange(of: aiSettings.isDocumentQuestionsEnabled) { documentQuestions.setEnabled(aiSettings.isDocumentQuestionsEnabled) }
+        .onChange(of: aiSettings.isSmartSearchEnabled) { visualSearch.setNaturalEnabled(aiSettings.isSmartSearchEnabled) }
         .sheet(item: $nearbyTransfers.presentation) { presentation in
             NearbyTransferSheet(
                 presentation: presentation,

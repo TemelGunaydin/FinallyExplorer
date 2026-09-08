@@ -1,4 +1,4 @@
-# Ask AI — first delivery
+# Ask AI — file search and explicit local tools
 
 ## Available now
 
@@ -7,6 +7,8 @@
 - Follow-ups preserve the last successful plan. Exact shortcuts such as `Only PDFs`, `Only HEIC`, `In Documents instead`, and `Last week instead` are handled deterministically, without another inference. Other descriptions use Apple's on-device model.
 - `New Search` clears the context. Closing cancels pending work. Disabling **Ask AI & Smart Search** in AI Settings clears the conversation when the panel observes the setting.
 - Recent conversation history is bounded to 12 completed requests and held only in window memory. No chat database or cloud API is added.
+- English scene requests such as `Find photos taken by the sea` open [Visual Search](VISUAL_SEARCH.md), carrying the description. Its first folder analysis still requires explicit approval. The **Search Photos** button opens the same tool directly.
+- **Ask Documents** opens [Document Questions](DOCUMENT_QUESTIONS.md) with the active file selection. Select **Read Documents** before asking. This is a separate, source-cited Q&A tool; document contents do not enter the Spotlight search conversation.
 
 ## Correctness and privacy boundaries
 
@@ -18,7 +20,9 @@ Photo capture dates are separate from filesystem creation/modification dates. Sp
 
 This is **not a complete photo-library search**. It cannot find Photos-library-only or unindexed assets, and incorrect/missing Spotlight content dates can omit otherwise valid images. Searches remain bounded to the existing Spotlight candidate limit and 120 displayed results. There is no new full-disk scan.
 
-Visual scene/person recognition, document Q&A, download/import dates, size/exclusion filters, and file-changing commands are not implemented in this conversation. Common unsupported requests are rejected before inference; image-topic requests require an explicit filename query rather than masquerading as visual search. The separate Visual Search tool described below now provides scoped visual-label/OCR retrieval, not conversation-based image search.
+Scene requests are routed to the separately scoped Visual Search tool before the normal file-search interpreter runs. Explicit filename searches and date-only photo searches stay in the original conversation. Scene and date filters are **not** combined across these tools, and a photo description is not a follow-up to earlier Spotlight filters. There is no person identification, arbitrary Photos-library access, download/import-date filtering, or file-changing command execution. Unsupported conditions are rejected rather than deliberately weakened. Inspect visible filters and visual evidence because model interpretations and classifier labels can still be imperfect.
+
+Document Questions has independent selection, permission, context, and memory. Each document question is independent, not a conversational `it`/`those` follow-up. It uses only retrieved excerpts from the selected files and displays inspectable source quotes; it does not claim full-document comprehension.
 
 ## Validation
 
@@ -51,8 +55,8 @@ Exact duplicates and read-only organization previews were introduced through [Lo
 
 ## Related tools — sixth delivery
 
-[Visual Search](VISUAL_SEARCH.md) analyzes up to 300 supported still images in an explicitly chosen local folder using Vision classification and English OCR. It searches observed evidence rather than filenames and shows why each result matched. Analysis is opt-in and memory-only, with cancel/clear controls and no startup scan. The existing Ask AI conversation is unchanged; full natural-language visual conversation and document Q&A remain future work.
+[Visual Search](VISUAL_SEARCH.md) analyzes up to 300 supported still images in an explicitly chosen local folder using Vision classification and English OCR. It searches observed evidence rather than filenames and shows why each result matched. Analysis is opt-in and memory-only, with cancel/clear controls and no startup scan.
 
-## Next delivery (not implemented here)
+## Related tools — seventh delivery
 
-Questions over explicitly selected documents, with bounded local extraction and inspectable source references. Offline Catalogs remains metadata-only.
+Natural photo descriptions now open Visual Search from Ask AI, with visible concepts and observed-label matches. [Document Questions](DOCUMENT_QUESTIONS.md) now answers specific questions over up to five explicitly selected documents with verified source quotes and PDF page references. Neither tool adds a cloud API, automatic scan, or file-changing AI command. Offline Catalogs remains metadata-only.

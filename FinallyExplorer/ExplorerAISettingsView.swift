@@ -8,6 +8,7 @@ struct ExplorerAISettingsView: View {
     @State private var refreshGeneration = 0
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 20) {
             Label("On-Device AI", systemImage: "sparkles")
                 .font(.system(.title2, design: .rounded).weight(.semibold))
@@ -18,6 +19,15 @@ struct ExplorerAISettingsView: View {
                 Text("Open Ask AI for a search you can refine with follow-up questions, or choose Smart in the top search bar. Apple Intelligence interprets your words; Spotlight finds indexed files. No file contents are sent to the model for search.")
                     .font(.callout)
                     .foregroundStyle(theme.textSecondary)
+
+                Text("Photo descriptions open Visual Search. Images are analyzed only after approval; the language model receives the description, not the images.")
+                    .font(.callout).foregroundStyle(theme.textSecondary)
+
+                Divider().overlay(theme.divider)
+                Toggle("Enable Document Questions", isOn: $settings.isDocumentQuestionsEnabled)
+                    .accessibilityIdentifier("ai-settings-document-questions-toggle")
+                Text("Use short passages from explicitly selected documents to answer questions with source quotes. Turning this off clears document text and answers from window memory.")
+                    .font(.callout).foregroundStyle(theme.textSecondary)
 
                 Divider().overlay(theme.divider)
 
@@ -30,7 +40,7 @@ struct ExplorerAISettingsView: View {
                 Divider().overlay(theme.divider)
 
                 Toggle(
-                    "Use file contents by default",
+                    "Use file contents for Smart Rename by default",
                     isOn: $settings.usesFileContentsByDefault
                 )
                 .disabled(settings.isSmartRenameEnabled == false)
@@ -79,10 +89,13 @@ struct ExplorerAISettingsView: View {
             .background(theme.control, in: .rect(cornerRadius: 14))
         }
         .padding(24)
+        }
         .frame(width: 580)
+        .frame(height: 720)
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ai-settings-view")
         .task(id: refreshGeneration) { await settings.refreshAvailability() }
         .onChange(of: scenePhase) {
@@ -95,8 +108,8 @@ struct ExplorerAISettingsView: View {
             return "Checking model availability…"
         }
         return availability == .available
-            ? "Ready for Ask AI, Smart Search, and name suggestions."
-            : SmartSearchError.unavailable(availability).localizedDescription
+            ? "Ready for search, photo descriptions, document answers, and name suggestions."
+            : OnDeviceModelError.unavailable(availability).localizedDescription
     }
 
     private var statusSymbol: String {

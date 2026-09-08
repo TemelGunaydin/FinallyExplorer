@@ -9,6 +9,12 @@ struct AskAISearchSheet: View {
     @FocusState private var isInputFocused: Bool
     let rootURL: URL
     let onReveal: (ExplorerSearchResult) -> Void
+    var visualSearch: VisualSearchModel? = nil
+    var photoRoot: URL? = nil
+    var documentQuestions: DocumentQuestionModel? = nil
+    var documentSelection: [URL] = []
+    @State private var isPhotosPresented = false
+    @State private var isDocumentsPresented = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -83,6 +89,25 @@ struct AskAISearchSheet: View {
         .tint(theme.accent)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ask-ai-sheet")
+        .sheet(isPresented: $isPhotosPresented) {
+            if let visualSearch {
+                VisualSearchSheet(model: visualSearch, onReveal: { url in
+                    onReveal(ExplorerSearchResult(id: url.path, item: FileItem(url: url, isDirectory: false, isImage: true, fileSize: nil, modificationDate: nil),
+                        relativePath: url.lastPathComponent, contentMatch: nil))
+                    dismiss()
+                }, settings: settings)
+                .environment(\.explorerTheme, theme)
+            }
+        }
+        .sheet(isPresented: $isDocumentsPresented) {
+            if let documentQuestions {
+                DocumentQuestionSheet(model: documentQuestions, settings: settings) { url in
+                    onReveal(ExplorerSearchResult(id: url.path, item: FileItem(url: url, isDirectory: false, isImage: false, fileSize: nil, modificationDate: nil),
+                        relativePath: url.lastPathComponent, contentMatch: nil))
+                    dismiss()
+                }.environment(\.explorerTheme, theme)
+            }
+        }
         .task {
             model.setEnabled(settings.isSmartSearchEnabled)
             isInputFocused = true
@@ -105,6 +130,24 @@ struct AskAISearchSheet: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(theme.textSecondary)
             Spacer()
+            if visualSearch != nil {
+                Button("Search Photos", systemImage: "photo.badge.magnifyingglass") { presentPhotos("") }
+                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                    .help("Describe photos in a chosen folder")
+                    .accessibilityIdentifier("ask-ai-photos")
+            }
+            if let documentQuestions {
+                Button("Ask Documents", systemImage: "text.bubble") {
+                    model.cancel()
+                    if documentSelection.isEmpty == false, Set(documentSelection) != Set(documentQuestions.selection) {
+                        documentQuestions.select(documentSelection)
+                    }
+                    isDocumentsPresented = true
+                }
+                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .help("Ask questions using explicitly selected documents")
+                .accessibilityIdentifier("ask-ai-documents")
+            }
             Button("New Search") {
                 model.startNewSearch()
                 isInputFocused = true
@@ -137,7 +180,7 @@ struct AskAISearchSheet: View {
                 .foregroundStyle(theme.textPrimary)
                 .disabled(model.isEnabled == false)
             }
-            Text("Search only: no files are changed. This conversation uses Spotlight’s index, not the Photos library. For visual labels and text inside images, use File Tools → Visual Search. Document Q&A is not available yet. Your descriptions stay on-device; no file contents enter this search conversation.")
+            Text("Search only: no files are changed. File searches use Spotlight. Describe a visual scene to open photo search in a chosen folder, or use the Photos button. Nothing is uploaded; photo analysis requires your approval.")
                 .font(.callout)
                 .foregroundStyle(theme.textSecondary)
         }
@@ -172,14 +215,29 @@ struct AskAISearchSheet: View {
                     .background(theme.control, in: .rect(cornerRadius: 10))
                     .focused($isInputFocused)
                     .disabled(model.isEnabled == false)
-                    .onSubmit { model.submit(rootURL: rootURL) }
+                    .onSubmit(submit)
                     .accessibilityLabel("Ask AI request")
                     .accessibilityIdentifier("ask-ai-input")
-                Button("Search", systemImage: "arrow.up") { model.submit(rootURL: rootURL) }
+                Button("Search", systemImage: "arrow.up", action: submit)
                     .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
                     .disabled(model.canSubmit == false)
                     .accessibilityIdentifier("ask-ai-submit")
             }
         }
+    }
+
+    private func submit() {
+        if visualSearch != nil, settings.isSmartSearchEnabled, VisualDescriptionRouting.isVisualRequest(model.draft) {
+            presentPhotos(model.draft)
+        } else { model.submit(rootURL: rootURL) }
+    }
+
+    private func presentPhotos(_ description: String) {
+        guard let visualSearch else { return }
+        model.cancel()
+        if visualSearch.sourceURL == nil, let photoRoot { visualSearch.setSource(photoRoot) }
+        visualSearch.naturalDraft = description
+        isPhotosPresented = true
+        if description.isEmpty == false { visualSearch.findPhotos() }
     }
 }

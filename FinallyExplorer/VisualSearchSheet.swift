@@ -5,13 +5,15 @@ struct VisualSearchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: VisualSearchModel
     let onReveal: @MainActor (URL) -> Void
+    var settings: ExplorerAISettings? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            Text("Find images by visual labels or words inside them, not by filename. Analysis runs on this Mac — no API, account, or Apple Intelligence setup needed.")
+            Text("Describe a photo, or search labels and text inside images. Everything stays on this Mac. Image analysis itself does not require Apple Intelligence.")
                 .font(.callout).foregroundStyle(theme.textSecondary)
             sourceControls
+            VisualDescriptionControls(model: model)
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.callout).textSelection(.enabled).padding(10)
@@ -44,6 +46,8 @@ struct VisualSearchSheet: View {
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
         .accessibilityElement(children: .contain).accessibilityIdentifier("visual-search-sheet")
         .onDisappear { model.cancel() }
+        .onAppear { model.setNaturalEnabled(settings?.isSmartSearchEnabled ?? true) }
+        .onChange(of: settings?.isSmartSearchEnabled) { model.setNaturalEnabled(settings?.isSmartSearchEnabled ?? true) }
     }
 
     private var header: some View {
@@ -69,7 +73,7 @@ struct VisualSearchSheet: View {
                 Button(model.snapshot == nil ? "Analyze Folder" : "Analyze Again", systemImage: "sparkle.magnifyingglass") { model.analyze() }
                     .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
                     .disabled(model.sourceURL == nil).accessibilityIdentifier("visual-search-analyze")
-            }
+            }.disabled(model.isWorking)
             Text(model.sourceURL?.path ?? "Choose the folder you want to analyze.")
                 .font(.callout).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
                 .accessibilityIdentifier("visual-search-source")
@@ -87,7 +91,7 @@ struct VisualSearchSheet: View {
                 Picker("Match", selection: $model.mode) {
                     ForEach(VisualSearchMode.allCases) { Text($0.rawValue).tag($0) }
                 }.frame(width: 215).accessibilityIdentifier("visual-search-mode")
-            }
+            }.disabled(model.isWorking)
             Text("\(model.matches.count) matches · \(snapshot.entries.count) analyzed · \(snapshot.skipped.count) images skipped · \(snapshot.excludedHiddenCount) hidden / \(snapshot.excludedOtherCount) unsupported entries excluded")
                 .font(.caption).foregroundStyle(theme.textSecondary)
                 .accessibilityIdentifier("visual-search-summary")

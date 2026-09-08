@@ -286,16 +286,24 @@ final class FinallyExplorerUITests: XCTestCase {
         settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
 
         let sourceRow = rows(named: "Source Item.txt").firstMatch
-        try rightClickRow(sourceRow)
-        fileContextMenuButton(named: "Rename").click()
+        // This test covers the setting, not popover hit-testing after a window
+        // focus transition. Use the same native command as the rename regression.
+        let sourceCell = try XCTUnwrap(containingCell(for: sourceRow))
+        sourceCell.click()
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["Rename"].click()
+        XCTAssertTrue(app.textFields["rename-text-field"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["smart-rename-disabled"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["smart-rename-suggest-button"].exists)
         app.buttons["Cancel"].click()
         app.terminate()
         app.launch()
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
-        try rightClickRow(rows(named: "Source Item.txt").firstMatch)
-        fileContextMenuButton(named: "Rename").click()
+        let relaunchedCell = try XCTUnwrap(containingCell(for: rows(named: "Source Item.txt").firstMatch))
+        relaunchedCell.click()
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["Rename"].click()
+        XCTAssertTrue(app.textFields["rename-text-field"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["smart-rename-disabled"].waitForExistence(timeout: 5))
     }
 
@@ -1390,12 +1398,115 @@ final class FinallyExplorerUITests: XCTestCase {
         recordWindowHierarchy("Changed image cannot be revealed from stale evidence")
     }
 
+    func testAskAIRoutesPhotoDescriptionAndReusesAnalyzedFolder() throws {
+        app.terminate()
+        try visualReceiptImage().write(to: fixtureRootURL.appending(path: "Visual.png"))
+        app.launch()
+        app.buttons["window-ask-ai-button"].click()
+        let input = app.textFields["ask-ai-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        typeCatalogQuery("Find photos taken by the sea", in: input)
+        app.buttons["ask-ai-submit"].click()
+        let description = app.textFields["visual-description-input"]
+        XCTAssertTrue(description.waitForExistence(timeout: 5))
+        XCTAssertEqual(description.value as? String, "Find photos taken by the sea")
+        XCTAssertFalse(app.buttons["visual-description-submit"].isEnabled)
+        XCTAssertFalse(app.textFields["visual-search-query"].exists, "A natural request must not silently start a folder scan")
+        app.buttons["visual-search-analyze"].click()
+        XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
+        app.buttons["visual-description-submit"].click()
+        XCTAssertTrue(app.staticTexts["visual-description-evidence"].waitForExistence(timeout: 10))
+        XCTAssertTrue((app.staticTexts["visual-description-evidence"].value as? String ?? "").contains("beach"))
+        recordWindowHierarchy("Photo sentence resolved to visible visual evidence")
+        app.buttons["visual-search-close"].click()
+        XCTAssertTrue(app.buttons["ask-ai-submit"].waitForExistence(timeout: 5))
+        app.buttons["ask-ai-submit"].click()
+        XCTAssertTrue(app.staticTexts["visual-description-evidence"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["visual-search-error"].exists)
+        app.buttons["visual-search-close"].click()
+        app.buttons["ask-ai-documents"].click()
+        XCTAssertTrue(app.buttons["document-choose"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["document-ready"].exists, "Opening the document tool must not read files")
+        app.buttons["document-close"].click()
+        XCTAssertTrue(app.buttons["ask-ai-submit"].waitForExistence(timeout: 5))
+    }
+
+    func testDocumentQuestionRequiresReadingAndShowsSourceThenClears() throws {
+        app.terminate()
+        let original = Data("The payment deadline is 30 September 2026. The invoice total is 480 USD.".utf8)
+        try original.write(to: sourceFileURL)
+        app.launch()
+        let row = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Ask Documents…"].click()
+        XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["document-ready"].exists)
+        app.buttons["document-read"].click()
+        XCTAssertTrue(app.staticTexts["document-ready"].waitForExistence(timeout: 10))
+        let question = element(withIdentifier: "document-question")
+        typeCatalogQuery("What is the payment deadline?", in: question)
+        XCTAssertEqual(question.value as? String, "What is the payment deadline?")
+        app.buttons["document-ask"].click()
+        let citation = app.buttons["document-citation-1"].firstMatch
+        XCTAssertTrue(citation.waitForExistence(timeout: 45))
+        XCTAssertFalse(app.staticTexts["document-error"].exists)
+        recordWindowHierarchy("Actual on-device document answer with verified citation")
+        citation.click()
+        XCTAssertTrue(app.buttons["document-source-done"].waitForExistence(timeout: 5))
+        app.buttons["document-source-done"].click()
+        app.buttons["document-clear"].click()
+        XCTAssertFalse(app.staticTexts["document-ready"].exists)
+        XCTAssertFalse(citation.exists)
+        XCTAssertEqual(try Data(contentsOf: sourceFileURL), original)
+        app.buttons["document-close"].click()
+        XCTAssertTrue(element(withIdentifier: "global-search-text-field").waitForExistence(timeout: 5))
+    }
+
     private func openVisualSearch() {
         let tools = app.menuButtons["window-file-tools-button"]
         XCTAssertTrue(tools.waitForExistence(timeout: 10))
         tools.click()
         app.menuItems["Visual Search…"].click()
         XCTAssertTrue(app.buttons["visual-search-close"].waitForExistence(timeout: 5))
+    }
+
+    func testDocumentSettingsOptOutClearsClosedContextAndPersists() throws {
+        let row = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Ask Documents…"].click()
+        XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
+        app.buttons["document-read"].click()
+        XCTAssertTrue(app.staticTexts["document-ready"].waitForExistence(timeout: 10))
+        app.buttons["document-close"].click()
+
+        app.buttons["window-settings-button"].click()
+        let toggle = element(withIdentifier: "ai-settings-document-questions-toggle")
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.click()
+        let settingsWindow = app.windows.containing(.any, identifier: "ai-settings-view").firstMatch
+        XCTAssertTrue(settingsWindow.exists)
+        settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
+
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Ask Documents…"].click()
+        XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["document-ready"].exists, "Opt-out must clear text even while the document tool is closed")
+        XCTAssertFalse(app.buttons["document-read"].isEnabled)
+        XCTAssertFalse(app.buttons["document-ask"].isEnabled)
+        app.buttons["document-close"].click()
+        XCTAssertTrue(element(withIdentifier: "global-search-text-field").waitForExistence(timeout: 5))
+
+        app.terminate()
+        app.launch()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Ask Documents…"].click()
+        XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["document-read"].isEnabled, "Document Questions opt-out must survive relaunch")
+        XCTAssertFalse(app.staticTexts["document-ready"].exists)
     }
 
     private func visualReceiptImage() throws -> Data {
