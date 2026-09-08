@@ -1274,6 +1274,101 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(rows(named: "Destination").firstMatch.exists)
     }
 
+    func testOfflineCatalogRequiresSaveAndSurvivesDisconnectAndRelaunch() throws {
+        let file = mountedVolumeURL.appending(path: "Offline Invoice.txt")
+        try Data("Offline metadata fixture; contents stay on the disk.".utf8).write(to: file)
+        try createOfflineCatalog()
+        let search = app.textFields["offline-catalog-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        typeCatalogQuery("invoice", in: search)
+        XCTAssertTrue(waitForValue("invoice", on: search, timeout: 3), "Typing must preserve every character")
+        XCTAssertTrue(waitForValue("Showing 1 of 1 matches", on: app.staticTexts["offline-catalog-match-count"], timeout: 5))
+        let reveal = app.buttons["offline-catalog-reveal-Offline Invoice.txt"]
+        XCTAssertTrue(reveal.isEnabled)
+        recordWindowHierarchy("Connected offline catalog")
+        app.terminate()
+
+        let disconnected = fixtureRootURL.appending(path: "Disconnected Test Disk")
+        try FileManager.default.moveItem(at: mountedVolumeURL, to: disconnected)
+        app.launch()
+        try openOfflineCatalogs()
+        XCTAssertTrue(app.textFields["offline-catalog-search"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForValue("Disk offline — saved metadata", on: element(withIdentifier: "offline-catalog-connection"), timeout: 5))
+        typeCatalogQuery("invoice", in: app.textFields["offline-catalog-search"])
+        XCTAssertTrue(waitForValue("invoice", on: app.textFields["offline-catalog-search"], timeout: 3))
+        XCTAssertTrue(reveal.waitForExistence(timeout: 5))
+        XCTAssertFalse(reveal.isEnabled)
+        XCTAssertFalse(app.buttons["offline-catalog-refresh"].isEnabled)
+        XCTAssertTrue(waitForValue("Showing 1 of 1 matches", on: app.staticTexts["offline-catalog-match-count"], timeout: 5))
+        recordWindowHierarchy("Offline catalog after relaunch")
+        app.terminate()
+
+        try FileManager.default.moveItem(at: disconnected, to: mountedVolumeURL)
+        app.launch()
+        try openOfflineCatalogs()
+        XCTAssertTrue(reveal.waitForExistence(timeout: 10))
+        XCTAssertTrue(reveal.isEnabled)
+        reveal.click()
+        XCTAssertTrue(app.buttons["offline-catalog-close"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(rows(named: "Offline Invoice.txt").firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testOfflineCatalogRemovalNeedsConfirmationAndKeepsOriginalFiles() throws {
+        let file = mountedVolumeURL.appending(path: "Keep Original.txt")
+        let data = Data("Never remove this source when deleting a saved catalog.".utf8)
+        try data.write(to: file)
+        try createOfflineCatalog()
+        let remove = app.buttons["offline-catalog-remove"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 10))
+        remove.click()
+        let confirm = app.buttons["offline-catalog-remove-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        app.buttons["Cancel"].click()
+        XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(remove.exists)
+        XCTAssertEqual(try Data(contentsOf: file), data)
+        remove.click()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.click()
+        XCTAssertTrue(waitForValue("Saved catalog removed. Original files were not changed.", on: app.staticTexts["offline-catalog-notice"], timeout: 5))
+        XCTAssertFalse(remove.exists)
+        XCTAssertEqual(try Data(contentsOf: file), data)
+        recordWindowHierarchy("Saved catalog removed without touching originals")
+    }
+
+    private func openOfflineCatalogs() throws {
+        let tools = app.menuButtons["window-file-tools-button"]
+        XCTAssertTrue(tools.waitForExistence(timeout: 10))
+        tools.click()
+        app.menuItems["Offline Catalogs…"].click()
+        XCTAssertTrue(app.buttons["offline-catalog-close"].waitForExistence(timeout: 5))
+    }
+
+    private func typeCatalogQuery(_ query: String, in field: XCUIElement) {
+        field.click()
+        // On this macOS runner typeText("c") drops the character even in
+        // isolation, whereas typeKey delivers it. Keep real keyboard input
+        // and assert the complete value instead of weakening the query.
+        for character in query { field.typeKey(String(character), modifierFlags: []) }
+    }
+
+    private func createOfflineCatalog() throws {
+        try openOfflineCatalogs()
+        let volumeMenu = element(withIdentifier: "offline-catalog-volume-menu")
+        XCTAssertTrue(volumeMenu.waitForExistence(timeout: 10))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: volumeMenu)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        volumeMenu.click()
+        app.menuItems["UI Test Disk"].click()
+        let save = app.buttons["offline-catalog-save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixtureRootURL.appending(path: ".offline-catalog-storage").path), "Choosing a disk must not save automatically")
+        save.click()
+        XCTAssertTrue(app.staticTexts["offline-catalog-notice"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["offline-catalog-error"].exists)
+    }
+
     /// App screenshots can capture an unrelated display in multi-monitor setups.
     /// Keep diagnostics scoped to this app; offscreen tests render the visual fixtures.
     private func recordWindowHierarchy(_ name: String) {

@@ -1,6 +1,6 @@
 # Local File Tools
 
-Open a folder, then choose **File Tools** (the wrench icon) in the window toolbar. The tools use the active panel's folder, not the entire Mac. They need no Apple Intelligence model, account, API or network service. Nothing runs at startup or on each search keystroke. Ask AI still cannot execute file-changing commands.
+Choose **File Tools** (the wrench icon) in the window toolbar. Duplicate removal and organization use the active panel's folder, not the entire Mac. [Offline Catalogs](OFFLINE_CATALOGS.md) has its own explicit external-disk folder selection and saved-metadata search. These tools need no Apple Intelligence model, account, API or network service. No scans or file-changing operations run at startup or on each search keystroke. Ask AI still cannot execute file-changing commands.
 
 ## Find Duplicates
 
@@ -47,5 +47,7 @@ Previous delivery validation (2026-09-08): **435 tests passed, zero failures or 
 Reviewed-move validation (2026-09-08): **440 unit/integration/offscreen tests passed across 59 suites** in `test_macos_2026-09-08T12-27-13-030Z_pid65103_58f0060a.xcresult`. That run's UI checks failed with automation permission/connection errors. The two organization UI scenarios were then rerun successfully, with zero failures or skips, in `test_macos_2026-09-08T13-34-19-083Z_pid13719_c7f3ce09.xcresult`. They verify read-only preview, cancelled confirmation, approved moves and panel refresh. Previews, reviews and completion states were rendered and inspected in light/dark appearances.
 
 Result bundles are in the XcodeBuildMCP workspace. UI diagnostics use app-window accessibility text instead of explicit desktop screenshots, which can capture an unrelated monitor on multi-display Macs. Offscreen render fixtures provide visual artifacts without capturing other applications.
+
+Latest regression after [Offline Catalogs](OFFLINE_CATALOGS.md) (2026-09-08): **491 tests passed with zero failures or skips** — 476 unit/integration/offscreen tests and 15 UI scenarios, including both organization workflows and the previous file/search regressions. Result bundle: `test_macos_2026-09-08T14-20-28-403Z_pid44300_533ace45.xcresult`.
 
 The SwiftUI, Swift Concurrency and Swift Testing guides informed the shared theme, explicit accessibility containers, lazy results, off-main bounded I/O, cancellation/generation guards and deterministic tests. Accessibility containers also fix identifier propagation in the existing Ask AI and folder-comparison sheets.

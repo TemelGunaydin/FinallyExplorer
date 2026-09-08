@@ -18,6 +18,7 @@ nonisolated struct MountedVolumeEjectFailure: Identifiable, Equatable, Sendable 
 @Observable
 final class MountedVolumeMonitor {
     private(set) var volumes: [MountedVolume] = []
+    private(set) var revision = 0
     private(set) var ejectingVolumeURLs: Set<URL> = []
     private(set) var ejectFailure: MountedVolumeEjectFailure?
 
@@ -51,6 +52,7 @@ final class MountedVolumeMonitor {
     }
 
     func refresh() {
+        revision += 1
         var usedURLs = Set<URL>()
         volumes = loadVolumes()
             .filter(\.shouldAppearInSidebar)
@@ -91,6 +93,7 @@ final class MountedVolumeMonitor {
             volumes.removeAll {
                 $0.url.standardizedFileURL == volumeURL
             }
+            revision += 1
             return true
         } catch {
             ejectFailure = MountedVolumeEjectFailure(

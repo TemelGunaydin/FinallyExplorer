@@ -21,6 +21,8 @@ struct FinallyExplorerApp: App {
     @State private var sidebar: SidebarModel
     @State private var themeController: ExplorerThemeController
     @State private var aiSettings: ExplorerAISettings
+    @State private var offlineCatalogStore: OfflineCatalogStore
+    private let offlineVolumes: LocalOfflineVolumeAccess
 
     init() {
         self.init(launchConfiguration: ExplorerLaunchConfiguration())
@@ -28,6 +30,13 @@ struct FinallyExplorerApp: App {
 
     init(launchConfiguration: ExplorerLaunchConfiguration) {
         self.launchConfiguration = launchConfiguration
+        let catalogRoot = (launchConfiguration.fixtureRoot ?? URL.temporaryDirectory.appending(path: "FinallyExplorer-UI-\(UUID())"))
+            .appending(path: ".offline-catalog-storage")
+        _offlineCatalogStore = State(initialValue: launchConfiguration.isUITesting ? OfflineCatalogStore(rootURL: catalogRoot) : .shared)
+        offlineVolumes = LocalOfflineVolumeAccess(fixtureVolumes: launchConfiguration.isUITesting
+            ? launchConfiguration.mountedVolumeFixture.map { [OfflineCatalogVolume(
+                id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)), name: "UI Test Disk", rootURL: $0
+            )] } ?? [] : nil)
         let applicationUninstallPolicy = Self.applicationUninstallPolicy(
             for: launchConfiguration
         )
@@ -87,6 +96,8 @@ struct FinallyExplorerApp: App {
                 sidebar: sidebar,
                 themeController: themeController,
                 aiSettings: aiSettings,
+                offlineCatalogStore: offlineCatalogStore,
+                offlineVolumes: offlineVolumes,
                 globalSearchRootURL: launchConfiguration.fixtureRoot
                     ?? URL(filePath: "/", directoryHint: .isDirectory)
             )
@@ -180,13 +191,14 @@ struct FinallyExplorerApp: App {
     private static func mountedVolumeMonitor(
         for launchConfiguration: ExplorerLaunchConfiguration
     ) -> MountedVolumeMonitor? {
-        guard let fixtureURL = launchConfiguration.mountedVolumeFixture else {
+        guard launchConfiguration.isUITesting else {
             return nil
         }
 
         return MountedVolumeMonitor(
             loadVolumes: {
-                [
+                guard let fixtureURL = launchConfiguration.mountedVolumeFixture else { return [] }
+                return [
                     MountedVolume(
                         url: fixtureURL,
                         title: fixtureURL.lastPathComponent,

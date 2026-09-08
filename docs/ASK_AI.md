@@ -45,7 +45,10 @@ Exact duplicates and read-only organization previews were introduced through [Lo
 
 **Organize Folder** now applies a reviewed plan only after a separate **Move Files** confirmation. Immediate files move into file-type or modification-month subfolders on the same disk, with fresh change/collision checks and no overwrites. Cancellation reports partial completion; completed moves remain in place. The preview is still read-only, and Ask AI cannot execute these operations. See [Local File Tools](FILE_TOOLS.md) for exclusions and safety limits.
 
-## Next deliveries (not implemented here)
+## Related tools — fifth delivery
 
-1. An offline catalog for disconnected drives.
-2. Visual search / richer document questions with a separately scoped local index and explicit permission boundaries.
+[Offline Catalogs](OFFLINE_CATALOGS.md) keeps explicit metadata snapshots of selected external disk folders searchable when the disk is disconnected. It has its own name/path, extension, size and modification-date filters; normal FFF/grep and Ask AI remain unchanged. No file contents are copied or sent to a model.
+
+## Next delivery (not implemented here)
+
+Visual search / richer document questions with a separately scoped local index and explicit permission boundaries. Offline Catalogs is not a content, photo-scene or document-Q&A index.

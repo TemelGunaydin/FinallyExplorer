@@ -5,12 +5,13 @@ import Foundation
 nonisolated enum FolderTreeScanner {
     static func scan(
         _ root: ScopedFolderDescriptor, rootURL: URL, includesHidden: Bool,
-        entryLimit: Int = 50_000, recursive: Bool = true,
+        entryLimit: Int = 50_000, pathByteLimit: Int = .max, recursive: Bool = true,
         progress: @escaping @Sendable (FolderWorkProgress) async -> Void
     ) async throws -> (entries: [String: ComparedFolderEntry], excluded: Int) {
         var entries: [String: ComparedFolderEntry] = [:]
         var directories: [[String]] = [[]]
         var excluded = 0
+        var pathBytes = 0
         let device = try root.state().device
         await progress(FolderWorkProgress(phase: "Reading folder…", relativePath: rootURL.path))
         while let components = directories.popLast() {
@@ -22,6 +23,8 @@ nonisolated enum FolderTreeScanner {
                 guard let state = try folder.state(of: name) else { throw FolderComparisonError.changed(name) }
                 if includesHidden == false, name.hasPrefix(".") || state.isHidden { excluded += 1; continue }
                 let path = (components + [name]).joined(separator: "/")
+                pathBytes += path.utf8.count
+                guard pathBytes <= pathByteLimit else { throw FolderComparisonError.limitExceeded }
                 // Do not merge distinct, canonically equivalent names on unusual filesystems.
                 guard entries[path] == nil else { throw FolderComparisonError.changed(path) }
                 let isPackage = state.isDirectory && (

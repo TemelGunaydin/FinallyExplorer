@@ -5,6 +5,26 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("Offline catalogs fit in light and dark without accessing a live disk", arguments: [false, true])
+    func offlineCatalogLayout(_ dark: Bool) async throws {
+        let fixture = try OfflineCatalogTestFixture()
+        defer { fixture.remove() }
+        try fixture.files.write("Reports/Accounting invoice.pdf", "metadata fixture")
+        try fixture.files.write("Design/Reference.png", "fixture")
+        let saved = try await fixture.store.save(fixture.scan())
+        let model = OfflineCatalogModel(store: fixture.store, volumes: LocalOfflineVolumeAccess(fixtureVolumes: []))
+        await model.load()?.value
+        await model.waitForSearch()
+        let monitor = MountedVolumeMonitor(loadVolumes: { [] }, observesWorkspaceChanges: false)
+        try render(OfflineCatalogSheet(model: model, mountedVolumes: monitor, onReveal: { _, _ in }), name: "OfflineCatalog", width: 820, height: 720, dark: dark)
+        try render(OfflineCatalogRemovalSheet(summary: saved, onConfirm: {}), name: "OfflineRemoval", width: 500, height: 240, dark: dark)
+        let prepared = OfflineCatalogModel(store: fixture.store, volumes: fixture.access)
+        await prepared.load()?.value
+        await prepared.prepare(fixture.files.source)?.value
+        await prepared.waitForSearch()
+        try render(OfflineCatalogSheet(model: prepared, mountedVolumes: monitor, onReveal: { _, _ in }), name: "OfflinePrepared", width: 820, height: 720, dark: dark)
+    }
+
     @Test("Duplicate and organization previews, reviews and completion fit in light and dark", arguments: [false, true])
     func offscreenLayout(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()

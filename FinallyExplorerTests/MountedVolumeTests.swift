@@ -10,6 +10,16 @@ import Testing
 
 @MainActor
 struct MountedVolumeTests {
+    @Test("Every mount refresh publishes a revision even when names and paths match")
+    func mountRevision() {
+        let usb = volume(path: "/Volumes/USB", title: "USB", isInternal: false)
+        let monitor = MountedVolumeMonitor(loadVolumes: { [usb] }, observesWorkspaceChanges: false)
+        let before = monitor.revision
+        monitor.refresh()
+        #expect(monitor.revision == before + 1)
+        #expect(monitor.volumes == [usb])
+    }
+
     @Test("Locations shows only external, removable, ejectable, browsable volumes")
     func filtersAndSortsMountedVolumes() {
         let usb = volume(path: "/Volumes/USB", title: "USB", isInternal: false)

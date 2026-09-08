@@ -29,12 +29,17 @@ struct ContentView: View {
     @State private var folderComparison: FolderComparisonModel?
     @State private var duplicateFiles: DuplicateFilesModel?
     @State private var folderOrganization: FolderOrganizationModel?
+    @State private var offlineCatalog: OfflineCatalogModel?
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     private let globalSearchRootURL: URL
+    private let offlineCatalogStore: any OfflineCatalogStoring
+    private let offlineVolumes: any OfflineVolumeAccessing
 
     init() {
+        offlineCatalogStore = OfflineCatalogStore.shared
+        offlineVolumes = LocalOfflineVolumeAccess()
         let rootURL = SidebarPlace.systemDrive.url
             ?? URL(filePath: "/", directoryHint: .isDirectory)
         globalSearchRootURL = rootURL
@@ -52,6 +57,8 @@ struct ContentView: View {
         sidebar: SidebarModel? = nil,
         themeController: ExplorerThemeController? = nil,
         aiSettings: ExplorerAISettings? = nil,
+        offlineCatalogStore: any OfflineCatalogStoring = OfflineCatalogStore.shared,
+        offlineVolumes: any OfflineVolumeAccessing = LocalOfflineVolumeAccess(),
         globalSearch: GlobalSearchModel? = nil,
         globalSearchRootURL: URL = URL(
             filePath: "/",
@@ -59,6 +66,8 @@ struct ContentView: View {
         )
     ) {
         self.globalSearchRootURL = globalSearchRootURL
+        self.offlineCatalogStore = offlineCatalogStore
+        self.offlineVolumes = offlineVolumes
         _workspace = State(initialValue: workspace)
         _fileOperations = State(initialValue: fileOperations)
         _fileOpenApplications = State(initialValue: fileOpenApplications)
@@ -321,16 +330,23 @@ struct ContentView: View {
                         duplicateFiles = DuplicateFilesModel(rootURL: root, operations: fileOperations)
                     }
                     .accessibilityIdentifier("file-tools-duplicates")
+                    .disabled(workspace.activePane?.displayedDirectory == nil)
                     Button("Organize Folder…", systemImage: "folder.badge.gearshape") {
                         guard let root = workspace.activePane?.displayedDirectory else { return }
                         folderOrganization = FolderOrganizationModel(rootURL: root, operations: fileOperations)
                     }
                     .accessibilityIdentifier("file-tools-organize")
+                    .disabled(workspace.activePane?.displayedDirectory == nil)
+                    Divider()
+                    Button("Offline Catalogs…", systemImage: "externaldrive") {
+                        offlineCatalog = OfflineCatalogModel(store: offlineCatalogStore, volumes: offlineVolumes)
+                    }
+                    .accessibilityIdentifier("file-tools-offline-catalogs")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerChromeIconButtonStyle())
-                .disabled(workspace.activePane?.displayedDirectory == nil || fileOperations.isPerforming)
-                .help("File tools for the active folder")
+                .disabled(fileOperations.isPerforming)
+                .help("File tools and saved disk catalogs")
                 .accessibilityIdentifier("window-file-tools-button")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -482,6 +498,12 @@ struct ContentView: View {
         .sheet(item: $folderOrganization) { model in
             FolderOrganizationSheet(model: model)
                 .environment(\.explorerTheme, theme)
+        }
+        .sheet(item: $offlineCatalog) { model in
+            OfflineCatalogSheet(model: model, mountedVolumes: sidebar.mountedVolumeMonitor) { url, isDirectory in
+                workspace.reveal(FileItem(url: url, isDirectory: isDirectory, isImage: false, fileSize: nil, modificationDate: nil))
+            }
+            .environment(\.explorerTheme, theme)
         }
         .sheet(item: $nearbyTransfers.presentation) { presentation in
             NearbyTransferSheet(
