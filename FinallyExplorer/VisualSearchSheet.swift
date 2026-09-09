@@ -103,7 +103,9 @@ struct VisualSearchSheet: View {
                     if snapshot.entries.isEmpty {
                         Text("No supported images could be analyzed in this folder.")
                     } else if model.matches.isEmpty {
-                        Text("No observed labels or image text match. Try fewer words or another label; this is not an exhaustive understanding of the image.")
+                        Text(model.naturalPlan == nil
+                             ? "No observed labels or image text match. Try fewer words or another label; this is not an exhaustive understanding of the image."
+                             : "No photos match this scene and its date/type filters. Try “All dates” or “All image types”, or describe another scene. Vision can miss subjects.")
                     }
                     ForEach(model.matches.prefix(150)) { match in
                         VisualSearchResultRow(match: match) {

@@ -53,6 +53,15 @@ final class SidebarSplitViewTestFixture {
         }
     }
 
+    var sidebarColumn: NSView? {
+        var view: NSView = attachment
+        while let parent = view.superview {
+            if parent === splitView { return view }
+            view = parent
+        }
+        return nil
+    }
+
     func waitUntil(_ condition: () -> Bool) async -> Bool {
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while condition() == false, ContinuousClock.now < deadline {

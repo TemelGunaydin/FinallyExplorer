@@ -21,6 +21,10 @@ struct VisualSearchResultRow: View {
                     .font(.headline).lineLimit(1).truncationMode(.middle)
                 Text(match.entry.relativePath).font(.caption).foregroundStyle(theme.textSecondary)
                     .lineLimit(1).truncationMode(.middle)
+                if let capture = match.entry.evidence.captureDate {
+                    Text("Captured: \(capture.date.formatted(date: .abbreviated, time: .shortened))\(capture.assumedLocalTimeZone ? " · time zone assumed" : "")")
+                        .font(.caption).foregroundStyle(theme.textSecondary)
+                }
                 if match.labels.isEmpty == false {
                     Text("Visual labels: " + match.labels.joined(separator: ", "))
                         .font(.callout).lineLimit(3).textSelection(.enabled)

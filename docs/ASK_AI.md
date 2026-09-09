@@ -20,7 +20,7 @@ Photo capture dates are separate from filesystem creation/modification dates. Sp
 
 This is **not a complete photo-library search**. It cannot find Photos-library-only or unindexed assets, and incorrect/missing Spotlight content dates can omit otherwise valid images. Searches remain bounded to the existing Spotlight candidate limit and 120 displayed results. There is no new full-disk scan.
 
-Scene requests are routed to the separately scoped Visual Search tool before the normal file-search interpreter runs. Explicit filename searches and date-only photo searches stay in the original conversation. Scene and date filters are **not** combined across these tools, and a photo description is not a follow-up to earlier Spotlight filters. There is no person identification, arbitrary Photos-library access, download/import-date filtering, or file-changing command execution. Unsupported conditions are rejected rather than deliberately weakened. Inspect visible filters and visual evidence because model interpretations and classifier labels can still be imperfect.
+Scene requests are routed to the separately scoped Visual Search tool before the normal file-search interpreter runs. Explicit filename searches and date-only photo searches stay in the original conversation. Visual Search now combines a scene with EXIF capture dates and supported image extensions: `Find beach photos from last week` → `Only HEIC`. These explicit follow-ups also reopen the active photo context from Ask AI. A full photo request starts its own filters; it does not inherit earlier Spotlight conditions. Use **New Search** to clear both contexts. See [supported photo clauses and limitations](VISUAL_SEARCH.md#capture-dates-image-types-and-follow-ups). There is no person identification, arbitrary Photos-library access, download/import-date filtering, or file-changing command execution. Unsupported conditions are rejected rather than deliberately weakened. Inspect visible filters and visual evidence because model interpretations and classifier labels can still be imperfect.
 
 Document Questions has independent selection, permission, context, and memory. Each document question is independent, not a conversational `it`/`those` follow-up. It uses only retrieved excerpts from the selected files and displays inspectable source quotes; it does not claim full-document comprehension.
 
@@ -60,3 +60,9 @@ Exact duplicates and read-only organization previews were introduced through [Lo
 ## Related tools — seventh delivery
 
 Natural photo descriptions now open Visual Search from Ask AI, with visible concepts and observed-label matches. [Document Questions](DOCUMENT_QUESTIONS.md) now answers specific questions over up to five explicitly selected documents with verified source quotes and PDF page references. Neither tool adds a cloud API, automatic scan, or file-changing AI command. Offline Catalogs remains metadata-only.
+
+## Related tools — eighth delivery
+
+Photo scenes now combine with EXIF capture dates and image types, with exact follow-ups that retain the scene and unchanged filters. Real-photo, real-model and full interaction regressions accompany the change. The [validation record](DOCUMENT_QUESTIONS.md#september-9-accuracy-and-interaction-regressions) includes the right-click Rename and Cmd+A fixes found along the way.
+
+Document conversation/follow-up questions, semantic passage retrieval, scanned-PDF OCR and an optional persistent visual index remain future work; this delivery does not claim those capabilities.

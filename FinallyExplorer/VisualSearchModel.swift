@@ -20,14 +20,19 @@ final class VisualSearchModel {
     private(set) var errorMessage: String?
     @ObservationIgnored private let service: any VisualSearchScanning
     @ObservationIgnored private let interpreter: any VisualDescriptionInterpreting
+    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var searchGeneration = 0
 
     init(service: any VisualSearchScanning = VisualSearchService(),
-         interpreter: any VisualDescriptionInterpreting = FoundationModelsVisualInterpreter()) {
+         interpreter: any VisualDescriptionInterpreting = FoundationModelsVisualInterpreter(),
+         now: @escaping @Sendable () -> Date = { .now }, calendar: Calendar = .current) {
         self.service = service
         self.interpreter = interpreter
+        self.now = now
+        self.calendar = calendar
     }
     deinit { task?.cancel(); searchTask?.cancel() }
 
@@ -114,9 +119,18 @@ final class VisualSearchModel {
         isWorking = true
         isDescribing = true
         errorMessage = nil
+        let previous = naturalPlan, requestDate = now(), calendar = calendar
         task = Task { [weak self, interpreter] in
             do {
-                let plan = try await interpreter.interpret(request)
+                let refinement = try previous.flatMap {
+                    try VisualPhotoRequest.refine(request, previous: $0, now: requestDate, calendar: calendar)
+                }
+                let plan: VisualDescriptionPlan
+                if let refinement { plan = refinement }
+                else {
+                    guard VisualPhotoRequest.isFollowUp(request) == false else { throw VisualDescriptionError.missingContext }
+                    plan = try await interpreter.interpret(request)
+                }
                 let result = try await plan.search(snapshot.entries)
                 try Task.checkCancellation()
                 guard let self, self.snapshot?.id == snapshot.id, isNaturalEnabled else { return }
@@ -139,6 +153,18 @@ final class VisualSearchModel {
         if isDescribing { cancel() }
         naturalRequest = nil
         naturalPlan = nil
+    }
+
+    func startNewPhotoSearch() {
+        resetDescription()
+        naturalDraft = ""
+        errorMessage = nil
+        search()
+    }
+
+    var missingCaptureDateCount: Int {
+        guard naturalPlan?.filters.captureInterval != nil else { return 0 }
+        return snapshot?.entries.count(where: { $0.evidence.captureDate == nil }) ?? 0
     }
 
     @discardableResult func reveal(_ entry: VisualSearchSnapshot.Entry,

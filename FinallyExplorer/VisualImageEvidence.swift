@@ -10,6 +10,7 @@ nonisolated struct VisualImageEvidence: Sendable {
     let text: String
     let textWasTruncated: Bool
     let thumbnail: Data
+    var captureDate: PhotoCaptureDate? = nil
 }
 
 nonisolated protocol VisualImageAnalyzing: Sendable {

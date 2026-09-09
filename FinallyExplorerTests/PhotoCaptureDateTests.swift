@@ -55,4 +55,26 @@ struct PhotoCaptureDateTests {
             }
         }
     }
+
+    @Test("Vision retains EXIF from bounded image bytes, including explicit camera offsets", .timeLimit(.minutes(1)))
+    func visionMetadata() async throws {
+        let data = try VisualSearchTestFixtures.receiptImage()
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        for hasMetadata in [true, false] {
+            let bytes = NSMutableData()
+            let destination = try #require(CGImageDestinationCreateWithData(bytes, UTType.jpeg.identifier as CFString, 1, nil))
+            let metadata: [CFString: Any] = hasMetadata ? [kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifDateTimeOriginal: "2026:09:03 00:15:00",
+                kCGImagePropertyExifOffsetTimeOriginal: "+03:00",
+            ]] : [:]
+            CGImageDestinationAddImage(destination, image, metadata as CFDictionary)
+            #expect(CGImageDestinationFinalize(destination))
+            let evidence = try await VisionImageAnalyzer().analyze(bytes as Data)
+            if hasMetadata {
+                #expect(evidence.captureDate?.date == (try SmartSearchTestFixtures.date("2026-09-02T21:15:00Z")))
+                #expect(evidence.captureDate?.assumedLocalTimeZone == false)
+            } else { #expect(evidence.captureDate == nil) }
+        }
+    }
 }

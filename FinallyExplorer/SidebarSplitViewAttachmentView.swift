@@ -13,6 +13,9 @@ final class SidebarSplitViewAttachmentView: NSView {
     private weak var constrainedSidebarView: NSView?
     private var minimumWidthConstraint: NSLayoutConstraint?
     private var maximumWidthConstraint: NSLayoutConstraint?
+    private weak var observedSidebarItem: NSSplitViewItem?
+    private var collapseObservation: NSKeyValueObservation?
+    private var restoresMinimumWidth = false
 
     var isSidebarVisible = true {
         didSet {
@@ -77,11 +80,16 @@ final class SidebarSplitViewAttachmentView: NSView {
     func detach() {
         configurationTask?.cancel()
         configurationTask = nil
+        collapseObservation?.invalidate()
+        collapseObservation = nil
+        observedSidebarItem = nil
+        restoresMinimumWidth = false
         removeWidthConstraints()
     }
 
     private func configureSidebarIfAvailable() {
         if let sidebarItem = enclosingSidebarItem {
+            observeCollapse(of: sidebarItem)
             // SwiftUI can reapply its split-item settings after initial setup.
             // Only write changed values to avoid triggering a layout loop.
             if sidebarItem.minimumThickness != minimumThickness {
@@ -94,6 +102,10 @@ final class SidebarSplitViewAttachmentView: NSView {
             if sidebarItem.canCollapseFromWindowResize {
                 sidebarItem.canCollapseFromWindowResize = false
             }
+            if isSidebarVisible, sidebarItem.isCollapsed {
+                restoresMinimumWidth = true
+                sidebarItem.isCollapsed = false
+            }
         }
 
         guard let (splitView, sidebarView) = enclosingSplitColumn else { return }
@@ -104,7 +116,8 @@ final class SidebarSplitViewAttachmentView: NSView {
               sidebarView.frame.width > 0,
               let index = splitView.subviews.firstIndex(of: sidebarView) else { return }
         let width = sidebarView.frame.width
-        let boundedWidth = min(max(width, minimumThickness), maximumThickness)
+        let boundedWidth = restoresMinimumWidth ? minimumThickness : min(max(width, minimumThickness), maximumThickness)
+        restoresMinimumWidth = false
         guard abs(width - boundedWidth) > 0.5 else { return }
 
         if index < splitView.subviews.count - 1 {
@@ -114,6 +127,18 @@ final class SidebarSplitViewAttachmentView: NSView {
                 sidebarView.frame.maxX - boundedWidth - splitView.dividerThickness,
                 ofDividerAt: index - 1
             )
+        }
+    }
+
+    private func observeCollapse(of item: NSSplitViewItem) {
+        guard observedSidebarItem !== item else { return }
+        collapseObservation?.invalidate()
+        observedSidebarItem = item
+        // SwiftUI may collapse its item during tracking despite canCollapse.
+        // The documented KVO notification also covers user interaction. Repair
+        // that native state after tracking, without replacing its delegate.
+        collapseObservation = item.observe(\.isCollapsed) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.scheduleConfiguration() }
         }
     }
 

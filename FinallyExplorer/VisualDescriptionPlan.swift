@@ -3,8 +3,9 @@ import Foundation
 nonisolated struct VisualDescriptionPlan: Equatable, Sendable {
     /// Every concept is required; alternatives within one concept are OR matches.
     let concepts: [[String]]
+    let filters: VisualPhotoFilters
 
-    init(concepts: [[String]]) throws {
+    init(concepts: [[String]], filters: VisualPhotoFilters? = nil) throws {
         guard (1...4).contains(concepts.count), concepts.allSatisfy({ alternatives in
             (1...8).contains(alternatives.count) && alternatives.allSatisfy {
                 $0.isEmpty == false && $0.count <= 40 && $0.unicodeScalars.allSatisfy { CharacterSet.letters.union(.whitespaces).contains($0) }
@@ -12,6 +13,7 @@ nonisolated struct VisualDescriptionPlan: Equatable, Sendable {
         }) else { throw VisualDescriptionError.invalidInterpretation }
         self.concepts = concepts.map { $0.map { $0.trimmingCharacters(in: .whitespaces).lowercased() } }
         guard self.concepts.allSatisfy({ $0.allSatisfy { $0.isEmpty == false } }) else { throw VisualDescriptionError.invalidInterpretation }
+        self.filters = try filters ?? VisualPhotoFilters()
     }
 
     var explanation: String { concepts.map { $0.joined(separator: " / ") }.joined(separator: " + ") }
@@ -32,7 +34,7 @@ nonisolated struct VisualDescriptionPlan: Equatable, Sendable {
         var results: [VisualSearchMatch] = []
         for entry in entries {
             try Task.checkCancellation()
-            if let labels = matchingLabels(in: entry.evidence) {
+            if filters.includes(entry), let labels = matchingLabels(in: entry.evidence) {
                 results.append(VisualSearchMatch(entry: entry, labels: labels, excerpt: nil))
             }
         }

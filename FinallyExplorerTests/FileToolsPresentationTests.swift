@@ -48,6 +48,19 @@ struct FileToolsPresentationTests {
         await natural.findPhotos()?.value
         #expect(natural.matches.count == 1)
         try render(VisualSearchSheet(model: natural, onReveal: { _ in }), name: "NaturalVisualSearch", width: 820, height: 720, dark: dark)
+        // Closing a rendered sheet ends its lifecycle. Use a separate owner for
+        // subsequent work so its deferred onDisappear cannot cancel that work.
+        let filtered = VisualSearchModel(service: VisualSearchService(analyzer: FixedVisualAnalyzer()))
+        filtered.setSource(fixture.source)
+        await filtered.analyze()?.value
+        filtered.naturalDraft = "Find beach photos from last week"
+        await filtered.findPhotos()?.value
+        filtered.naturalDraft = "Only HEIC"
+        await filtered.findPhotos()?.value
+        #expect(filtered.errorMessage == nil)
+        #expect(filtered.naturalPlan?.filters.captureInterval != nil)
+        #expect(filtered.naturalPlan?.filters.fileExtensions == ["heic"])
+        try render(VisualSearchSheet(model: filtered, onReveal: { _ in }), name: "FilteredVisualSearch", width: 820, height: 720, dark: dark)
     }
 
     @Test("Offline catalogs fit in light and dark without accessing a live disk", arguments: [false, true])

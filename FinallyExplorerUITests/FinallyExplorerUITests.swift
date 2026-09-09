@@ -221,7 +221,11 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(waitForElementCount(rows(named: "Destination"), toEqual: 2, timeout: 5))
         let rightFolder = try XCTUnwrap(existingElements(in: rows(named: "Destination"))
             .sorted(by: leftToRight).last)
-        try XCTUnwrap(containingCell(for: rightFolder)).doubleClick()
+        // A cell also contains favorite/trash buttons. Open its row background,
+        // rather than letting XCTest choose an arbitrary hittable descendant.
+        try XCTUnwrap(containingCell(for: rightFolder))
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .doubleClick()
         XCTAssertTrue(rows(named: "Existing.txt").firstMatch.waitForExistence(timeout: 5))
 
         let bodies = app.descendants(matching: .any).matching(identifier: "pane-directory-body")
@@ -241,6 +245,10 @@ final class FinallyExplorerUITests: XCTestCase {
                    thenDragTo: existingRow.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)),
                    withVelocity: .slow, thenHoldForDuration: 0.8)
         XCTAssertTrue(waitForElementCount(rows(named: "Another Source.json"), toEqual: 2, timeout: 10))
+        XCTAssertEqual(
+            try Data(contentsOf: destinationFolderURL.appending(path: "Another Source.json")),
+            try Data(contentsOf: secondSourceURL)
+        )
         XCTAssertEqual(try Data(contentsOf: existingURL), Data("Keep this destination file".utf8))
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: secondSourceURL.path))
@@ -265,7 +273,11 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(waitForValue(jsonText, on: preview, timeout: 5))
         XCTAssertGreaterThan(preview.frame.width, 100)
         XCTAssertGreaterThan(preview.frame.height, 0)
-        let previewViewport = app.scrollViews["text-file-preview-scroll"]
+        // SwiftUI's inspector identifier can replace the representable's outer
+        // scroll identifier. Locate the viewport by its actual text editor.
+        let previewViewport = app.scrollViews.containing(
+            .textView, identifier: "text-file-preview"
+        ).firstMatch
         XCTAssertTrue(previewViewport.exists)
         XCTAssertGreaterThan(previewViewport.frame.height, 100)
         recordWindowHierarchy("JSON preview and developer file icons")
@@ -286,8 +298,8 @@ final class FinallyExplorerUITests: XCTestCase {
         settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
 
         let sourceRow = rows(named: "Source Item.txt").firstMatch
-        // This test covers the setting, not popover hit-testing after a window
-        // focus transition. Use the same native command as the rename regression.
+        // Exercise the native menu entry as well as the dedicated right-click
+        // regressions, while checking that the preference survives relaunch.
         let sourceCell = try XCTUnwrap(containingCell(for: sourceRow))
         sourceCell.click()
         app.menuBars.menuBarItems["File"].click()
@@ -305,6 +317,44 @@ final class FinallyExplorerUITests: XCTestCase {
         app.menuItems["Rename"].click()
         XCTAssertTrue(app.textFields["rename-text-field"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["smart-rename-disabled"].waitForExistence(timeout: 5))
+    }
+
+    func testContextMenuRenameWorksAfterClosingSettings() throws {
+        app.buttons["window-settings-button"].click()
+        let toggle = element(withIdentifier: "ai-settings-enabled-toggle")
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.click()
+        let settingsWindow = app.windows.containing(.any, identifier: "ai-settings-view").firstMatch
+        XCTAssertTrue(settingsWindow.exists)
+        settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
+        try assertContextMenuPresentsRename()
+        XCTAssertTrue(app.staticTexts["smart-rename-disabled"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].click()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path))
+    }
+
+    func testContextMenuRenameWorksWithoutSettings() throws {
+        try assertContextMenuPresentsRename()
+        app.buttons["Cancel"].click()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path))
+    }
+
+    func testContextMenuRenameWorksAtTrailingEdge() throws {
+        try assertContextMenuPresentsRename(horizontalPosition: 0.92)
+        app.buttons["Cancel"].click()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path))
+    }
+
+    private func assertContextMenuPresentsRename(horizontalPosition: CGFloat = 0.5) throws {
+        let sourceRow = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(sourceRow.waitForExistence(timeout: 10))
+        try rightClickRow(sourceRow)
+        let rename = fileContextMenuButton(named: "Rename")
+        XCTAssertTrue(rename.waitForExistence(timeout: 5))
+        XCTAssertTrue(rename.isEnabled)
+        rename.coordinate(withNormalizedOffset: CGVector(dx: horizontalPosition, dy: 0.5)).click()
+        XCTAssertTrue(app.textFields["rename-text-field"].waitForExistence(timeout: 5))
+        XCTAssertFalse(element(withIdentifier: "file-item-context-menu").exists)
     }
 
     func testSidebarToolbarButtonAlignsWithSidebarAndOmitsRetiredControls() {
@@ -374,6 +424,10 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let sidebar = app.descendants(matching: .any)["explorer-sidebar"].firstMatch
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        let sidebarViewport = app.scrollViews.containing(
+            .outline, identifier: "explorer-sidebar"
+        ).firstMatch
+        XCTAssertTrue(sidebarViewport.exists)
 
         func dragSidebarDivider(by delta: CGFloat) throws {
             let divider = try XCTUnwrap(
@@ -382,9 +436,10 @@ final class FinallyExplorerUITests: XCTestCase {
                     .min { $0.frame.minX < $1.frame.minX }
             )
             let start = divider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let endX = max(app.windows.firstMatch.frame.minX + 4, divider.frame.midX + delta)
             start.click(
                 forDuration: 0.2,
-                thenDragTo: start.withOffset(CGVector(dx: delta, dy: 0)),
+                thenDragTo: start.withOffset(CGVector(dx: endX - divider.frame.midX, dy: 0)),
                 withVelocity: .slow,
                 thenHoldForDuration: 0.2
             )
@@ -393,9 +448,11 @@ final class FinallyExplorerUITests: XCTestCase {
         func expectSidebarWidth(in range: ClosedRange<CGFloat>) {
             let expectation = XCTNSPredicateExpectation(
                 predicate: NSPredicate { _, _ in
-                    sidebar.exists && range.contains(sidebar.frame.width)
+                    // NSOutlineView extends one pixel outside each clip edge;
+                    // the visible sidebar column is its scroll viewport.
+                    sidebarViewport.exists && range.contains(sidebarViewport.frame.width)
                 },
-                object: sidebar
+                object: sidebarViewport
             )
             XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed)
         }
@@ -792,6 +849,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(uninstall.waitForExistence(timeout: 3))
         XCTAssertTrue(uninstall.isEnabled)
         XCTAssertFalse(fileContextMenuButton(named: "Move to Trash").exists)
+        scrollFileContextMenuTo(uninstall)
         uninstall.click()
 
         let confirmationSheet = app.sheets.firstMatch
@@ -850,6 +908,7 @@ final class FinallyExplorerUITests: XCTestCase {
             named: "Uninstall Application"
         )
         XCTAssertTrue(confirmedUninstall.waitForExistence(timeout: 3))
+        scrollFileContextMenuTo(confirmedUninstall)
         confirmedUninstall.click()
         XCTAssertTrue(
             confirmationSheet.buttons["Uninstall"].waitForExistence(timeout: 5)
@@ -1431,6 +1490,78 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["ask-ai-submit"].waitForExistence(timeout: 5))
     }
 
+    func testPhotoDateAndTypeFollowUpsPreserveSceneAcrossAskAI() throws {
+        app.terminate()
+        let fixture = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "FinallyExplorerTests/Fixtures/VisualPhotos/beach-monterey.jpg")
+        let bytes = try Data(contentsOf: fixture)
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(bytes as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let lastWeek = try XCTUnwrap(Calendar.current.date(byAdding: .weekOfYear, value: -1, to: Date()))
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .gmt
+        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        for (name, type) in [("Coast.jpg", UTType.jpeg), ("Coast.png", UTType.png)] {
+            let url = fixtureRootURL.appending(path: name)
+            let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil))
+            CGImageDestinationAddImage(destination, image, [kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifDateTimeOriginal: formatter.string(from: lastWeek), kCGImagePropertyExifOffsetTimeOriginal: "+00:00",
+            ]] as CFDictionary)
+            XCTAssertTrue(CGImageDestinationFinalize(destination))
+        }
+        app.launch()
+        app.buttons["window-ask-ai-button"].click()
+        let input = app.textFields["ask-ai-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        typeCatalogQuery("Find beach photos from last week", in: input)
+        app.buttons["ask-ai-submit"].click()
+        XCTAssertTrue(app.buttons["visual-search-analyze"].waitForExistence(timeout: 5))
+        app.buttons["visual-search-analyze"].click()
+        XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
+        app.buttons["visual-description-submit"].click()
+        let filters = app.staticTexts["visual-description-filters"]
+        XCTAssertTrue(filters.waitForExistence(timeout: 10))
+        let originalDate = try XCTUnwrap(filters.value as? String)
+        XCTAssertTrue(originalDate.contains("Captured (EXIF)"))
+        XCTAssertTrue(app.buttons["visual-search-reveal-Coast.jpg"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["visual-search-reveal-Coast.png"].exists)
+
+        app.buttons["visual-search-close"].click()
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.click()
+        input.typeKey("a", modifierFlags: .command)
+        input.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
+        XCTAssertEqual(input.value as? String, "", "Command-A and Delete must clear the photo follow-up field")
+        typeCatalogQuery("Only PNG", in: input)
+        XCTAssertEqual(input.value as? String, "Only PNG")
+        app.buttons["ask-ai-submit"].click()
+        XCTAssertTrue(filters.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(originalDate + " · Type: PNG", on: filters, timeout: 10))
+        XCTAssertTrue(app.buttons["visual-search-reveal-Coast.png"].exists)
+        XCTAssertFalse(app.buttons["visual-search-reveal-Coast.jpg"].exists)
+        XCTAssertTrue((app.staticTexts["visual-description-evidence"].value as? String ?? "").contains("beach"))
+
+        let description = app.textFields["visual-description-input"]
+        description.click()
+        description.typeKey("a", modifierFlags: .command)
+        description.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
+        XCTAssertEqual(description.value as? String, "")
+        typeCatalogQuery("Only HEIC", in: description)
+        XCTAssertEqual(description.value as? String, "Only HEIC")
+        app.buttons["visual-description-submit"].click()
+        XCTAssertTrue(waitForValue(originalDate + " · Type: HEIC", on: filters, timeout: 5))
+        XCTAssertFalse(app.buttons["visual-search-reveal-Coast.png"].exists)
+        XCTAssertFalse(app.staticTexts["visual-search-error"].exists)
+        recordWindowHierarchy("Photo date and format refinement")
+        app.buttons["visual-description-new-search"].click()
+        XCTAssertTrue(filters.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(description.value as? String, "")
+        app.buttons["visual-search-close"].click()
+        app.buttons["ask-ai-new-search"].click()
+        XCTAssertEqual(input.value as? String, "")
+    }
+
     func testDocumentQuestionRequiresReadingAndShowsSourceThenClears() throws {
         app.terminate()
         let original = Data("The payment deadline is 30 September 2026. The invoice total is 480 USD.".utf8)
@@ -1642,16 +1773,16 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(smartButton.waitForExistence(timeout: 5))
         smartButton.click()
         let prompt = app.descendants(matching: .any)["smart-search-prompt"]
-        XCTAssertTrue(prompt.waitForExistence(timeout: 5))
-        field.click()
-        field.typeText("Find the accounting report from 2 days ago")
-        XCTAssertTrue(prompt.exists, "Typing must not start model inference.")
+        typeCatalogQuery("Find the accounting report from 2 days ago", in: field)
+        XCTAssertEqual(field.value as? String, "Find the accounting report from 2 days ago")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 5), "Typing must not start model inference.")
         XCTAssertTrue(app.buttons["smart-search-submit-button"].isEnabled)
         XCTAssertFalse(app.descendants(matching: .any)["smart-search-filters"].exists)
         app.buttons["smart-search-normal-button"].click()
         field.click()
         field.typeKey("a", modifierFlags: .command)
-        field.typeText("Global Needle")
+        for character in "Global Needle" { field.typeKey(String(character), modifierFlags: []) }
+        XCTAssertEqual(field.value as? String, "Global Needle")
         XCTAssertTrue(app.staticTexts["Global Needle Alpha.txt"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Global Needle Beta.txt"].waitForExistence(timeout: 10))
         recordWindowHierarchy("Normal search preserved after Smart Search")
@@ -1948,6 +2079,17 @@ final class FinallyExplorerUITests: XCTestCase {
     private func fileContextMenuButton(named name: String) -> XCUIElement {
         app.descendants(matching: .any)["file-item-context-menu"]
             .buttons[name]
+    }
+
+    private func scrollFileContextMenuTo(_ button: XCUIElement) {
+        let menu = app.scrollViews["file-item-context-menu"]
+        // Installed terminal apps change this menu's length. Bring the whole
+        // action into view instead of assuming it fits without scrolling.
+        for _ in 0..<5 {
+            if menu.frame.insetBy(dx: 2, dy: 2).contains(button.frame), button.isHittable { return }
+            menu.scroll(byDeltaX: 0, deltaY: button.frame.maxY > menu.frame.maxY ? 120 : -120)
+        }
+        XCTAssertTrue(button.isHittable)
     }
 
     private func existingElements(in query: XCUIElementQuery) -> [XCUIElement] {

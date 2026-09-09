@@ -82,4 +82,34 @@ struct SidebarSplitViewBehaviorTests {
         #expect(constraints.allSatisfy { $0.isActive == false })
         #expect(fixture.widthConstraints.isEmpty)
     }
+
+    @Test("Unexpected native collapse is repaired, but the explicit toolbar can hide the sidebar")
+    func repairsNativeCollapseWithoutBlockingExplicitHiding() async throws {
+        let fixture = SidebarSplitViewTestFixture()
+        defer { fixture.close() }
+        let item = try #require(fixture.sidebarItem)
+        try #require(await fixture.waitUntil { item.maximumThickness == 280 })
+        item.isCollapsed = true
+        #expect(await fixture.waitUntil { item.isCollapsed == false })
+        #expect(fixture.splitView.delegate is NSSplitViewController)
+        let isRestored = await fixture.waitUntil {
+            fixture.sidebarColumn.map {
+                $0.isHidden == false && (209.5...280.5).contains($0.frame.width)
+            } == true
+        }
+        #expect(isRestored, "Restored column: \(String(describing: fixture.sidebarColumn?.frame)); hidden: \(String(describing: fixture.sidebarColumn?.isHidden))")
+
+        fixture.attachment.isSidebarVisible = false
+        item.isCollapsed = true
+        fixture.attachment.scheduleConfiguration()
+        await Task.yield()
+        #expect(item.isCollapsed)
+        fixture.attachment.isSidebarVisible = true
+        #expect(await fixture.waitUntil { item.isCollapsed == false })
+
+        fixture.attachment.detach()
+        item.isCollapsed = true
+        await Task.yield()
+        #expect(item.isCollapsed)
+    }
 }

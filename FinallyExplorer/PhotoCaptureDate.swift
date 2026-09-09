@@ -16,8 +16,13 @@ nonisolated struct PhotoCaptureDate: Hashable, Sendable {
         }
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
-              let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any] else { return nil }
+        return read(properties: properties, timeZone: timeZone)
+    }
+
+    /// Reuse metadata from the already bounded, descriptor-read image bytes.
+    static func read(properties: [CFString: Any], timeZone: TimeZone = .current) -> Self? {
+        guard let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
               let original = exif[kCGImagePropertyExifDateTimeOriginal] as? String else { return nil }
         return parse(original, offset: exif[kCGImagePropertyExifOffsetTimeOriginal] as? String, timeZone: timeZone)
     }

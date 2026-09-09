@@ -15,6 +15,7 @@ struct AskAISearchSheet: View {
     var documentSelection: [URL] = []
     @State private var isPhotosPresented = false
     @State private var isDocumentsPresented = false
+    @State private var isPhotoConversation = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -22,6 +23,20 @@ struct AskAISearchSheet: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if isPhotoConversation, let plan = visualSearch?.naturalPlan {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Photo search context").font(.headline)
+                                Text(plan.explanation).font(.callout).lineLimit(2)
+                                if plan.filters.summary.isEmpty == false {
+                                    Text(plan.filters.summary).font(.callout)
+                                }
+                                Text("“Only HEIC” or “Yesterday instead” refines these photos. Use New Search to reset the context.")
+                                    .font(.caption).foregroundStyle(theme.textSecondary)
+                                Button("Return to Photo Results") { presentPhotos("") }
+                            }
+                            .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(theme.control, in: .rect(cornerRadius: 12))
+                        }
                         if model.turns.isEmpty { introduction }
                         ForEach(model.turns) { turn in
                             AskAISearchTurnView(turn: turn)
@@ -150,6 +165,8 @@ struct AskAISearchSheet: View {
             }
             Button("New Search") {
                 model.startNewSearch()
+                visualSearch?.startNewPhotoSearch()
+                isPhotoConversation = false
                 isInputFocused = true
             }
             .accessibilityIdentifier("ask-ai-new-search")
@@ -227,14 +244,20 @@ struct AskAISearchSheet: View {
     }
 
     private func submit() {
-        if visualSearch != nil, settings.isSmartSearchEnabled, VisualDescriptionRouting.isVisualRequest(model.draft) {
+        if visualSearch != nil, settings.isSmartSearchEnabled,
+           VisualDescriptionRouting.isVisualRequest(model.draft)
+            || (isPhotoConversation && VisualPhotoRequest.isFollowUp(model.draft)) {
             presentPhotos(model.draft)
-        } else { model.submit(rootURL: rootURL) }
+        } else {
+            isPhotoConversation = false
+            model.submit(rootURL: rootURL)
+        }
     }
 
     private func presentPhotos(_ description: String) {
         guard let visualSearch else { return }
         model.cancel()
+        isPhotoConversation = true
         if visualSearch.sourceURL == nil, let photoRoot { visualSearch.setSource(photoRoot) }
         visualSearch.naturalDraft = description
         isPhotosPresented = true

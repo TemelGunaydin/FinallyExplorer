@@ -32,6 +32,15 @@ struct FileEditCommands: Commands {
                 }
             }
             .keyboardShortcut("v", modifiers: .command)
+
+            Divider()
+
+            // Replacing .pasteboard also removes the system's Select All item.
+            // Preserve the responder chain for field editors and file lists.
+            Button("Select All") {
+                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut("a", modifiers: .command)
         }
 
         CommandGroup(after: .saveItem) {

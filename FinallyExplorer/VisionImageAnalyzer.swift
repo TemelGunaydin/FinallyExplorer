@@ -47,7 +47,8 @@ nonisolated struct VisionImageAnalyzer: VisualImageAnalyzing {
             labels: classifications.filter { $0.confidence >= 0.2 }
                 .sorted { $0.confidence > $1.confidence }.prefix(12)
                 .map { .init(name: $0.identifier.replacingOccurrences(of: "_", with: " "), confidence: $0.confidence) },
-            text: text.trimmingCharacters(in: .whitespacesAndNewlines), textWasTruncated: truncated, thumbnail: bytes as Data
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines), textWasTruncated: truncated, thumbnail: bytes as Data,
+            captureDate: PhotoCaptureDate.read(properties: properties)
         )
     }
 

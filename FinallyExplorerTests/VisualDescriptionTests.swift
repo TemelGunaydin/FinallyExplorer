@@ -12,7 +12,7 @@ struct VisualDescriptionTests {
         #expect(plan.concepts[0].contains("sea"))
     }
 
-    @Test("Unsupported dates/actions are never discarded", arguments: ["Find beach photos from yesterday", "Find photos by the sea without people", "Delete beach photos", "Find beach photos from 2020"])
+    @Test("Unsupported date forms/actions are never discarded", arguments: ["Find beach photos before yesterday", "Find photos by the sea without people", "Delete beach photos", "Find beach photos from 2020"])
     func rejectUnsupported(_ query: String) async {
         await #expect(throws: VisualDescriptionError.unsupportedRequest) { try await FoundationModelsVisualInterpreter().interpret(query) }
     }
@@ -102,7 +102,7 @@ struct VisualDescriptionTests {
         await model.findPhotos()?.value
         let request = model.naturalRequest
         let ids = model.matches.map(\.id)
-        model.naturalDraft = "Find beach photos from yesterday"
+        model.naturalDraft = "Find beach photos before yesterday"
         await model.findPhotos()?.value
         #expect(model.errorMessage != nil)
         #expect(model.naturalRequest == request)
@@ -112,6 +112,7 @@ struct VisualDescriptionTests {
     @Test("The actual on-device model resolves a non-shortcut photo description", .enabled(if: SystemLanguageModel.default.availability == .available), .timeLimit(.minutes(1)))
     func realModel() async throws {
         let plan = try await FoundationModelsVisualInterpreter().interpret("Find pictures depicting dogs on a beach")
+        print("Visual concept evaluation:", plan.concepts)
         #expect(plan.concepts.count == 2)
         #expect(plan.concepts.contains { $0.contains("dog") || $0.contains("dogs") })
         #expect(plan.concepts.contains { $0.contains("beach") })

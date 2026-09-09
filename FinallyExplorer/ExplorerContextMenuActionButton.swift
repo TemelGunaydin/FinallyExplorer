@@ -30,11 +30,11 @@ struct ExplorerContextMenuActionButton: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            // Keep the row's frame and hit shape inside the Button label. A
+            // frame outside a plain Button looks wider without enlarging it.
+            .explorerContextMenuRow(isDestructive: isDestructive)
         }
         .buttonStyle(.plain)
-        .explorerContextMenuRow(isDestructive: isDestructive)
         .disabled(isEnabled == false)
         .accessibilityLabel(title)
     }

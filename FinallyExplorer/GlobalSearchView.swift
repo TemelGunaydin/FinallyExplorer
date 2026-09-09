@@ -151,14 +151,20 @@ struct GlobalSearchToolbar: View {
         .task(id: model.request(in: rootURL)) {
             await model.search(in: rootURL)
         }
-        .onChange(of: model.hasQuery) { _, hasQuery in
-            isResultsPresented = hasQuery && model.isIndexReady(in: rootURL)
+        .onChange(of: model.query) {
+            // Editing an existing query must reopen results after an outside
+            // click dismisses the popover, even when hasQuery stays true.
+            isResultsPresented = model.hasQuery && model.isIndexReady(in: rootURL)
         }
         .onChange(of: aiSettings.isSmartSearchEnabled, initial: true) { _, enabled in
             model.setSmartSearchAllowed(enabled)
         }
         .onChange(of: model.usesSmartSearch) {
-            isResultsPresented = (model.hasQuery || model.usesSmartSearch) && model.isIndexReady(in: rootURL)
+            // Presenting an empty popover while the mode button has focus
+            // steals the field editor on macOS. Start with the focused input;
+            // the first query character presents the instructions/results.
+            isResultsPresented = model.hasQuery && model.isIndexReady(in: rootURL)
+            isSearchFocused = true
         }
         .onChange(of: isIndexReady) { _, isReady in
             if isReady {

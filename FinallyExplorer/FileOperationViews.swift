@@ -161,7 +161,10 @@ private struct InternalFileInteractionModifier: ViewModifier {
                 .dragPreview,
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
-            .onDrag {
+            // These views are native List rows. Supply the row's provider so
+            // the table starts drags reliably after an in-place list refresh;
+            // a competing view-level onDrag can become a selection gesture.
+            .itemProvider {
                 InternalFileTransferProvider.make(
                     sourceURL: item.url,
                     sourcePaneID: paneID
