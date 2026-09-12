@@ -101,6 +101,7 @@ struct FileRenameSheet: View {
                     .keyboardShortcut(.cancelAction)
 
                 Button(request.isNewFolder ? "Create" : "Rename", action: submit)
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(canSubmit == false)
                     .accessibilityIdentifier("rename-confirm-button")
@@ -109,6 +110,7 @@ struct FileRenameSheet: View {
         .padding(20)
         .frame(width: supportsSmartRename ? 480 : 440)
         .background(theme.elevatedPanel)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .task {
             isNameFocused = true
             await Task.yield()
@@ -152,7 +154,7 @@ struct FileRenameSheet: View {
                     Label("AI Settings", systemImage: "gearshape")
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
+                .buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .foregroundStyle(theme.textSecondary)
                 .help("AI settings and model status")
                 .accessibilityIdentifier("rename-ai-settings-button")
@@ -195,7 +197,7 @@ struct FileRenameSheet: View {
 
                         Button("Use Suggestion", action: applySmartRenameSuggestion)
                             .buttonStyle(
-                                ExplorerPanePrimaryButtonStyle(isCompact: false)
+                                ExplorerDialogButtonStyle(isProminent: true)
                             )
                             .accessibilityIdentifier("smart-rename-apply-button")
                     }
@@ -244,7 +246,7 @@ struct FileRenameSheet: View {
                         systemImage: "sparkles"
                     )
                 }
-                .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                 .disabled(smartRenameModel.isLoading)
                 .accessibilityIdentifier("smart-rename-suggest-button")
 

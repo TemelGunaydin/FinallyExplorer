@@ -18,7 +18,7 @@ struct DocumentQuestionSheet: View {
                     .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle()).keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("document-close")
             }
-            Text("Ask in English about documents you select, then ask a follow-up. Apple Intelligence answers from source excerpts on this Mac. No upload or API.")
+            Text("Ask about selected documents, with quotes you can check. English · Apple Intelligence.")
                 .font(.callout).foregroundStyle(theme.textSecondary)
             DocumentQuestionSourcesView(model: model)
             if model.isEnabled == false {
@@ -37,10 +37,11 @@ struct DocumentQuestionSheet: View {
                     Spacer()
                     Button("Cancel", action: model.cancel).disabled(model.isCancelling).accessibilityIdentifier("document-cancel")
                 }
+                .padding(10).background(theme.control, in: .rect(cornerRadius: 10))
             }
             if model.history.isEmpty == false {
                 HStack {
-                    Text("Follow-ups use the last two questions and their source quotes.")
+                    Text("Follow-ups use your last two questions and sources.")
                         .font(.caption).foregroundStyle(theme.textSecondary)
                         .accessibilityIdentifier("document-conversation-context")
                     Spacer()
@@ -57,11 +58,11 @@ struct DocumentQuestionSheet: View {
                     .disabled(model.isWorking || model.isEnabled == false).onSubmit { model.ask() }
                     .accessibilityIdentifier("document-question")
                 Button("Ask", systemImage: "arrow.up") { model.ask() }
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false)).disabled(model.canAsk == false)
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true)).disabled(model.canAsk == false)
                     .accessibilityIdentifier("document-ask")
             }
             HStack {
-                Text("Up to 3 answers stay in window memory. Clear or close the window to forget documents and answers.")
+                Text("Up to 3 answers kept here. Clear to forget documents and answers.")
                     .font(.caption).foregroundStyle(theme.textSecondary)
                 Spacer()
                 Button("Clear", systemImage: "eraser", action: model.clear).accessibilityIdentifier("document-clear")
@@ -69,6 +70,7 @@ struct DocumentQuestionSheet: View {
         }
         .padding(22).frame(width: 820, height: 720)
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .onAppear { model.setEnabled(settings?.isDocumentQuestionsEnabled ?? true) }
         .onChange(of: settings?.isDocumentQuestionsEnabled) { model.setEnabled(settings?.isDocumentQuestionsEnabled ?? true) }
         .onDisappear { model.cancel() }

@@ -1,6 +1,6 @@
 # Offline Catalogs — explicit metadata snapshots
 
-Open **File Tools → Offline Catalogs…**. Choose a connected disk, or use **Choose Folder…** to select a smaller folder on it. Inspect the selected path and hidden-item option, then click **Scan & Save**. Merely choosing a source does not scan or create a cache.
+Open **Tools → Offline Catalogs**. Choose a connected disk, or use **Choose Folder…** to select a smaller folder on it. Inspect the selected path and hidden-item option, then click **Scan & Save**. Merely choosing a source does not scan or create a cache.
 
 ## What is available
 

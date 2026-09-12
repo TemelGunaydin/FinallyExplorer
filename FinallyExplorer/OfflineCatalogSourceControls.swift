@@ -13,8 +13,17 @@ struct OfflineCatalogSourceControls: View {
                         Button(volume.name) { model.prepare(volume.rootURL) }
                     }
                 }
+                .menuStyle(.borderlessButton).buttonStyle(.plain).tint(theme.textPrimary)
+                .font(ExplorerTheme.actionFont).padding(.horizontal, 12).frame(height: 36)
+                .background {
+                    RoundedRectangle(cornerRadius: 11).fill(theme.imperialPrimer.opacity(0.65)).offset(y: 3)
+                    RoundedRectangle(cornerRadius: 11).fill(theme.control)
+                        .overlay { RoundedRectangle(cornerRadius: 11).fill(theme.supportAccent.opacity(0.10)) }
+                }
+                .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(theme.divider, lineWidth: 1) }
+                .shadow(color: .black.opacity(0.18), radius: 3, y: 3)
                 .fixedSize().accessibilityIdentifier("offline-catalog-volume-menu")
-                Button("Choose Folder…", action: model.chooseFolder)
+                Button("Choose Folder…", systemImage: "folder", action: model.chooseFolder)
                     .accessibilityIdentifier("offline-catalog-choose-folder")
                 Spacer()
                 Toggle("Include hidden items", isOn: $model.includesHidden)
@@ -26,7 +35,7 @@ struct OfflineCatalogSourceControls: View {
                         .textSelection(.enabled)
                     Spacer(minLength: 8)
                     Button("Scan & Save", systemImage: "externaldrive.badge.plus") { model.scanAndSave() }
-                        .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                        .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                         .accessibilityIdentifier("offline-catalog-save")
                 }
                 Text("Only this folder will be scanned. Existing saved metadata is replaced only after a successful scan.")

@@ -36,13 +36,14 @@ struct FolderOrganizationReviewSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("organization-review-cancel")
                 Button("Move Files", systemImage: "folder", action: onConfirm)
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(canConfirm == false)
                     .accessibilityIdentifier("organization-confirm")
             }
         }
         .padding(22).frame(width: 620, height: 560)
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("organization-review")
     }

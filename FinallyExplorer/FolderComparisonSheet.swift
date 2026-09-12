@@ -21,7 +21,7 @@ struct FolderComparisonSheet: View {
                 Button(model.snapshot == nil ? "Compare" : "Compare Again", systemImage: "arrow.left.arrow.right") {
                     model.compare()
                 }
-                .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                 .disabled(model.canCompare == false)
                 .accessibilityIdentifier("folder-comparison-start")
             }
@@ -40,6 +40,7 @@ struct FolderComparisonSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("folder-comparison-sheet")
         .interactiveDismissDisabled(model.isCopying)
@@ -176,7 +177,7 @@ struct FolderComparisonSheet: View {
             }
             Spacer()
             Button("Review Copy Missing…", systemImage: "checkmark.shield", action: model.reviewCopy)
-                .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                 .disabled(model.canReviewCopy == false)
                 .accessibilityIdentifier("folder-comparison-review-copy")
         }

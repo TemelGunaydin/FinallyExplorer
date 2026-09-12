@@ -22,6 +22,7 @@ struct OfflineCatalogRemovalSheet: View {
         }
         .padding(24).frame(width: 500)
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain).accessibilityIdentifier("offline-catalog-removal-sheet")
     }
 }

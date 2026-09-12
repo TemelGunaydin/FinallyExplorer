@@ -32,7 +32,7 @@ struct DuplicateFilesSheet: View {
                     .accessibilityIdentifier("duplicates-hidden")
                 Spacer()
                 Button(model.snapshot == nil ? "Scan Folder" : "Scan Again", systemImage: "magnifyingglass") { model.scan() }
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(model.canScan == false)
                     .accessibilityIdentifier("duplicates-scan")
             }
@@ -51,7 +51,7 @@ struct DuplicateFilesSheet: View {
                 }
                 Spacer()
                 Button("Review Removal…", systemImage: "trash", action: model.reviewTrash)
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(model.canReview == false)
                     .accessibilityIdentifier("duplicates-review")
             }
@@ -61,6 +61,7 @@ struct DuplicateFilesSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("duplicates-sheet")
         .interactiveDismissDisabled(model.isTrashing)

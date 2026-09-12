@@ -5,6 +5,30 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("Tools launcher and disabled actions render in every palette", arguments: ExplorerThemeChoice.allCases, [false, true])
+    func toolsPresentation(_ choice: ExplorerThemeChoice, _ dark: Bool) throws {
+        try render(ExplorerToolsPopover(hasFolder: true, onSelect: { _ in }, onClose: {}),
+                   name: "Tools-\(choice.rawValue)", width: 430, height: 540, dark: dark, choice: choice)
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        let model = VisualSearchModel()
+        model.setSource(fixture.source)
+        try render(VisualSearchSheet(model: model, onReveal: { _ in }), name: "VisualControls-\(choice.rawValue)",
+                   width: 820, height: 720, dark: dark, choice: choice)
+        #expect(model.snapshot == nil && model.progress == nil, "Presenting the controls must not start analysis")
+    }
+
+    @Test("Ask AI introduction keeps actions and explanations visible", arguments: [false, true])
+    func askAILayout(_ dark: Bool) throws {
+        let suite = "FinallyExplorer.AskAI.Layout.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AskAISearchModel()
+        try render(AskAISearchSheet(model: model, settings: ExplorerAISettings(defaults: defaults),
+            rootURL: URL(filePath: "/tmp"), onReveal: { _ in }), name: "AskAIIntroduction", width: 700, height: 600, dark: dark)
+        #expect(model.turns.isEmpty && model.pendingRequest == nil)
+    }
+
     @Test("OCR summaries and source warnings fit with five documents in both themes", arguments: [false, true])
     func scannedDocumentLayout(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()
@@ -145,8 +169,8 @@ struct FileToolsPresentationTests {
         try render(FolderOrganizationSheet(model: completion), name: "OrganizationReport", width: 760, height: 660, dark: dark)
     }
 
-    private func render(_ view: some View, name: String, width: CGFloat, height: CGFloat, dark: Bool) throws {
-        let view = view.environment(\.explorerTheme, ExplorerTheme.palette(for: .mesa))
+    private func render(_ view: some View, name: String, width: CGFloat, height: CGFloat, dark: Bool, choice: ExplorerThemeChoice = .mesa) throws {
+        let view = view.environment(\.explorerTheme, ExplorerTheme.palette(for: choice))
             .environment(\.colorScheme, dark ? .dark : .light)
         let hosting = NSHostingView(rootView: view)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.borderless], backing: .buffered, defer: false)

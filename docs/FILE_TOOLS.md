@@ -1,6 +1,8 @@
 # Local File Tools
 
-Choose **File Tools** (the wrench icon) in the window toolbar. Duplicate removal and organization use the active panel's folder, not the entire Mac. [Offline Catalogs](OFFLINE_CATALOGS.md) has its own explicit external-disk folder selection and saved-metadata search. These tools need no Apple Intelligence model, account, API or network service. No scans or file-changing operations run at startup or on each search keystroke. Ask AI still cannot execute file-changing commands.
+Choose **Tools** (the labeled grid button) at the right of the window toolbar. Its themed launcher groups Visual Search and Ask Documents under **Find & Understand**, and duplicates, organization and offline catalogs under **Organize & Manage**. Not every tool requires AI. See [AI and Tools UI polish](UI_POLISH.md) for the shared controls and navigation.
+
+Duplicate removal and organization use the active panel's folder, not the entire Mac. [Offline Catalogs](OFFLINE_CATALOGS.md) has its own explicit external-disk folder selection and saved-metadata search. These three management tools need no Apple Intelligence model, account, API or network service. No scans or file-changing operations run at startup or on each search keystroke. Ask AI still cannot execute file-changing commands.
 
 ## Find Duplicates
 

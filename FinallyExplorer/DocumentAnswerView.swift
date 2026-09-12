@@ -8,12 +8,12 @@ struct DocumentAnswerView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 if let turn = model.history.last {
-                    Text("AI answer — check the supporting quotes. Citation matching confirms the quoted text exists, not that every interpretation is correct.")
-                        .font(.caption).foregroundStyle(theme.textSecondary)
+                    Text("Check the quotes. A valid citation does not guarantee a correct interpretation.")
+                        .font(.callout).foregroundStyle(theme.textSecondary)
                     DocumentAnswerTurnView(turn: turn) { model.inspectedClaim = $0 }
                 } else if model.passages.isEmpty {
                     ContentUnavailableView("Ask About Your Documents", systemImage: "text.bubble",
-                        description: Text("Read selected documents, then ask a specific question in English. Answers cite supporting text from those documents only."))
+                        description: Text("Select Read Documents, then ask a question in English.\nEach answer links to its source."))
                         .frame(maxWidth: .infinity)
                 }
                 if model.passages.isEmpty == false {

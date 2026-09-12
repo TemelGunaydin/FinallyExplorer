@@ -40,7 +40,7 @@ struct DuplicateTrashReviewSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("duplicate-trash-cancel")
                 Button("Move to Trash", systemImage: "trash", action: onConfirm)
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .accessibilityIdentifier("duplicate-trash-confirm")
             }
         }
@@ -49,6 +49,7 @@ struct DuplicateTrashReviewSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("duplicate-trash-review")
     }

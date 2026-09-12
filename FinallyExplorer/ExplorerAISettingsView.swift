@@ -16,17 +16,17 @@ struct ExplorerAISettingsView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Toggle("Enable Ask AI & Smart Search", isOn: $settings.isSmartSearchEnabled)
                     .accessibilityIdentifier("ai-settings-smart-search-toggle")
-                Text("Open Ask AI for a search you can refine with follow-up questions, or choose Smart in the top search bar. Apple Intelligence interprets your words; Spotlight finds indexed files. No file contents are sent to the model for search.")
+                Text("Describe files in English, then refine with follow-up questions. Apple Intelligence interprets your request; Spotlight finds the files. Search sends no file contents to the model.")
                     .font(.callout)
                     .foregroundStyle(theme.textSecondary)
 
-                Text("Photo descriptions open Visual Search. Images are analyzed only after approval; the language model receives the description, not the images.")
+                Text("Photo searches open Visual Search. Folder analysis requires your approval.")
                     .font(.callout).foregroundStyle(theme.textSecondary)
 
                 Divider().overlay(theme.divider)
                 Toggle("Enable Document Questions", isOn: $settings.isDocumentQuestionsEnabled)
                     .accessibilityIdentifier("ai-settings-document-questions-toggle")
-                Text("Read Documents prepares selected files, using on-device English OCR for PDF pages without text. Answers include source quotes. Turning this off cancels reading and clears document text and answers from window memory.")
+                Text("Read selected files and scanned PDFs, then ask for source-cited answers. Turning this off cancels work and forgets the document context.")
                     .font(.callout).foregroundStyle(theme.textSecondary)
 
                 Divider().overlay(theme.divider)
@@ -69,7 +69,7 @@ struct ExplorerAISettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("ai-settings-model-status")
 
-                Text("macOS manages the model download and updates. In System Settings, choose Apple Intelligence & Siri. Finally Explorer doesn’t require an API key or a separate model download.")
+                Text("macOS manages the model. No API key or separate download is needed.")
                     .font(.callout)
                     .foregroundStyle(theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -95,6 +95,7 @@ struct ExplorerAISettingsView: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ai-settings-view")
         .task(id: refreshGeneration) { await settings.refreshAvailability() }

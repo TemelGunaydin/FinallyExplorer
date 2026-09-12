@@ -38,6 +38,7 @@ struct OfflineCatalogSheet: View {
         }
         .padding(22).frame(width: 820, height: 720)
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain).accessibilityIdentifier("offline-catalog-sheet")
         .interactiveDismissDisabled(model.isWorking)
         .sheet(item: $model.removal) { summary in

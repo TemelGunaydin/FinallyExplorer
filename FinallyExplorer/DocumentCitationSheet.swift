@@ -11,13 +11,17 @@ struct DocumentCitationSheet: View {
             Text(claim.source.sourceLabel).font(.headline).lineLimit(2)
                 .accessibilityIdentifier("document-source-sheet")
             if claim.source.isOCR {
-                Label("Recognized text (OCR) can contain errors. Check this page in the original PDF before relying on the answer.", systemImage: "text.viewfinder")
+                Label("OCR can misread text. Check this page in the original PDF.", systemImage: "text.viewfinder")
                     .font(.callout).foregroundStyle(theme.textSecondary)
                     .accessibilityIdentifier("document-source-ocr-notice")
             } else {
                 Text("Source excerpt from the document snapshot").font(.callout).foregroundStyle(theme.textSecondary)
             }
-            ScrollView { Text(claim.source.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView {
+                Text(claim.source.text).lineSpacing(4).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
+            .background(theme.control, in: .rect(cornerRadius: 10))
             HStack {
                 Button("Show in Explorer", systemImage: "arrow.up.forward.app") { dismiss(); onReveal() }
                     .accessibilityIdentifier("document-source-reveal")
@@ -27,5 +31,6 @@ struct DocumentCitationSheet: View {
         }
         .padding(22).frame(width: 600, height: 380)
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
     }
 }

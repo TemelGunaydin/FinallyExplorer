@@ -2,7 +2,7 @@
 
 ## How to use
 
-1. Select documents in an Explorer pane, then choose **File Tools → Ask Documents…**, or open **Ask AI → Ask Documents**. **Choose Documents…** also opens a native file picker.
+1. Select documents in an Explorer pane, then choose **Tools → Ask Documents**, or open **Ask AI → Ask Documents**. **Choose Documents…** also opens a native file picker.
 2. Review the filenames and select **Read Documents**. Selecting files or opening the tool does not read their contents. PDF pages without embedded text are read with on-device English OCR; the active file and page are shown during recognition.
 3. Ask a specific English question, such as `What is the payment deadline?` or `What is the invoice total?`.
 4. Each answer statement includes a supporting quote and a source button. Click it to inspect the retrieved source text and its filename/PDF page, or reveal the file in Explorer.

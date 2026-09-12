@@ -5,18 +5,19 @@ struct DocumentQuestionSourcesView: View {
     @Bindable var model: DocumentQuestionModel
 
     private var ocrPageCount: Int { model.documents.reduce(0) { $0 + $1.ocrPageCount } }
+    private var skippedPageCount: Int { model.documents.reduce(0) { $0 + $1.skippedPageCount } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Button("Choose Documents…", action: model.chooseDocuments).accessibilityIdentifier("document-choose")
+                Button("Choose Documents…", systemImage: "doc.badge.plus", action: model.chooseDocuments).accessibilityIdentifier("document-choose")
                 Spacer()
                 Button("Read Documents", systemImage: "doc.text.magnifyingglass") { model.readDocuments() }
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled((1...5).contains(model.selection.count) == false).accessibilityIdentifier("document-read")
             }
             if model.selection.isEmpty {
-                Text("Select up to 5 PDF, TXT, MD, JSON or CSV files. No text is read until you select Read Documents.")
+                Text("Choose up to 5 documents. Nothing is read until you select Read Documents.")
             } else {
                 ForEach(model.selection.prefix(5), id: \.self) { url in
                     Label(url.lastPathComponent, systemImage: "doc.text").lineLimit(1).truncationMode(.middle)
@@ -25,24 +26,30 @@ struct DocumentQuestionSourcesView: View {
                     Text("\(model.selection.count - 5) more selected. Choose at most 5 documents to continue.")
                 }
             }
-            Text("Local files only · 20 MB and 100 PDF pages per file · Up to 20 scan pages read with English OCR")
-                .font(.caption).foregroundStyle(theme.textSecondary)
+            ExplorerReadingDetails(title: "Formats & reading limits", text: "Local PDF, TXT, MD, JSON or CSV · 20 MB and 100 PDF pages per file · Up to 20 scan pages read with English OCR. Text and answers stay in this Explorer window’s memory. No uploads.")
             if model.documents.isEmpty == false {
-                Text("\(model.documents.count) documents ready · \(model.documents.reduce(0) { $0 + $1.skippedPageCount }) PDF pages without readable text skipped")
-                    .font(.caption).accessibilityIdentifier("document-ready")
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle").accessibilityHidden(true)
+                    Text("\(model.documents.count) \(model.documents.count == 1 ? "document" : "documents") ready")
+                        .accessibilityIdentifier("document-ready")
+                }.font(.callout)
+                if skippedPageCount > 0 {
+                    Text("\(skippedPageCount) PDF pages skipped: no readable text.").foregroundStyle(theme.textSecondary)
+                }
                 if ocrPageCount > 0 {
-                    Label("\(ocrPageCount) \(ocrPageCount == 1 ? "page" : "pages") read with OCR · Check original pages for recognition errors", systemImage: "text.viewfinder")
-                        .font(.caption).foregroundStyle(theme.textSecondary)
+                    Label("\(ocrPageCount) OCR \(ocrPageCount == 1 ? "page" : "pages") · Check originals for recognition errors", systemImage: "text.viewfinder")
+                        .font(.callout).foregroundStyle(theme.textSecondary)
                         .accessibilityIdentifier("document-ocr-summary")
                 }
                 Text(model.retrievalIndex?.supportsSemanticSearch == true
-                     ? "Local search: meaning + keywords · English"
-                     : "Keywords only: the local English meaning model is unavailable.")
+                     ? "Search: meaning + keywords · English"
+                     : "Search: keywords only · Meaning model unavailable")
                     .font(.caption).foregroundStyle(theme.textSecondary)
                     .accessibilityIdentifier("document-search-mode")
             }
         }
         .font(.callout).padding(12).background(theme.control, in: .rect(cornerRadius: 12))
+        .buttonStyle(ExplorerDialogButtonStyle())
         .disabled(model.isWorking || model.isEnabled == false)
     }
 }

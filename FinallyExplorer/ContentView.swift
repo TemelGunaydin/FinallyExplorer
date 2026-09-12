@@ -328,44 +328,8 @@ struct ContentView: View {
             .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
-                Menu("File Tools", systemImage: "wrench.and.screwdriver") {
-                    Button("Find Duplicates…", systemImage: "doc.on.doc") {
-                        guard let root = workspace.activePane?.displayedDirectory else { return }
-                        duplicateFiles = DuplicateFilesModel(rootURL: root, operations: fileOperations)
-                    }
-                    .accessibilityIdentifier("file-tools-duplicates")
-                    .disabled(workspace.activePane?.displayedDirectory == nil)
-                    Button("Organize Folder…", systemImage: "folder.badge.gearshape") {
-                        guard let root = workspace.activePane?.displayedDirectory else { return }
-                        folderOrganization = FolderOrganizationModel(rootURL: root, operations: fileOperations)
-                    }
-                    .accessibilityIdentifier("file-tools-organize")
-                    .disabled(workspace.activePane?.displayedDirectory == nil)
-                    Divider()
-                    Button("Offline Catalogs…", systemImage: "externaldrive") {
-                        offlineCatalog = OfflineCatalogModel(store: offlineCatalogStore, volumes: offlineVolumes)
-                    }
-                    .accessibilityIdentifier("file-tools-offline-catalogs")
-                    Button("Visual Search…", systemImage: "photo.badge.magnifyingglass") {
-                        if visualSearch.sourceURL == nil, let root = workspace.activePane?.displayedDirectory {
-                            visualSearch.setSource(root)
-                        }
-                        isVisualSearchPresented = true
-                    }
-                    .accessibilityIdentifier("file-tools-visual-search")
-                    Button("Ask Documents…", systemImage: "text.bubble") {
-                        let selected = workspace.activePane?.selectedCommandURLs ?? []
-                        if selected.isEmpty == false, Set(selected) != Set(documentQuestions.selection) {
-                            documentQuestions.select(selected)
-                        }
-                        isDocumentQuestionsPresented = true
-                    }.accessibilityIdentifier("file-tools-documents")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerChromeIconButtonStyle())
+                ExplorerToolsButton(hasFolder: workspace.activePane?.displayedDirectory != nil, onSelect: presentTool)
                 .disabled(fileOperations.isPerforming)
-                .help("File tools and saved disk catalogs")
-                .accessibilityIdentifier("window-file-tools-button")
             }
             .sharedBackgroundVisibility(.hidden)
 
@@ -396,6 +360,31 @@ struct ContentView: View {
         .environment(terminalApplications)
         .environment(nearbyTransfers)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
+    }
+
+    private func presentTool(_ tool: ExplorerTool) {
+        guard fileOperations.isPerforming == false else { return }
+        switch tool {
+        case .duplicates:
+            guard let root = workspace.activePane?.displayedDirectory else { return }
+            duplicateFiles = DuplicateFilesModel(rootURL: root, operations: fileOperations)
+        case .organize:
+            guard let root = workspace.activePane?.displayedDirectory else { return }
+            folderOrganization = FolderOrganizationModel(rootURL: root, operations: fileOperations)
+        case .offlineCatalogs:
+            offlineCatalog = OfflineCatalogModel(store: offlineCatalogStore, volumes: offlineVolumes)
+        case .visualSearch:
+            if visualSearch.sourceURL == nil, let root = workspace.activePane?.displayedDirectory {
+                visualSearch.setSource(root)
+            }
+            isVisualSearchPresented = true
+        case .documents:
+            let selected = workspace.activePane?.selectedCommandURLs ?? []
+            if selected.isEmpty == false, Set(selected) != Set(documentQuestions.selection) {
+                documentQuestions.select(selected)
+            }
+            isDocumentQuestionsPresented = true
+        }
     }
 
     var body: some View {

@@ -14,6 +14,7 @@ struct VisualDescriptionControls: View {
                     .accessibilityLabel("Describe photos")
                     .accessibilityIdentifier("visual-description-input")
                 Button("Find Photos", systemImage: "sparkle.magnifyingglass") { model.findPhotos() }
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(model.snapshot == nil || model.naturalDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("visual-description-submit")
             }
@@ -23,10 +24,10 @@ struct VisualDescriptionControls: View {
             } else if model.isNaturalEnabled == false {
                 Text("Photo descriptions are off. Enable Ask AI & Smart Search in Settings.").font(.caption)
             } else if model.snapshot == nil {
-                Text("First choose and analyze a folder above. Then describe the photos in English — no labels to enter.").font(.caption)
+                Text("Analyze a folder first, then describe the photos in English.").font(.callout).foregroundStyle(theme.textSecondary)
             } else {
-                Text("Describe a scene with a date or image type. Follow up with “Only HEIC” or “Yesterday instead”. New scene requests replace the filters. Common seaside requests work instantly; other scenes require Apple Intelligence.")
-                    .font(.caption).foregroundStyle(theme.textSecondary)
+                Text("Try “beach photos from last week”, then “Only HEIC”. A new scene starts fresh filters.")
+                    .font(.callout).foregroundStyle(theme.textSecondary)
             }
             if let request = model.naturalRequest, let plan = model.naturalPlan {
                 HStack(alignment: .top) {
@@ -45,7 +46,7 @@ struct VisualDescriptionControls: View {
                         .accessibilityValue(plan.filters.summary)
                 }
                 if plan.filters.captureInterval != nil {
-                    Text("\(model.missingCaptureDateCount) \(model.missingCaptureDateCount == 1 ? "image has" : "images have") no usable capture date and \(model.missingCaptureDateCount == 1 ? "is" : "are") excluded. Dates use EXIF, never the file’s creation date. Missing camera time zones are interpreted in the Mac’s local time zone at analysis.")
+                    Text("\(model.missingCaptureDateCount) excluded: no capture date. Dates use camera EXIF; missing time zones use this Mac’s time zone.")
                         .font(.caption).foregroundStyle(theme.textSecondary)
                         .accessibilityIdentifier("visual-description-date-coverage")
                 }

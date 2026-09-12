@@ -1258,8 +1258,8 @@ final class FinallyExplorerUITests: XCTestCase {
         try data.write(to: second)
         app.launch()
         XCTAssertTrue(rows(named: "Duplicate A.txt").firstMatch.waitForExistence(timeout: 10))
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Find Duplicates…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-duplicates"].click()
         let scan = app.buttons["duplicates-scan"]
         XCTAssertTrue(scan.waitForExistence(timeout: 5))
         let review = app.buttons["duplicates-review"]
@@ -1293,8 +1293,8 @@ final class FinallyExplorerUITests: XCTestCase {
     func testOrganizationPreviewShowsDestinationsWithoutChangingFiles() throws {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let before = fixtureContents()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Organize Folder…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-organize"].click()
         let preview = app.buttons["organization-preview"]
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
         preview.click()
@@ -1315,8 +1315,8 @@ final class FinallyExplorerUITests: XCTestCase {
         let data = try Data(contentsOf: source)
         let destination = fixtureRootURL.appending(path: "Documents/Source Item.txt")
         let before = fixtureContents()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Organize Folder…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-organize"].click()
         let preview = app.buttons["organization-preview"]
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
         let review = app.buttons["organization-review-button"]
@@ -1563,6 +1563,67 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertEqual(input.value as? String, "")
     }
 
+    func testToolsLauncherKeyboardAndFullRowActions() throws {
+        let tools = app.buttons["window-file-tools-button"]
+        XCTAssertTrue(tools.waitForExistence(timeout: 10))
+        tools.click()
+        XCTAssertTrue(element(withIdentifier: "file-tools-popover").waitForExistence(timeout: 5))
+        app.popovers.firstMatch.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+        XCTAssertTrue(element(withIdentifier: "file-tools-popover").waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.popovers.firstMatch.waitForNonExistence(timeout: 5))
+        tools.click()
+        XCTAssertTrue(app.buttons["file-tools-visual-search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue("Selected", on: app.buttons["file-tools-visual-search"], timeout: 3))
+        app.popovers.firstMatch.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
+        XCTAssertTrue(waitForValue("Selected", on: app.buttons["file-tools-documents"], timeout: 3))
+        app.popovers.firstMatch.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+        XCTAssertTrue(app.buttons["document-close"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["document-ready"].exists, "Opening Tools must not read documents")
+        app.buttons["document-close"].click()
+        for (tool, close) in [
+            ("file-tools-visual-search", "visual-search-close"),
+            ("file-tools-documents", "document-close"),
+            ("file-tools-duplicates", "duplicates-close"),
+            ("file-tools-organize", "organization-close"),
+            ("file-tools-offline-catalogs", "offline-catalog-close")
+        ] {
+            tools.click()
+            let action = app.buttons[tool]
+            XCTAssertTrue(action.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(action.frame.height, 36)
+            // Hit the card's trailing padding, not its title or icon.
+            action.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).click()
+            XCTAssertTrue(app.buttons[close].waitForExistence(timeout: 5), tool)
+            app.buttons[close].click()
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceFileURL.path))
+    }
+
+    func testVisualSearchActionsStayVisibleAndFolderCancelKeepsSource() throws {
+        openVisualSearch()
+        let choose = app.buttons["visual-search-choose-folder"]
+        let find = app.buttons["visual-description-submit"]
+        let clear = app.buttons["visual-search-clear"]
+        for action in [choose, find, clear] {
+            XCTAssertTrue(action.exists)
+            XCTAssertGreaterThanOrEqual(action.frame.height, 36)
+        }
+        XCTAssertTrue(choose.isEnabled)
+        XCTAssertFalse(find.isEnabled)
+        XCTAssertFalse(clear.isEnabled)
+        let source = element(withIdentifier: "visual-search-source").value as? String
+        choose.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).click()
+        let picker = app.windows["open-panel"]
+        let cancel = picker.buttons["CancelButton"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        cancel.click()
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(element(withIdentifier: "visual-search-source").value as? String, source)
+        XCTAssertFalse(app.staticTexts["visual-search-summary"].exists)
+        XCTAssertTrue(app.buttons["visual-search-analyze"].isEnabled)
+        app.buttons["visual-search-close"].click()
+    }
+
     func testScannedPDFRequiresReadingAndShowsOCRPageCitation() throws {
         app.terminate()
         let file = fixtureRootURL.appending(path: "Scanned Invoice.pdf")
@@ -1572,8 +1633,8 @@ final class FinallyExplorerUITests: XCTestCase {
         let row = rows(named: "Scanned Invoice.pdf").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Ask Documents…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-documents"].click()
         XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["document-ready"].exists)
         XCTAssertFalse(element(withIdentifier: "document-ocr-summary").exists)
@@ -1652,8 +1713,8 @@ final class FinallyExplorerUITests: XCTestCase {
         let row = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Ask Documents…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-documents"].click()
         XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["document-ready"].exists)
         app.buttons["document-read"].click()
@@ -1685,8 +1746,8 @@ final class FinallyExplorerUITests: XCTestCase {
         let row = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Ask Documents…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-documents"].click()
         XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
         app.buttons["document-read"].click()
         XCTAssertTrue(app.staticTexts["document-ready"].waitForExistence(timeout: 10))
@@ -1734,10 +1795,10 @@ final class FinallyExplorerUITests: XCTestCase {
     }
 
     private func openVisualSearch() {
-        let tools = app.menuButtons["window-file-tools-button"]
+        let tools = app.buttons["window-file-tools-button"]
         XCTAssertTrue(tools.waitForExistence(timeout: 10))
         tools.click()
-        app.menuItems["Visual Search…"].click()
+        app.buttons["file-tools-visual-search"].click()
         XCTAssertTrue(app.buttons["visual-search-close"].waitForExistence(timeout: 5))
     }
 
@@ -1745,8 +1806,8 @@ final class FinallyExplorerUITests: XCTestCase {
         let row = rows(named: "Source Item.txt").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.click()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Ask Documents…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-documents"].click()
         XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
         app.buttons["document-read"].click()
         XCTAssertTrue(app.staticTexts["document-ready"].waitForExistence(timeout: 10))
@@ -1760,8 +1821,8 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(settingsWindow.exists)
         settingsWindow.buttons[XCUIIdentifierCloseWindow].click()
 
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Ask Documents…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-documents"].click()
         XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["document-ready"].exists, "Opt-out must clear text even while the document tool is closed")
         XCTAssertFalse(app.buttons["document-read"].isEnabled)
@@ -1771,8 +1832,8 @@ final class FinallyExplorerUITests: XCTestCase {
 
         app.terminate()
         app.launch()
-        app.menuButtons["window-file-tools-button"].click()
-        app.menuItems["Ask Documents…"].click()
+        app.buttons["window-file-tools-button"].click()
+        app.buttons["file-tools-documents"].click()
         XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["document-read"].isEnabled, "Document Questions opt-out must survive relaunch")
         XCTAssertFalse(app.staticTexts["document-ready"].exists)
@@ -1798,10 +1859,10 @@ final class FinallyExplorerUITests: XCTestCase {
     }
 
     private func openOfflineCatalogs() throws {
-        let tools = app.menuButtons["window-file-tools-button"]
+        let tools = app.buttons["window-file-tools-button"]
         XCTAssertTrue(tools.waitForExistence(timeout: 10))
         tools.click()
-        app.menuItems["Offline Catalogs…"].click()
+        app.buttons["file-tools-offline-catalogs"].click()
         XCTAssertTrue(app.buttons["offline-catalog-close"].waitForExistence(timeout: 5))
     }
 
@@ -1820,7 +1881,9 @@ final class FinallyExplorerUITests: XCTestCase {
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: volumeMenu)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
         volumeMenu.click()
-        app.menuItems["UI Test Disk"].click()
+        let disk = app.menuItems["UI Test Disk"]
+        XCTAssertTrue(disk.waitForExistence(timeout: 5))
+        disk.click()
         let save = app.buttons["offline-catalog-save"]
         XCTAssertTrue(save.waitForExistence(timeout: 10))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixtureRootURL.appending(path: ".offline-catalog-storage").path), "Choosing a disk must not save automatically")

@@ -2,7 +2,7 @@
 
 ## Available now
 
-Open **File Tools → Visual Search…**. The current Explorer folder is suggested, or choose another local folder. **Analyze Folder** is the explicit consent/start action: opening the panel or launching the app never starts this analysis.
+Open **Tools → Visual Search**. The current Explorer folder is suggested, or choose another local folder. **Analyze Folder** is the explicit consent/start action: opening the panel or launching the app never starts this analysis.
 
 Apple Vision classifies supported still images and recognizes English text inside them. Search the resulting **Visual Labels**, **Text in Images**, or both. Every query word must match observed evidence; filenames and paths are display/navigation metadata, not a fallback match. Results show the matching labels and/or a bounded OCR excerpt, along with a thumbnail and **Show in Explorer**.
 

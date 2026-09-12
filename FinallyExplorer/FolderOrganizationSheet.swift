@@ -48,7 +48,7 @@ struct FolderOrganizationSheet: View {
                     .disabled(model.canPreview == false)
                     .accessibilityIdentifier("organization-preview")
                 Button("Review Moves…", systemImage: "checklist") { model.reviewMoves() }
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(model.canReview == false)
                     .accessibilityIdentifier("organization-review-button")
             }
@@ -56,6 +56,7 @@ struct FolderOrganizationSheet: View {
         .padding(22)
         .frame(width: 760, height: 660)
         .foregroundStyle(theme.textPrimary).background(theme.panel).tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("organization-sheet")
         .interactiveDismissDisabled(model.isApplying)

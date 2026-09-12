@@ -30,7 +30,7 @@ struct AskAISearchSheet: View {
                                 if plan.filters.summary.isEmpty == false {
                                     Text(plan.filters.summary).font(.callout)
                                 }
-                                Text("“Only HEIC” or “Yesterday instead” refines these photos. Use New Search to reset the context.")
+                                Text("Refine with “Only HEIC” or “Yesterday instead”. New Search starts fresh.")
                                     .font(.caption).foregroundStyle(theme.textSecondary)
                                 Button("Return to Photo Results") { presentPhotos("") }
                             }
@@ -102,6 +102,7 @@ struct AskAISearchSheet: View {
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)
+        .buttonStyle(ExplorerDialogButtonStyle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ask-ai-sheet")
         .sheet(isPresented: $isPhotosPresented) {
@@ -186,20 +187,18 @@ struct AskAISearchSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Find files, then refine your search.")
                 .font(.title3.weight(.semibold))
-            Text("Try an example, or describe what you need in English. Follow up with “Only PDFs” or “In Documents instead”.")
+            Text("Describe what you need in English, then refine with “Only PDFs” or “In Documents instead”.")
                 .foregroundStyle(theme.textSecondary)
             ForEach(["PDFs in Downloads from last week", "Photos taken three days ago", "Find the accounting report from two days ago"], id: \.self) { example in
                 Button(example, systemImage: "arrow.up.left") {
                     model.draft = example
                     isInputFocused = true
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ExplorerDialogButtonStyle())
                 .foregroundStyle(theme.textPrimary)
                 .disabled(model.isEnabled == false)
             }
-            Text("Search only: no files are changed. File searches use Spotlight. Describe a visual scene to open photo search in a chosen folder, or use the Photos button. Nothing is uploaded; photo analysis requires your approval.")
-                .font(.callout)
-                .foregroundStyle(theme.textSecondary)
+            ExplorerReadingDetails(title: "How search works", text: "File search uses Spotlight; nothing is changed or uploaded. Scene descriptions open Visual Search, which analyzes only a folder you approve. Apple Intelligence interprets your request on this Mac.")
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -223,6 +222,7 @@ struct AskAISearchSheet: View {
                     Button("Cancel", action: model.cancel)
                         .accessibilityIdentifier("ask-ai-cancel")
                 }
+                .padding(10).background(theme.control, in: .rect(cornerRadius: 10))
             }
             HStack(spacing: 12) {
                 TextField(model.plan == nil ? "Describe the files you want to find…" : "Refine these results…", text: $model.draft)
@@ -236,7 +236,7 @@ struct AskAISearchSheet: View {
                     .accessibilityLabel("Ask AI request")
                     .accessibilityIdentifier("ask-ai-input")
                 Button("Search", systemImage: "arrow.up", action: submit)
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(model.canSubmit == false)
                     .accessibilityIdentifier("ask-ai-submit")
             }
