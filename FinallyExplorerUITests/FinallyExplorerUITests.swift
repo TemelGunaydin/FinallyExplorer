@@ -1595,6 +1595,62 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(element(withIdentifier: "global-search-text-field").waitForExistence(timeout: 5))
     }
 
+    func testDocumentFollowUpShowsResolutionAndCanStartNewConversation() throws {
+        app.terminate()
+        let original = Data("Harbor Studio invoice 4827 payment is due on 30 September 2026. Harbor Studio invoice 4827 total is 480 USD.".utf8)
+        try original.write(to: sourceFileURL)
+        app.launch()
+        let row = rows(named: "Source Item.txt").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Ask Documents…"].click()
+        XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
+        app.buttons["document-read"].click()
+        XCTAssertTrue(app.staticTexts["document-ready"].waitForExistence(timeout: 10))
+        let input = element(withIdentifier: "document-question")
+        typeCatalogQuery("When is Harbor Studio's invoice due?", in: input)
+        XCTAssertEqual(input.value as? String, "When is Harbor Studio's invoice due?")
+        app.buttons["document-ask"].click()
+        XCTAssertTrue(app.buttons["document-citation-1"].firstMatch.waitForExistence(timeout: 45))
+        let firstAnswer = app.staticTexts.matching(identifier: "document-answer-claim").allElementsBoundByIndex
+            .compactMap { $0.value as? String }.joined(separator: " ")
+        XCTAssertTrue(firstAnswer.contains("2026"), firstAnswer)
+        XCTAssertFalse(firstAnswer.contains("480"), "The date question must not be answered with the invoice total: \(firstAnswer)")
+        XCTAssertTrue(app.buttons["document-new-conversation"].exists)
+        input.click()
+        input.typeKey("a", modifierFlags: .command)
+        input.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
+        XCTAssertEqual(input.value as? String, "")
+        typeCatalogQuery("How much is it?", in: input)
+        XCTAssertEqual(input.value as? String, "How much is it?")
+        app.buttons["document-ask"].click()
+        // Selectable SwiftUI Text exposes its content as the AX value on macOS.
+        let amount = app.staticTexts.matching(identifier: "document-answer-claim")
+            .matching(NSPredicate(format: "value CONTAINS %@", "480")).firstMatch
+        // Previous verified answers remain visible while the next request is
+        // running. Wait for this turn's interpretation, not the old card.
+        XCTAssertTrue(app.staticTexts["document-resolved-question"].firstMatch.waitForExistence(timeout: 60))
+        XCTAssertTrue(amount.waitForExistence(timeout: 60))
+        XCTAssertFalse(app.staticTexts["document-error"].exists)
+        recordWindowHierarchy("Document follow-up with explicit interpretation and verified quote")
+        app.buttons["document-citation-1"].firstMatch.click()
+        XCTAssertTrue(app.buttons["document-source-done"].waitForExistence(timeout: 5))
+        app.buttons["document-source-done"].click()
+        app.buttons["document-new-conversation"].click()
+        XCTAssertTrue(app.staticTexts["document-ready"].exists, "Starting fresh must not reread the selection")
+        XCTAssertFalse(app.staticTexts["document-answer-claim"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["document-new-conversation"].exists)
+        XCTAssertEqual(input.value as? String, "")
+        typeCatalogQuery("What is the invoice total?", in: input)
+        XCTAssertEqual(input.value as? String, "What is the invoice total?")
+        app.buttons["document-ask"].click()
+        XCTAssertTrue(amount.waitForExistence(timeout: 45))
+        XCTAssertFalse(app.staticTexts["document-resolved-question"].firstMatch.exists)
+        XCTAssertEqual(try Data(contentsOf: sourceFileURL), original)
+        app.buttons["document-close"].click()
+    }
+
     private func openVisualSearch() {
         let tools = app.menuButtons["window-file-tools-button"]
         XCTAssertTrue(tools.waitForExistence(timeout: 10))

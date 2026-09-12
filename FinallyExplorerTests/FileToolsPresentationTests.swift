@@ -11,11 +11,16 @@ struct FileToolsPresentationTests {
         defer { fixture.remove() }
         var urls: [URL] = []
         for index in 1...5 { urls.append(try fixture.write("Quarterly Invoice Report \(index).txt", "The payment deadline is 30 September 2026.")) }
-        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer(),
+            resolver: RecordingDocumentResolver(result: "What is the payment deadline?"),
+            search: LocalDocumentPassageSearch(encoder: UnavailableDocumentSemanticEncoder()))
         model.select(urls)
         await model.readDocuments()?.value
         model.question = "What is the payment deadline?"
         await model.ask()?.value
+        model.question = "When is it due?"
+        await model.ask()?.value
+        #expect(model.history.count == 2)
         let claim = try #require(model.claims.first)
         try render(DocumentQuestionSheet(model: model, onReveal: { _ in }), name: "DocumentAnswer", width: 820, height: 720, dark: dark)
         try render(DocumentCitationSheet(claim: claim, onReveal: {}), name: "DocumentCitation", width: 600, height: 380, dark: dark)

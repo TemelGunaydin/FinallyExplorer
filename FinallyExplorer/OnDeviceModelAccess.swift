@@ -4,14 +4,18 @@ import NaturalLanguage
 
 nonisolated enum OnDeviceModelAccess {
     static func check(_ model: SystemLanguageModel, query: String) throws {
+        try checkAvailability(model)
+        if let language = NLLanguageRecognizer.dominantLanguage(for: query),
+           model.supportsLocale(Locale(identifier: language.rawValue)) == false { throw OnDeviceModelError.unsupportedLanguage }
+    }
+
+    static func checkAvailability(_ model: SystemLanguageModel) throws {
         switch model.availability {
         case .available: break
         case .unavailable(.deviceNotEligible): throw OnDeviceModelError.unavailable(.deviceNotEligible)
         case .unavailable(.appleIntelligenceNotEnabled): throw OnDeviceModelError.unavailable(.appleIntelligenceNotEnabled)
         case .unavailable: throw OnDeviceModelError.unavailable(.modelNotReady)
         }
-        if let language = NLLanguageRecognizer.dominantLanguage(for: query),
-           model.supportsLocale(Locale(identifier: language.rawValue)) == false { throw OnDeviceModelError.unsupportedLanguage }
     }
 
     static func bounded<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {

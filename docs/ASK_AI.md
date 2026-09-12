@@ -22,7 +22,7 @@ This is **not a complete photo-library search**. It cannot find Photos-library-o
 
 Scene requests are routed to the separately scoped Visual Search tool before the normal file-search interpreter runs. Explicit filename searches and date-only photo searches stay in the original conversation. Visual Search now combines a scene with EXIF capture dates and supported image extensions: `Find beach photos from last week` → `Only HEIC`. These explicit follow-ups also reopen the active photo context from Ask AI. A full photo request starts its own filters; it does not inherit earlier Spotlight conditions. Use **New Search** to clear both contexts. See [supported photo clauses and limitations](VISUAL_SEARCH.md#capture-dates-image-types-and-follow-ups). There is no person identification, arbitrary Photos-library access, download/import-date filtering, or file-changing command execution. Unsupported conditions are rejected rather than deliberately weakened. Inspect visible filters and visual evidence because model interpretations and classifier labels can still be imperfect.
 
-Document Questions has independent selection, permission, context, and memory. Each document question is independent, not a conversational `it`/`those` follow-up. It uses only retrieved excerpts from the selected files and displays inspectable source quotes; it does not claim full-document comprehension.
+Document Questions has independent selection, permission, context, and memory. Follow-ups can refer to the last two successful document questions and their verified source quotes. The visible self-contained interpretation drives fresh hybrid keyword/semantic retrieval over the explicitly read selection. **New Conversation** resets this context without rereading; **Clear** also forgets the documents and in-memory vectors. It does not claim full-document comprehension.
 
 ## Validation
 
@@ -65,4 +65,4 @@ Natural photo descriptions now open Visual Search from Ask AI, with visible conc
 
 Photo scenes now combine with EXIF capture dates and image types, with exact follow-ups that retain the scene and unchanged filters. Real-photo, real-model and full interaction regressions accompany the change. The [validation record](DOCUMENT_QUESTIONS.md#september-9-accuracy-and-interaction-regressions) includes the right-click Rename and Cmd+A fixes found along the way.
 
-Document conversation/follow-up questions, semantic passage retrieval, scanned-PDF OCR and an optional persistent visual index remain future work; this delivery does not claim those capabilities.
+Document follow-up questions and local hybrid keyword/semantic passage retrieval are now implemented; see [Document Questions](DOCUMENT_QUESTIONS.md) for bounds and validation. Scanned-PDF OCR and an optional persistent visual index remain future work.

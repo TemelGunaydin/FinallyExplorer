@@ -51,3 +51,11 @@ nonisolated struct PausedDocumentReader: DocumentReading {
         try await LocalDocumentReader().validate(documents)
     }
 }
+
+nonisolated struct UnavailableDocumentSemanticEncoder: DocumentSemanticEncoding {
+    func vectors(for texts: [String]) async throws -> [[Double]]? { nil }
+}
+
+nonisolated struct UnchangedDocumentQuestionResolver: DocumentQuestionResolving {
+    func resolve(question: String, context: [DocumentFollowUpContext]) async throws -> String { question }
+}

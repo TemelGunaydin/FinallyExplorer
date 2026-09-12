@@ -10,6 +10,10 @@ final class DocumentQuestionModel {
     private(set) var passages: [DocumentPassage] = []
     private(set) var answeredQuestion: String?
     private(set) var retrievedQuestion: String?
+    private(set) var resolvedQuestion: String?
+    private(set) var history: [DocumentQuestionTurn] = []
+    private(set) var retrievalIndex: DocumentRetrievalIndex?
+    private(set) var usedSemanticSearch = false
     private(set) var errorMessage: String?
     private(set) var activity: String?
     private(set) var isCancelling = false
@@ -18,10 +22,14 @@ final class DocumentQuestionModel {
     var inspectedClaim: DocumentAnswerClaim?
     @ObservationIgnored private let reader: any DocumentReading
     @ObservationIgnored private let answerer: any DocumentAnswerGenerating
+    @ObservationIgnored private let resolver: any DocumentQuestionResolving
+    @ObservationIgnored private let search: LocalDocumentPassageSearch
     @ObservationIgnored private var task: Task<Void, Never>?
 
-    init(reader: any DocumentReading = LocalDocumentReader(), answerer: any DocumentAnswerGenerating = FoundationModelsDocumentAnswerer()) {
-        self.reader = reader; self.answerer = answerer
+    init(reader: any DocumentReading = LocalDocumentReader(), answerer: any DocumentAnswerGenerating = FoundationModelsDocumentAnswerer(),
+         resolver: any DocumentQuestionResolving = FoundationModelsDocumentQuestionResolver(),
+         search: LocalDocumentPassageSearch = LocalDocumentPassageSearch()) {
+        self.reader = reader; self.answerer = answerer; self.resolver = resolver; self.search = search
     }
     deinit { task?.cancel() }
     var isWorking: Bool { activity != nil }
@@ -50,13 +58,18 @@ final class DocumentQuestionModel {
         guard (1...5).contains(selected.count) else { errorMessage = DocumentQuestionError.selection.localizedDescription; return nil }
         activity = "Reading selected documents on this Mac…"
         errorMessage = nil
-        task = Task { [weak self, reader] in
+        task = Task { [weak self, reader, search] in
             do {
                 let result = try await reader.read(selected)
                 try Task.checkCancellation()
+                self?.activity = "Preparing local passage search…"
+                let index = try await search.prepare(result)
+                try await reader.validate(result)
+                try Task.checkCancellation()
                 guard let self, isEnabled else { return }
                 documents = result
-                claims = []; passages = []; answeredQuestion = nil; retrievedQuestion = nil
+                retrievalIndex = index
+                resetConversation()
                 finish()
             } catch {
                 guard let self else { return }
@@ -68,28 +81,39 @@ final class DocumentQuestionModel {
     }
 
     @discardableResult func ask() -> Task<Void, Never>? {
-        guard canAsk else { return nil }
+        guard canAsk, let index = retrievalIndex else { return nil }
         let query = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.count <= 500, query.utf8.count <= 1_000 else { errorMessage = DocumentQuestionError.invalidQuestion.localizedDescription; return nil }
         let current = documents
-        activity = "Finding supporting passages…"
+        let context = history.suffix(2).map(DocumentFollowUpContext.init)
+        activity = context.isEmpty ? "Finding supporting passages…" : "Understanding your follow-up…"
         errorMessage = nil
-        task = Task { [weak self, reader, answerer] in
+        task = Task { [weak self, reader, answerer, resolver, search] in
             do {
                 try await reader.validate(current)
-                let sources = try await DocumentPassageRetriever.retrieve(question: query, documents: current)
+                let resolved = context.isEmpty ? query : try await resolver.resolve(question: query, context: context)
+                try Task.checkCancellation()
+                guard resolved.isEmpty == false, resolved.count <= 500, resolved.utf8.count <= 1_000 else { throw DocumentQuestionError.ambiguousFollowUp }
+                self?.activity = "Finding supporting passages…"
+                let retrieved = try await search.retrieve(question: resolved, index: index)
+                let sources = retrieved.passages
                 guard sources.isEmpty == false else { throw DocumentQuestionError.noEvidence }
+                try await reader.validate(current)
                 try Task.checkCancellation()
                 self?.activity = "Preparing an on-device answer…"
                 self?.passages = sources
                 self?.retrievedQuestion = query
-                let draft = try await answerer.answer(question: query, sources: sources)
+                self?.resolvedQuestion = resolved
+                self?.usedSemanticSearch = retrieved.usedSemanticSearch
+                let draft = try await answerer.answer(question: resolved, sources: sources)
                 let verified = try DocumentAnswerValidator.validate(draft, sources: sources)
                 try await reader.validate(current)
                 try Task.checkCancellation()
                 guard let self, isEnabled else { return }
                 claims = verified
                 answeredQuestion = query
+                history.append(DocumentQuestionTurn(question: query, resolvedQuestion: resolved, claims: verified))
+                history = Array(history.suffix(3))
                 finish()
             } catch {
                 guard let self else { return }
@@ -121,15 +145,24 @@ final class DocumentQuestionModel {
     func cancel() { if isWorking { isCancelling = true; task?.cancel() } }
     func clear() {
         cancel()
-        documents = []; claims = []; passages = []; selection = []; question = ""; answeredQuestion = nil; retrievedQuestion = nil; inspectedClaim = nil; errorMessage = nil
+        documents = []; retrievalIndex = nil; selection = []
+        resetConversation()
     }
+    func newConversation() { cancel(); resetConversation() }
     func setEnabled(_ enabled: Bool) { isEnabled = enabled; if enabled == false { clear() } }
+
+    private func resetConversation() {
+        claims = []; passages = []; question = ""; answeredQuestion = nil; retrievedQuestion = nil
+        resolvedQuestion = nil; history = []; inspectedClaim = nil; errorMessage = nil; usedSemanticSearch = false
+    }
 
     private func recordFailure(_ error: any Error) {
         guard Task.isCancelled == false else { return }
         errorMessage = DocumentQuestionError.message(for: error)
         if error as? DocumentQuestionError == .changed {
-            documents = []; claims = []; passages = []; answeredQuestion = nil; retrievedQuestion = nil; inspectedClaim = nil
+            documents = []; retrievalIndex = nil
+            resetConversation()
+            errorMessage = DocumentQuestionError.changed.localizedDescription
         }
     }
     private func finish() { task = nil; activity = nil; isCancelling = false }

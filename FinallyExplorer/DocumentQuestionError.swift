@@ -1,7 +1,7 @@
 import Foundation
 
 nonisolated enum DocumentQuestionError: LocalizedError, Equatable, Sendable {
-    case selection, unsupported, tooLarge, unreadable, noText, changed, noEvidence, invalidAnswer, invalidQuestion
+    case selection, unsupported, tooLarge, unreadable, noText, changed, noEvidence, invalidAnswer, invalidQuestion, ambiguousFollowUp
     var errorDescription: String? {
         switch self {
         case .selection: "Select between 1 and 5 local PDF, TXT, MD, JSON, or CSV documents."
@@ -13,6 +13,7 @@ nonisolated enum DocumentQuestionError: LocalizedError, Equatable, Sendable {
         case .noEvidence: "I could not find supporting passages in the selected documents. Try a more specific question."
         case .invalidAnswer: "The answer could not be verified against the source excerpts. No unverified answer was shown."
         case .invalidQuestion: "Ask a specific question in English using up to 500 characters."
+        case .ambiguousFollowUp: "Which document or subject do you mean? Name it in your question, or select New Conversation to start fresh."
         }
     }
 

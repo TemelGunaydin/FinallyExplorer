@@ -28,6 +28,11 @@ struct DocumentQuestionSourcesView: View {
             if model.documents.isEmpty == false {
                 Text("\(model.documents.count) documents ready · \(model.documents.reduce(0) { $0 + $1.skippedPageCount }) PDF pages without readable text skipped")
                     .font(.caption).accessibilityIdentifier("document-ready")
+                Text(model.retrievalIndex?.supportsSemanticSearch == true
+                     ? "Local search: meaning + keywords · English"
+                     : "Keywords only: the local English meaning model is unavailable.")
+                    .font(.caption).foregroundStyle(theme.textSecondary)
+                    .accessibilityIdentifier("document-search-mode")
             }
         }
         .font(.callout).padding(12).background(theme.control, in: .rect(cornerRadius: 12))

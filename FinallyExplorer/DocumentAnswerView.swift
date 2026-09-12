@@ -7,25 +7,10 @@ struct DocumentAnswerView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                if let question = model.answeredQuestion {
-                    Text(question).font(.headline).textSelection(.enabled)
+                if let turn = model.history.last {
                     Text("AI answer — check the supporting quotes. Citation matching confirms the quoted text exists, not that every interpretation is correct.")
                         .font(.caption).foregroundStyle(theme.textSecondary)
-                    ForEach(model.claims) { claim in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(claim.statement).textSelection(.enabled)
-                                .accessibilityIdentifier("document-answer-claim")
-                            Text("“\(claim.quote)”").font(.callout).textSelection(.enabled).foregroundStyle(theme.textSecondary)
-                            Button(claim.source.sourceLabel, systemImage: "doc.text.magnifyingglass") { model.inspectedClaim = claim }
-                                .buttonStyle(.plain).foregroundStyle(theme.textPrimary)
-                                .padding(.horizontal, 8).padding(.vertical, 6)
-                                .background(theme.accentSoft, in: .rect(cornerRadius: 6))
-                                .help("Inspect the supporting source excerpt")
-                                .accessibilityIdentifier("document-citation-\(claim.source.id)")
-                        }
-                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(theme.control, in: .rect(cornerRadius: 10))
-                    }
+                    DocumentAnswerTurnView(turn: turn) { model.inspectedClaim = $0 }
                 } else if model.passages.isEmpty {
                     ContentUnavailableView("Ask About Your Documents", systemImage: "text.bubble",
                         description: Text("Read selected documents, then ask a specific question in English. Answers cite supporting text from those documents only."))
@@ -36,6 +21,11 @@ struct DocumentAnswerView: View {
                         if let question = model.retrievedQuestion {
                             Text("Passages for: \(question)").font(.callout.weight(.semibold)).textSelection(.enabled)
                         }
+                        if let resolved = model.resolvedQuestion, resolved != model.retrievedQuestion {
+                            Text("Interpreted as: \(resolved)").font(.callout).textSelection(.enabled)
+                        }
+                        Text(model.usedSemanticSearch ? "Matched by meaning and keywords" : "Matched by keywords only")
+                            .font(.caption).foregroundStyle(theme.textSecondary)
                         ForEach(model.passages) { passage in
                             VStack(alignment: .leading) {
                                 Text(passage.sourceLabel).font(.headline)
@@ -43,6 +33,14 @@ struct DocumentAnswerView: View {
                             }.padding(.vertical, 8)
                         }
                     }
+                }
+                if model.history.count > 1 {
+                    DisclosureGroup("Previous answers (\(model.history.count - 1))") {
+                        ForEach(model.history.dropLast()) { turn in
+                            DocumentAnswerTurnView(turn: turn) { model.inspectedClaim = $0 }
+                                .padding(.vertical, 8)
+                        }
+                    }.accessibilityIdentifier("document-previous-answers")
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }

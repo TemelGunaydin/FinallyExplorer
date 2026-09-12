@@ -3,12 +3,16 @@ import Testing
 @testable import FinallyExplorer
 
 @MainActor struct DocumentQuestionModelTests {
+    private func makeModel(reader: any DocumentReading = LocalDocumentReader(), answerer: any DocumentAnswerGenerating = QuotingDocumentAnswerer()) -> DocumentQuestionModel {
+        DocumentQuestionModel(reader: reader, answerer: answerer, resolver: UnchangedDocumentQuestionResolver(),
+            search: LocalDocumentPassageSearch(encoder: UnavailableDocumentSemanticEncoder()))
+    }
     @Test("Selection is read-free; explicit reading and asking publish sourced answers")
     func lifecycle() async throws {
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is 30 September 2026.")
-        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        let model = makeModel()
         model.select([file])
         #expect(model.documents.isEmpty)
         #expect(model.canAsk == false)
@@ -32,7 +36,7 @@ import Testing
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
         let gate = FolderComparisonTestGate()
-        let model = DocumentQuestionModel(answerer: PausedDocumentAnswerer(gate: gate))
+        let model = makeModel(answerer: PausedDocumentAnswerer(gate: gate))
         model.select([file]); await model.readDocuments()?.value
         model.question = "What is the payment deadline?"
         let task = try #require(model.ask())
@@ -53,7 +57,7 @@ import Testing
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
         let gate = FolderComparisonTestGate()
-        let model = DocumentQuestionModel(answerer: PausedDocumentAnswerer(gate: gate))
+        let model = makeModel(answerer: PausedDocumentAnswerer(gate: gate))
         model.select([file]); await model.readDocuments()?.value
         model.question = "What is the payment deadline?"
         let task = try #require(model.ask())
@@ -70,7 +74,7 @@ import Testing
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
-        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        let model = makeModel()
         model.select([file]); await model.readDocuments()?.value
         model.question = "What is the spaceship velocity?"
         await model.ask()?.value
@@ -84,7 +88,7 @@ import Testing
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
         let gate = FolderComparisonTestGate()
-        let model = DocumentQuestionModel(reader: PausedDocumentReader(gate: gate))
+        let model = makeModel(reader: PausedDocumentReader(gate: gate))
         model.select([file])
         let task = try #require(model.readDocuments())
         await gate.waitUntilEntered()
@@ -104,7 +108,7 @@ import Testing
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
-        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        let model = makeModel()
         model.select([file]); await model.readDocuments()?.value
         model.question = "What is the payment deadline?"
         await model.ask()?.value
@@ -126,7 +130,7 @@ import Testing
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
         let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
-        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        let model = makeModel()
         model.select([file]); await model.readDocuments()?.value
         model.question = "What is the payment deadline?"
         await model.ask()?.value
@@ -145,7 +149,7 @@ import Testing
         defer { fixture.remove() }
         let first = try fixture.write("First.txt", "The payment deadline is Friday.")
         let second = try fixture.write("Second.txt", "The invoice total is 480 USD.")
-        let model = DocumentQuestionModel(answerer: QuotingDocumentAnswerer())
+        let model = makeModel()
         model.select([first]); await model.readDocuments()?.value
         model.question = "What is the payment deadline?"
         await model.ask()?.value
