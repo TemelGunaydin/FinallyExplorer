@@ -5,6 +5,29 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("OCR summaries and source warnings fit with five documents in both themes", arguments: [false, true])
+    func scannedDocumentLayout(_ dark: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        let scan = fixture.source.appending(path: "Scanned Quarterly Invoice Report.pdf")
+        try DocumentQuestionFixtures.pdf(pages: [""]).write(to: scan)
+        var urls = [scan]
+        for index in 1...4 { urls.append(try fixture.write("Additional Document \(index).txt", "A supporting cover sheet.")) }
+        let model = DocumentQuestionModel(
+            reader: LocalDocumentReader(textRecognizer: RecordingDocumentTextRecognizer()),
+            answerer: QuotingDocumentAnswerer(),
+            search: LocalDocumentPassageSearch(encoder: UnavailableDocumentSemanticEncoder()))
+        model.select(urls)
+        await model.readDocuments()?.value
+        model.question = "What is the payment deadline?"
+        await model.ask()?.value
+        #expect(model.documents.count == 5)
+        let claim = try #require(model.claims.first)
+        #expect(claim.source.isOCR)
+        try render(DocumentQuestionSheet(model: model, onReveal: { _ in }), name: "ScannedDocumentAnswer", width: 820, height: 720, dark: dark)
+        try render(DocumentCitationSheet(claim: claim, onReveal: {}), name: "ScannedDocumentCitation", width: 600, height: 380, dark: dark)
+    }
+
     @Test("Document questions, source excerpts, and AI settings fit in both themes", arguments: [false, true])
     func documentLayout(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()

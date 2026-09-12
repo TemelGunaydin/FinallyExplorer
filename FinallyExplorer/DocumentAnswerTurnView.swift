@@ -8,6 +8,11 @@ struct DocumentAnswerTurnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(turn.question).font(.headline).textSelection(.enabled)
+            if turn.claims.contains(where: { $0.source.isOCR }) {
+                Text("Includes OCR text. Verify names, dates and amounts against the original PDF page.")
+                    .font(.caption).foregroundStyle(theme.textSecondary)
+                    .accessibilityIdentifier("document-answer-ocr-notice")
+            }
             if turn.resolvedQuestion != turn.question {
                 Text("Interpreted as: \(turn.resolvedQuestion)")
                     .font(.callout).foregroundStyle(theme.textSecondary).textSelection(.enabled)

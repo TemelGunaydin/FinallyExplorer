@@ -25,7 +25,7 @@ nonisolated enum DocumentPassageRetriever {
                 if bytes + count > 600 { break }
                 excerpt.append(character); bytes += count
             }
-            return DocumentPassage(id: passage.id, documentID: passage.documentID, fileName: passage.fileName, page: passage.page, text: excerpt)
+            return DocumentPassage(id: passage.id, documentID: passage.documentID, fileName: passage.fileName, page: passage.page, text: excerpt, isOCR: passage.isOCR)
         }
     }
 }

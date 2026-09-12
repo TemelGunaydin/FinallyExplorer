@@ -7,4 +7,5 @@ nonisolated struct QuestionDocument: Identifiable, Sendable {
     let state: ComparedFileState
     let passages: [DocumentPassage]
     let skippedPageCount: Int
+    let ocrPageCount: Int
 }

@@ -33,6 +33,7 @@ struct DocumentQuestionSheet: View {
                 HStack {
                     ProgressView().controlSize(.small).tint(theme.textPrimary)
                     Text(model.isCancelling ? "Stopping…" : activity).font(.callout)
+                        .lineLimit(2).truncationMode(.middle).accessibilityIdentifier("document-read-activity")
                     Spacer()
                     Button("Cancel", action: model.cancel).disabled(model.isCancelling).accessibilityIdentifier("document-cancel")
                 }

@@ -4,6 +4,8 @@ struct DocumentQuestionSourcesView: View {
     @Environment(\.explorerTheme) private var theme
     @Bindable var model: DocumentQuestionModel
 
+    private var ocrPageCount: Int { model.documents.reduce(0) { $0 + $1.ocrPageCount } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -23,11 +25,16 @@ struct DocumentQuestionSourcesView: View {
                     Text("\(model.selection.count - 5) more selected. Choose at most 5 documents to continue.")
                 }
             }
-            Text("Local files only · 20 MB and 100 PDF pages per file · Image-only PDFs are not supported")
+            Text("Local files only · 20 MB and 100 PDF pages per file · Up to 20 scan pages read with English OCR")
                 .font(.caption).foregroundStyle(theme.textSecondary)
             if model.documents.isEmpty == false {
                 Text("\(model.documents.count) documents ready · \(model.documents.reduce(0) { $0 + $1.skippedPageCount }) PDF pages without readable text skipped")
                     .font(.caption).accessibilityIdentifier("document-ready")
+                if ocrPageCount > 0 {
+                    Label("\(ocrPageCount) \(ocrPageCount == 1 ? "page" : "pages") read with OCR · Check original pages for recognition errors", systemImage: "text.viewfinder")
+                        .font(.caption).foregroundStyle(theme.textSecondary)
+                        .accessibilityIdentifier("document-ocr-summary")
+                }
                 Text(model.retrievalIndex?.supportsSemanticSearch == true
                      ? "Local search: meaning + keywords · English"
                      : "Keywords only: the local English meaning model is unavailable.")

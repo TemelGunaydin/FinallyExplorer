@@ -14,7 +14,7 @@ nonisolated struct LocalDocumentPassageSearch: Sendable {
                 let text = Self.bytePrefix(passage.text[start...], limit: 600)
                 guard text.isEmpty == false else { break }
                 excerpts.append(DocumentPassage(id: passage.id, documentID: passage.documentID,
-                    fileName: passage.fileName, page: passage.page, text: text))
+                    fileName: passage.fileName, page: passage.page, text: text, isOCR: passage.isOCR))
                 let end = passage.text.index(start, offsetBy: text.count)
                 guard end < passage.text.endIndex else { break }
                 start = passage.text.index(end, offsetBy: -min(60, text.count / 3))

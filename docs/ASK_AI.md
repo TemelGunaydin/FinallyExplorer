@@ -65,4 +65,4 @@ Natural photo descriptions now open Visual Search from Ask AI, with visible conc
 
 Photo scenes now combine with EXIF capture dates and image types, with exact follow-ups that retain the scene and unchanged filters. Real-photo, real-model and full interaction regressions accompany the change. The [validation record](DOCUMENT_QUESTIONS.md#september-9-accuracy-and-interaction-regressions) includes the right-click Rename and Cmd+A fixes found along the way.
 
-Document follow-up questions and local hybrid keyword/semantic passage retrieval are now implemented; see [Document Questions](DOCUMENT_QUESTIONS.md) for bounds and validation. Scanned-PDF OCR and an optional persistent visual index remain future work.
+Document follow-up questions, local hybrid keyword/semantic passage retrieval, and explicit-read scanned-PDF OCR are now implemented; see [Document Questions](DOCUMENT_QUESTIONS.md) for bounds and validation. OCR is limited to 20 textless PDF pages per selection, in English, with page-level provenance and recognition warnings. An optional persistent visual index remains future work.

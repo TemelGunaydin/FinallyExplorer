@@ -25,6 +25,7 @@ final class DocumentQuestionModel {
     @ObservationIgnored private let resolver: any DocumentQuestionResolving
     @ObservationIgnored private let search: LocalDocumentPassageSearch
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var activeReadID: UUID?
 
     init(reader: any DocumentReading = LocalDocumentReader(), answerer: any DocumentAnswerGenerating = FoundationModelsDocumentAnswerer(),
          resolver: any DocumentQuestionResolving = FoundationModelsDocumentQuestionResolver(),
@@ -58,9 +59,13 @@ final class DocumentQuestionModel {
         guard (1...5).contains(selected.count) else { errorMessage = DocumentQuestionError.selection.localizedDescription; return nil }
         activity = "Reading selected documents on this Mac…"
         errorMessage = nil
+        let readID = UUID()
+        activeReadID = readID
         task = Task { [weak self, reader, search] in
             do {
-                let result = try await reader.read(selected)
+                let result = try await reader.read(selected) { [weak self] progress in
+                    await self?.reportReadProgress(progress, readID: readID)
+                }
                 try Task.checkCancellation()
                 self?.activity = "Preparing local passage search…"
                 let index = try await search.prepare(result)
@@ -145,6 +150,7 @@ final class DocumentQuestionModel {
     func cancel() { if isWorking { isCancelling = true; task?.cancel() } }
     func clear() {
         cancel()
+        activeReadID = nil
         documents = []; retrievalIndex = nil; selection = []
         resetConversation()
     }
@@ -165,5 +171,10 @@ final class DocumentQuestionModel {
             errorMessage = DocumentQuestionError.changed.localizedDescription
         }
     }
-    private func finish() { task = nil; activity = nil; isCancelling = false }
+    private func reportReadProgress(_ progress: DocumentReadProgress, readID: UUID) {
+        guard activeReadID == readID, isEnabled, isWorking, isCancelling == false, Task.isCancelled == false else { return }
+        activity = progress.message
+    }
+
+    private func finish() { task = nil; activity = nil; isCancelling = false; activeReadID = nil }
 }

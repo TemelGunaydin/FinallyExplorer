@@ -10,7 +10,13 @@ struct DocumentCitationSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(claim.source.sourceLabel).font(.headline).lineLimit(2)
                 .accessibilityIdentifier("document-source-sheet")
-            Text("Source excerpt from the document snapshot").font(.callout).foregroundStyle(theme.textSecondary)
+            if claim.source.isOCR {
+                Label("Recognized text (OCR) can contain errors. Check this page in the original PDF before relying on the answer.", systemImage: "text.viewfinder")
+                    .font(.callout).foregroundStyle(theme.textSecondary)
+                    .accessibilityIdentifier("document-source-ocr-notice")
+            } else {
+                Text("Source excerpt from the document snapshot").font(.callout).foregroundStyle(theme.textSecondary)
+            }
             ScrollView { Text(claim.source.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
             HStack {
                 Button("Show in Explorer", systemImage: "arrow.up.forward.app") { dismiss(); onReveal() }

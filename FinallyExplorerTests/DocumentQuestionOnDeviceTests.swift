@@ -5,6 +5,30 @@ import Testing
 
 @Suite(.serialized, .enabled(if: SystemLanguageModel.default.availability == .available))
 struct DocumentQuestionOnDeviceTests {
+    @MainActor @Test("Real OCR and the on-device model answer from a scanned PDF page", .timeLimit(.minutes(1)))
+    func scannedDocument() async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        let file = fixture.source.appending(path: "Scanned Invoice.pdf")
+        let original = try DocumentOCRFixtures.pdf(scannedPages: [
+            "Harbor Studio invoice 4827\nPayment deadline is 30 September 2026."
+        ], embeddedFirstPage: "Invoice cover sheet")
+        try original.write(to: file)
+        let model = DocumentQuestionModel()
+        model.select([file])
+        #expect(model.documents.isEmpty)
+        await model.readDocuments()?.value
+        try #require(model.errorMessage == nil, "\(model.errorMessage ?? "")")
+        #expect(model.documents.first?.ocrPageCount == 1)
+        model.question = "What is the payment deadline?"
+        await model.ask()?.value
+        try #require(model.errorMessage == nil, "\(model.errorMessage ?? "")")
+        #expect(model.claims.isEmpty == false)
+        #expect(model.claims.allSatisfy { $0.source.page == 2 && $0.source.isOCR })
+        #expect(model.claims.contains { $0.quote.contains("30 September 2026") && $0.statement.contains("2026") })
+        #expect(try Data(contentsOf: file) == original)
+    }
+
     @MainActor @Test("Real follow-ups resolve an invoice, switch subjects, and find paraphrased policy evidence", .timeLimit(.minutes(2)))
     func conversation() async throws {
         let fixture = try FolderComparisonTestFixture()

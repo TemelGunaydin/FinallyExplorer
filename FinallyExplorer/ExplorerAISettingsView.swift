@@ -26,7 +26,7 @@ struct ExplorerAISettingsView: View {
                 Divider().overlay(theme.divider)
                 Toggle("Enable Document Questions", isOn: $settings.isDocumentQuestionsEnabled)
                     .accessibilityIdentifier("ai-settings-document-questions-toggle")
-                Text("Use short passages from explicitly selected documents to answer questions with source quotes. Turning this off clears document text and answers from window memory.")
+                Text("Read Documents prepares selected files, using on-device English OCR for PDF pages without text. Answers include source quotes. Turning this off cancels reading and clears document text and answers from window memory.")
                     .font(.callout).foregroundStyle(theme.textSecondary)
 
                 Divider().overlay(theme.divider)

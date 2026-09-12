@@ -1,14 +1,19 @@
 import Darwin
 import Foundation
-import PDFKit
 
 nonisolated struct LocalDocumentReader: DocumentReading {
     static let extensions: Set<String> = ["pdf", "txt", "md", "json", "csv"]
+    var textRecognizer: any DocumentTextRecognizing = VisionDocumentTextRecognizer()
+    var maximumOCRPages = 20
 
     @concurrent func read(_ urls: [URL]) async throws -> [QuestionDocument] {
+        try await read(urls, progress: { _ in })
+    }
+
+    @concurrent func read(_ urls: [URL], progress: @escaping @Sendable (DocumentReadProgress) async -> Void) async throws -> [QuestionDocument] {
         guard (1...5).contains(urls.count), Set(urls).count == urls.count else { throw DocumentQuestionError.selection }
         var documents: [QuestionDocument] = []
-        var nextID = 1, totalCharacters = 0
+        var nextID = 1, totalCharacters = 0, remainingOCRPages = max(0, min(20, maximumOCRPages))
         for selected in urls {
             try Task.checkCancellation()
             guard selected.isFileURL, selected.host == nil || selected.host == "" || selected.host == "localhost",
@@ -21,32 +26,20 @@ nonisolated struct LocalDocumentReader: DocumentReading {
             guard (0...20 * 1_024 * 1_024).contains(state.size) else { throw DocumentQuestionError.tooLarge }
             let file = try parent.openFile(selected.lastPathComponent)
             let data = try Self.bytes(file, expected: state)
-            let pages: [(Int?, String)]
-            var skipped = 0
+            let pages: [DocumentPageText]
             if selected.pathExtension.lowercased() == "pdf" {
-                guard let pdf = PDFDocument(data: data), pdf.isLocked == false else { throw DocumentQuestionError.unreadable }
-                guard pdf.pageCount <= 100 else { throw DocumentQuestionError.tooLarge }
-                var extracted: [(Int?, String)] = []
-                var count = 0
-                for index in 0..<pdf.pageCount {
-                    try Task.checkCancellation()
-                    guard let page = pdf.page(at: index) else { throw DocumentQuestionError.unreadable }
-                    guard page.numberOfCharacters + count <= 200_000 else { throw DocumentQuestionError.tooLarge }
-                    let text = page.string ?? ""
-                    count += text.count
-                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { skipped += 1 }
-                    else { extracted.append((index + 1, text)) }
-                }
-                pages = extracted
+                pages = try await PDFDocumentTextExtractor(recognizer: textRecognizer).extract(data,
+                    fileName: selected.lastPathComponent, remainingOCRPages: remainingOCRPages, progress: progress)
+                remainingOCRPages -= pages.filter(\.isOCR).count
             } else {
                 guard let text = String(data: data, encoding: .utf8), text.contains("\0") == false else { throw DocumentQuestionError.unreadable }
                 guard text.count <= 200_000 else { throw DocumentQuestionError.tooLarge }
-                pages = [(nil, text)]
+                pages = [DocumentPageText(number: nil, text: text)]
             }
             let id = UUID()
             var passages: [DocumentPassage] = []
-            for (page, raw) in pages {
-                let text = Self.normalized(raw)
+            for page in pages {
+                let text = Self.normalized(page.text)
                 totalCharacters += text.count
                 guard totalCharacters <= 300_000 else { throw DocumentQuestionError.tooLarge }
                 var start = text.startIndex
@@ -54,7 +47,7 @@ nonisolated struct LocalDocumentReader: DocumentReading {
                     try Task.checkCancellation()
                     let end = text.index(start, offsetBy: 900, limitedBy: text.endIndex) ?? text.endIndex
                     passages.append(DocumentPassage(id: nextID, documentID: id, fileName: selected.lastPathComponent,
-                        page: page, text: String(text[start..<end])))
+                        page: page.number, text: String(text[start..<end]), isOCR: page.isOCR))
                     nextID += 1
                     guard end < text.endIndex else { break }
                     start = text.index(end, offsetBy: -100)
@@ -62,7 +55,9 @@ nonisolated struct LocalDocumentReader: DocumentReading {
             }
             guard passages.isEmpty == false else { throw DocumentQuestionError.noText }
             documents.append(QuestionDocument(id: id, url: parentURL.appending(path: selected.lastPathComponent),
-                parentState: parentState, state: state, passages: passages, skippedPageCount: skipped))
+                parentState: parentState, state: state, passages: passages,
+                skippedPageCount: pages.filter { Self.normalized($0.text).isEmpty }.count,
+                ocrPageCount: pages.filter { $0.isOCR && Self.normalized($0.text).isEmpty == false }.count))
         }
         try await validate(documents)
         return documents

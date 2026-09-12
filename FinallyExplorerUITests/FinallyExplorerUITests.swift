@@ -7,6 +7,7 @@ import XCTest
 import CoreGraphics
 import CoreText
 import ImageIO
+import PDFKit
 import UniformTypeIdentifiers
 
 final class FinallyExplorerUITests: XCTestCase {
@@ -1560,6 +1561,86 @@ final class FinallyExplorerUITests: XCTestCase {
         app.buttons["visual-search-close"].click()
         app.buttons["ask-ai-new-search"].click()
         XCTAssertEqual(input.value as? String, "")
+    }
+
+    func testScannedPDFRequiresReadingAndShowsOCRPageCitation() throws {
+        app.terminate()
+        let file = fixtureRootURL.appending(path: "Scanned Invoice.pdf")
+        let original = try scannedInvoicePDF()
+        try original.write(to: file)
+        app.launch()
+        let row = rows(named: "Scanned Invoice.pdf").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
+        app.menuButtons["window-file-tools-button"].click()
+        app.menuItems["Ask Documents…"].click()
+        XCTAssertTrue(app.buttons["document-read"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["document-ready"].exists)
+        XCTAssertFalse(element(withIdentifier: "document-ocr-summary").exists)
+        app.buttons["document-read"].click()
+        XCTAssertTrue(app.staticTexts["document-ready"].waitForExistence(timeout: 20))
+        XCTAssertTrue(element(withIdentifier: "document-ocr-summary").exists)
+        let question = element(withIdentifier: "document-question")
+        typeCatalogQuery("What is the payment deadline?", in: question)
+        XCTAssertEqual(question.value as? String, "What is the payment deadline?")
+        app.buttons["document-ask"].click()
+        let citation = app.buttons["document-citation-2"].firstMatch
+        XCTAssertTrue(citation.waitForExistence(timeout: 45))
+        XCTAssertTrue(citation.label.contains("page 2 · OCR"), citation.label)
+        XCTAssertFalse(app.staticTexts["document-error"].exists)
+        XCTAssertTrue(element(withIdentifier: "document-answer-ocr-notice").exists)
+        let answer = app.staticTexts.matching(identifier: "document-answer-claim").allElementsBoundByIndex
+            .compactMap { $0.value as? String }.joined(separator: " ")
+        XCTAssertTrue(answer.contains("2026"), answer)
+        citation.click()
+        XCTAssertTrue(app.buttons["document-source-done"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element(withIdentifier: "document-source-ocr-notice").exists)
+        let source = element(withIdentifier: "document-source-sheet")
+        XCTAssertTrue(source.label.contains("page 2 · OCR"), source.label)
+        recordWindowHierarchy("Scanned PDF OCR citation with original page number and recognition warning")
+        app.buttons["document-source-done"].click()
+        app.buttons["document-clear"].click()
+        XCTAssertFalse(app.staticTexts["document-ready"].exists)
+        XCTAssertFalse(element(withIdentifier: "document-ocr-summary").exists)
+        XCTAssertFalse(citation.exists)
+        XCTAssertEqual(try Data(contentsOf: file), original)
+        app.buttons["document-close"].click()
+    }
+
+    private func scannedInvoicePDF() throws -> Data {
+        let bitmap = try XCTUnwrap(CGContext(data: nil, width: 1_200, height: 1_600, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        bitmap.setFillColor(CGColor(gray: 1, alpha: 1))
+        bitmap.fill(CGRect(x: 0, y: 0, width: 1_200, height: 1_600))
+        let lines = ["Harbor Studio invoice 4827", "Payment deadline is 30 September 2026."]
+        for (index, text) in lines.enumerated() {
+            let line = NSAttributedString(string: text, attributes: [
+                NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 32, nil),
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+            ])
+            bitmap.textPosition = CGPoint(x: 60, y: 1_400 - index * 56)
+            CTLineDraw(CTLineCreateWithAttributedString(line), bitmap)
+        }
+        let image = try XCTUnwrap(bitmap.makeImage())
+        let data = NSMutableData()
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data))
+        var box = CGRect(x: 0, y: 0, width: 600, height: 800)
+        let pdfContext = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &box, nil))
+        pdfContext.beginPDFPage(nil)
+        let cover = NSAttributedString(string: "Invoice cover sheet", attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 16, nil),
+        ])
+        pdfContext.textPosition = CGPoint(x: 30, y: 700)
+        CTLineDraw(CTLineCreateWithAttributedString(cover), pdfContext)
+        pdfContext.endPDFPage()
+        pdfContext.beginPDFPage(nil)
+        pdfContext.draw(image, in: box)
+        pdfContext.endPDFPage()
+        pdfContext.closePDF()
+        let pdf = try XCTUnwrap(PDFDocument(data: data as Data))
+        let scanned = try XCTUnwrap(pdf.page(at: 1))
+        XCTAssertTrue((scanned.string ?? "").isEmpty, "The scan must not have a hidden text layer")
+        return data as Data
     }
 
     func testDocumentQuestionRequiresReadingAndShowsSourceThenClears() throws {
