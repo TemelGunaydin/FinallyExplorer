@@ -1596,7 +1596,8 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["document-source-done"].waitForExistence(timeout: 5))
         XCTAssertTrue(element(withIdentifier: "document-source-ocr-notice").exists)
         let source = element(withIdentifier: "document-source-sheet")
-        XCTAssertTrue(source.label.contains("page 2 · OCR"), source.label)
+        // macOS SwiftUI static text exposes its contents through AX value.
+        XCTAssertEqual(source.value as? String, "Scanned Invoice.pdf · page 2 · OCR")
         recordWindowHierarchy("Scanned PDF OCR citation with original page number and recognition warning")
         app.buttons["document-source-done"].click()
         app.buttons["document-clear"].click()
