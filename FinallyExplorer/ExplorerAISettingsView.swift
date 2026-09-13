@@ -91,7 +91,7 @@ struct ExplorerAISettingsView: View {
         .padding(24)
         }
         .frame(width: 580)
-        .frame(height: 720)
+        .frame(maxHeight: .infinity)
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)

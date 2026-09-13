@@ -109,7 +109,7 @@ struct FinallyExplorerApp: App {
         }
 
         Settings {
-            ExplorerAISettingsView(settings: aiSettings)
+            ExplorerSettingsView(settings: aiSettings)
                 .environment(\.explorerTheme, themeController.activeTheme)
         }
         .windowResizability(.contentSize)

@@ -455,8 +455,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FinallyExplorer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FinallyExplorer;
-				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "FinallyExplorer accesses Downloads to browse and manage the files you choose.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Temel Gunaydin. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -498,8 +499,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FinallyExplorer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FinallyExplorer;
-				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "FinallyExplorer accesses Downloads to browse and manage the files you choose.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Temel Gunaydin. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
