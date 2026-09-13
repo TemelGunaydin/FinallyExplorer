@@ -26,6 +26,8 @@ final class DocumentQuestionModel {
     @ObservationIgnored private let search: LocalDocumentPassageSearch
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var activeReadID: UUID?
+    @ObservationIgnored private var selectionAccess: SecurityScopedResourceAccess?
+    @ObservationIgnored private var documentPanel: NSOpenPanel?
 
     init(reader: any DocumentReading = LocalDocumentReader(), answerer: any DocumentAnswerGenerating = FoundationModelsDocumentAnswerer(),
          resolver: any DocumentQuestionResolving = FoundationModelsDocumentQuestionResolver(),
@@ -36,10 +38,11 @@ final class DocumentQuestionModel {
     var isWorking: Bool { activity != nil }
     var canAsk: Bool { isEnabled && isWorking == false && documents.isEmpty == false && question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
 
-    func select(_ urls: [URL]) {
+    func select(_ urls: [URL], access: SecurityScopedResourceAccess? = nil) {
         guard isWorking == false else { return }
         clear()
         selection = urls
+        selectionAccess = access
     }
 
     func chooseDocuments() {
@@ -50,7 +53,17 @@ final class DocumentQuestionModel {
         panel.allowedContentTypes = LocalDocumentReader.extensions.compactMap { UTType(filenameExtension: $0) }
         panel.prompt = "Select Documents"
         panel.message = "Choose up to 5 documents. Select Read Documents afterward to prepare their text on this Mac."
-        panel.begin { [weak self] response in if response == .OK { self?.select(panel.urls) } }
+        activity = "Choosing documents…"
+        documentPanel = panel
+        task = Task { [weak self] in
+            let response = await panel.begin()
+            let access = response == .OK ? SecurityScopedResourceAccess(adoptingPanelURLs: panel.urls) : nil
+            guard let self else { return }
+            documentPanel = nil
+            finish()
+            guard Task.isCancelled == false, response == .OK, isEnabled else { return }
+            select(panel.urls, access: access)
+        }
     }
 
     @discardableResult func readDocuments() -> Task<Void, Never>? {
@@ -61,7 +74,8 @@ final class DocumentQuestionModel {
         errorMessage = nil
         let readID = UUID()
         activeReadID = readID
-        task = Task { [weak self, reader, search] in
+        task = Task { [weak self, reader, search, selectionAccess] in
+            defer { withExtendedLifetime(selectionAccess) {} }
             do {
                 let result = try await reader.read(selected) { [weak self] progress in
                     await self?.reportReadProgress(progress, readID: readID)
@@ -93,7 +107,8 @@ final class DocumentQuestionModel {
         let context = history.suffix(2).map(DocumentFollowUpContext.init)
         activity = context.isEmpty ? "Finding supporting passages…" : "Understanding your follow-up…"
         errorMessage = nil
-        task = Task { [weak self, reader, answerer, resolver, search] in
+        task = Task { [weak self, reader, answerer, resolver, search, selectionAccess] in
+            defer { withExtendedLifetime(selectionAccess) {} }
             do {
                 try await reader.validate(current)
                 let resolved = context.isEmpty ? query : try await resolver.resolve(question: query, context: context)
@@ -132,7 +147,8 @@ final class DocumentQuestionModel {
     @discardableResult func reveal(_ claim: DocumentAnswerClaim, onReveal: @escaping @MainActor (URL) -> Void) -> Task<Void, Never>? {
         guard isWorking == false, let document = documents.first(where: { $0.id == claim.source.documentID }) else { return nil }
         activity = "Checking the source document…"
-        task = Task { [weak self, reader] in
+        task = Task { [weak self, reader, selectionAccess] in
+            defer { withExtendedLifetime(selectionAccess) {} }
             do {
                 try await reader.validate([document])
                 try Task.checkCancellation()
@@ -147,11 +163,14 @@ final class DocumentQuestionModel {
         return task
     }
 
-    func cancel() { if isWorking { isCancelling = true; task?.cancel() } }
+    func cancel() {
+        if isWorking { isCancelling = true; task?.cancel(); documentPanel?.cancel(nil) }
+    }
     func clear() {
         cancel()
         activeReadID = nil
         documents = []; retrievalIndex = nil; selection = []
+        selectionAccess = nil
         resetConversation()
     }
     func newConversation() { cancel(); resetConversation() }

@@ -668,27 +668,56 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
         let stagingURL = destinationDirectoryURL.appending(
             path: ".finallyexplorer-archive-\(UUID().uuidString).zip"
         )
+        // Powerbox grants belong to this process, not to the system helper.
+        // Copy into our container first; only this process accesses the selected
+        // source/destination. The extra temporary copy is removed on every exit.
+        let workspaceURL = fileManager.temporaryDirectory.appending(
+            path: "FinallyExplorer-Archive-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        let inputURL = workspaceURL.appending(path: "Input", directoryHint: .isDirectory)
+        let stagedSourceURL = inputURL.appending(path: sourceURL.lastPathComponent)
+        let archiveURL = workspaceURL.appending(path: "Archive.zip")
         defer {
             try? fileManager.removeItem(at: stagingURL)
+            try? fileManager.removeItem(at: workspaceURL)
+        }
+        do {
+            try fileManager.createDirectory(at: workspaceURL, withIntermediateDirectories: false,
+                                           attributes: [.posixPermissions: 0o700])
+            try fileManager.createDirectory(at: inputURL, withIntermediateDirectories: false)
+            try fileManager.copyItem(at: sourceURL, to: stagedSourceURL)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw FileOperationError.compressFailed(sourcePath: sourceURL.path,
+                destinationPath: destinationURL.path, reason: error.localizedDescription)
         }
 
         let process = Process()
         let errorPipe = Pipe()
         process.executableURL = URL(filePath: "/usr/bin/ditto")
+        let isDirectory = (try? fileManager.attributesOfItem(atPath: stagedSourceURL.path)[.type]) as? FileAttributeType == .typeDirectory
         process.arguments = [
             "-c",
             "-k",
             "--sequesterRsrc",
-            "--keepParent",
-            sourceURL.path,
-            stagingURL.path,
-        ]
+        ] + (isDirectory ? ["--keepParent"] : []) + [stagedSourceURL.path, archiveURL.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errorPipe
 
         do {
             try process.run()
-
+        } catch {
+            try? errorPipe.fileHandleForReading.close()
+            try? errorPipe.fileHandleForWriting.close()
+            throw FileOperationError.compressFailed(sourcePath: sourceURL.path,
+                destinationPath: destinationURL.path, reason: error.localizedDescription)
+        }
+        try? errorPipe.fileHandleForWriting.close()
+        async let diagnostics = ArchiveProcessOutput.collect(from: errorPipe.fileHandleForReading)
+        do {
             while process.isRunning {
                 try Task.checkCancellation()
                 try await Task.sleep(for: .milliseconds(80))
@@ -707,7 +736,7 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
             )
         }
 
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = await diagnostics
         guard process.terminationStatus == 0 else {
             let processMessage = String(decoding: errorData, as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -721,6 +750,15 @@ nonisolated struct FileOperationService: FileOperationServicing, Sendable {
         }
 
         try Task.checkCancellation()
+        do {
+            try fileManager.copyItem(at: archiveURL, to: stagingURL)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw FileOperationError.compressFailed(sourcePath: sourceURL.path,
+                destinationPath: destinationURL.path, reason: error.localizedDescription)
+        }
 
         while true {
             do {

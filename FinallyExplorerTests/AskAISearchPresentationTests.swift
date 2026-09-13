@@ -33,7 +33,7 @@ struct AskAISearchPresentationTests {
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         let png = try #require(bitmap.representation(using: .png, properties: [:]))
         #expect(png.count > 1_000)
-        let url = URL(filePath: "/tmp/FinallyExplorer-AskAI-\(dark ? "dark" : "light").png")
+        let url = URL.temporaryDirectory.appending(path: "FinallyExplorer-AskAI-\(dark ? "dark" : "light").png")
         try png.write(to: url, options: .atomic)
     }
 }

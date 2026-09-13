@@ -7,11 +7,13 @@ struct VisualPhotoCorpusTests {
     func realPhotos() async throws {
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
-        let directory = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "Fixtures/VisualPhotos")
+        let bundle = Bundle(for: VisualPhotoTestResources.self)
         // Anonymous filenames deliberately carry no scene hints.
         let names = ["beach-monterey", "beach-side", "forest", "city"]
         for (index, name) in names.enumerated() {
-            try FileManager.default.copyItem(at: directory.appending(path: name + ".jpg"), to: fixture.source.appending(path: "IMG_\(index).jpg"))
+            let source = try #require(bundle.url(forResource: name, withExtension: "jpg", subdirectory: "Fixtures/VisualPhotos")
+                ?? bundle.url(forResource: name, withExtension: "jpg"))
+            try FileManager.default.copyItem(at: source, to: fixture.source.appending(path: "IMG_\(index).jpg"))
         }
         let snapshot = try await VisualSearchService().scan(rootURL: fixture.source, includesHidden: false)
         #expect(snapshot.entries.count == 4)
@@ -25,3 +27,5 @@ struct VisualPhotoCorpusTests {
         for match in results { _ = try await VisualSearchService().validate(match.entry, in: snapshot) }
     }
 }
+
+private final class VisualPhotoTestResources: NSObject { }

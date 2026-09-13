@@ -56,15 +56,21 @@ nonisolated final class ScopedFolderDescriptor {
     /// This traversal is read-only; user-supplied relative components still reject `..`.
     func containsDirectory(_ other: ScopedFolderDescriptor) throws -> Bool {
         let target = try state()
-        var current = try other.directory([])
+        var current = try other.state()
+        var relativeParent = ""
         for _ in 0..<256 {
             try Task.checkCancellation()
-            let identity = try current.state()
-            if identity.hasSameIdentity(as: target) { return true }
-            let parent = try ScopedFolderDescriptor(
-                taking: openat(current.rawValue, "..", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC), path: "Parent folder"
-            )
-            if try parent.state().hasSameIdentity(as: identity) { return false }
+            if current.hasSameIdentity(as: target) { return true }
+            relativeParent += relativeParent.isEmpty ? ".." : "/.."
+            var value = stat()
+            // These components are generated internally, never supplied by a user.
+            // Metadata-only ancestry preserves identity checks without opening the
+            // contents of unselected parent folders outside a narrow sandbox grant.
+            guard fstatat(other.rawValue, relativeParent, &value, AT_SYMLINK_NOFOLLOW) == 0 else {
+                throw FolderComparisonError.fileSystem("Parent folder", errno)
+            }
+            let parent = ComparedFileState(value)
+            if parent.hasSameIdentity(as: current) { return false }
             current = parent
         }
         throw FolderComparisonError.limitExceeded

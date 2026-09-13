@@ -5,5 +5,5 @@ nonisolated struct OfflineCatalogSource: Sendable {
     let relativeRoot: String
     let rootInode: UInt64
 
-    var rootURL: URL { relativeRoot.isEmpty ? volume.rootURL : volume.rootURL.appending(path: relativeRoot) }
+    var rootURL: URL { relativeRoot.isEmpty ? volume.rootURL : volume.rootURL.appending(path: relativeRoot, directoryHint: .isDirectory) }
 }

@@ -1,8 +1,47 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import FinallyExplorer
 
 @MainActor struct DocumentQuestionModelTests {
+    @Test("Clearing or closing document work retains panel access until reading unwinds", .timeLimit(.minutes(1)), arguments: [false, true])
+    func readingOwnsAccessAfterClear(_ close: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        let file = try fixture.write("Report.txt", "The payment deadline is Friday.")
+        let gate = FolderComparisonTestGate()
+        let stopped = Mutex<[URL]>([])
+        var model: DocumentQuestionModel? = makeModel(reader: PausedDocumentReader(gate: gate))
+        model?.select([file], access: SecurityScopedResourceAccess(adoptingPanelURLs: [file]) {
+            url in stopped.withLock { $0.append(url) }
+        })
+        let task = try #require(model?.readDocuments())
+        await gate.waitUntilEntered()
+        if close { model = nil } else { model?.clear() }
+        #expect(stopped.withLock { $0.isEmpty })
+        await gate.release()
+        await task.value
+        #expect(stopped.withLock { $0 } == [file])
+        #expect(model?.documents.isEmpty ?? true)
+    }
+
+    @Test("Replacing the selection releases only the old document grant")
+    func replacingSelectionReleasesAccess() throws {
+        let first = URL(filePath: "/selected/First.txt")
+        let second = URL(filePath: "/selected/Second.txt")
+        let stopped = Mutex<[URL]>([])
+        let model = makeModel()
+        model.select([first], access: SecurityScopedResourceAccess(adoptingPanelURLs: [first]) {
+            url in stopped.withLock { $0.append(url) }
+        })
+        model.select([second], access: SecurityScopedResourceAccess(adoptingPanelURLs: [second]) {
+            url in stopped.withLock { $0.append(url) }
+        })
+        #expect(stopped.withLock { $0 } == [first])
+        model.clear()
+        #expect(stopped.withLock { $0 } == [first, second])
+    }
+
     private func makeModel(reader: any DocumentReading = LocalDocumentReader(), answerer: any DocumentAnswerGenerating = QuotingDocumentAnswerer()) -> DocumentQuestionModel {
         DocumentQuestionModel(reader: reader, answerer: answerer, resolver: UnchangedDocumentQuestionResolver(),
             search: LocalDocumentPassageSearch(encoder: UnavailableDocumentSemanticEncoder()))

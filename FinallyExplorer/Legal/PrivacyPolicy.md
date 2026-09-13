@@ -38,6 +38,8 @@ Offline Catalogs: if you explicitly save a catalog, the app stores a local metad
 
 Files you create or change: your original files, copies, ZIP archives, and other output remain in their selected locations. Clearing an analysis or removing a catalog does not remove these files. Items moved to Trash remain subject to macOS Trash behavior.
 
+Temporary file-operation data: ZIP creation stages a local copy of the selected item and an archive in the app's temporary storage. The app attempts to remove these working copies when the operation finishes or is cancelled. A crash or cleanup failure can leave temporary data until it is removed by macOS or the user. Compression requires additional free disk space and does not upload these copies.
+
 Removing the app does not necessarily remove its local preferences or support data. macOS backups, swap, filesystem behavior, and synchronized storage are outside the app’s direct control. “Clear” is not a promise of forensic or secure disk erasure.
 
 ## 5. Permissions and your choices

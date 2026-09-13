@@ -417,6 +417,10 @@ struct ContentView: View {
                 workspace.applyRename(relocation)
             }
         }
+        .task(id: folderAccess.revision) {
+            guard folderAccess.revision > 0 else { return }
+            await globalSearch.fileAccessDidChange(in: globalSearchRootURL)
+        }
         .onChange(of: fileOperations.lastRenameResult) {
             guard let result = fileOperations.lastRenameResult else { return }
             sidebar.applyRename(result)

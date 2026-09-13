@@ -64,7 +64,7 @@ nonisolated enum DocumentOCRFixtures {
         let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, nil)
         try #require(CGImageDestinationFinalize(destination))
-        try (data as Data).write(to: URL(filePath: "/tmp/FinallyExplorer-\(name).png"))
+        try (data as Data).write(to: URL.temporaryDirectory.appending(path: "FinallyExplorer-\(name).png"))
     }
 
     private static func draw(_ text: String, in context: CGContext, fontSize: CGFloat, x: CGFloat, y: CGFloat, lineHeight: CGFloat) {

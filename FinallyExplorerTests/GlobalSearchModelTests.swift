@@ -11,6 +11,31 @@ import Testing
 struct GlobalSearchModelTests {
     private let rootURL = URL(filePath: "/", directoryHint: .isDirectory)
 
+    @Test("Permission refresh uses the latest query, but never republishes after shutdown", .timeLimit(.minutes(1)), arguments: [false, true])
+    func accessRefresh(_ shutdown: Bool) async throws {
+        let gate = FolderComparisonTestGate()
+        let old = globalResult(named: "old.txt")
+        let latest = globalResult(named: "latest.txt")
+        let service = GlobalSearchServiceStub(pages: [
+            "old": GlobalSearchPage(results: [old], message: nil),
+            "latest": GlobalSearchPage(results: [latest], message: nil),
+        ], accessGate: gate)
+        let model = GlobalSearchModel(service: service, debounce: {})
+        await model.prepare(in: rootURL)
+        model.query = "old"
+        await model.search(in: rootURL)
+        let refresh = Task { await model.fileAccessDidChange(in: rootURL) }
+        await gate.waitUntilEntered()
+        #expect(model.results.isEmpty)
+        model.query = "latest"
+        if shutdown { await model.shutdown() }
+        await gate.release()
+        await refresh.value
+        #expect(model.results == (shutdown ? [] : [latest]))
+        #expect(await service.recordedCalls().map(\.query) == (shutdown ? ["old"] : ["old", "latest"]))
+        if !shutdown { await model.shutdown() }
+    }
+
     @Test("Index preparation gates search and runs the latest queued query when ready")
     func preparationGatesSearchUntilReady() async {
         let result = globalResult(named: "needle.txt")
@@ -309,16 +334,23 @@ private actor GlobalSearchServiceStub: GlobalSearchServicing {
     private let error: GlobalSearchTestError?
     private var calls: [GlobalSearchCall] = []
     private var shutdowns = 0
+    private let accessGate: FolderComparisonTestGate?
 
     init(
         pages: [String: GlobalSearchPage],
-        error: GlobalSearchTestError? = nil
+        error: GlobalSearchTestError? = nil,
+        accessGate: FolderComparisonTestGate? = nil
     ) {
         self.pages = pages
         self.error = error
+        self.accessGate = accessGate
     }
 
     func prepare(rootURL: URL) async throws {}
+
+    func fileAccessDidChange(rootURL: URL) async throws {
+        await accessGate?.pause()
+    }
 
     func search(
         rootURL: URL,

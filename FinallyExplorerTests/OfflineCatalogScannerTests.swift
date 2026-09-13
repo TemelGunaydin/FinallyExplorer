@@ -1,8 +1,28 @@
 import Foundation
+import Darwin
 import Testing
 @testable import FinallyExplorer
 
 struct OfflineCatalogScannerTests {
+    @Test("A selected subfolder can be cataloged and revealed without opening the disk root")
+    func nonReadableVolumeParent() async throws {
+        let fixture = try OfflineCatalogTestFixture()
+        defer {
+            _ = chmod(fixture.files.source.path, 0o700)
+            fixture.remove()
+        }
+        let file = try fixture.files.write("Reports/Invoice.pdf", "data")
+        #expect(chmod(fixture.files.source.path, 0o111) == 0)
+        #expect(throws: FolderComparisonError.fileSystem(fixture.files.source.path, EACCES)) {
+            try ScopedFolderDescriptor(rootURL: fixture.files.source)
+        }
+        let source = try await fixture.access.source(for: file.deletingLastPathComponent())
+        let snapshot = try await OfflineCatalogScanner(volumes: fixture.access).scan(source, includesHidden: false, progress: { _ in })
+        #expect(snapshot.entries.map(\.relativePath) == ["Invoice.pdf"])
+        #expect(try await fixture.access.source(for: snapshot.summary).rootURL == file.deletingLastPathComponent())
+        #expect(try await fixture.access.reveal(snapshot.entries[0], in: snapshot.summary) == file)
+    }
+
     @Test("Cataloging saves metadata only and never needs to read file contents")
     func metadataOnly() async throws {
         let fixture = try OfflineCatalogTestFixture()

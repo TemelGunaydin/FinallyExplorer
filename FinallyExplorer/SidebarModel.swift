@@ -89,17 +89,17 @@ nonisolated enum SidebarBuiltInPlace: String, CaseIterable, Identifiable, Hashab
                 in: .localDomainMask
             ).first
         case .desktop:
-            FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+            UserHomeDirectory.standardFolder("Desktop")
         case .documents:
-            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            UserHomeDirectory.standardFolder("Documents")
         case .downloads:
-            FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            UserHomeDirectory.standardFolder("Downloads")
         case .pictures:
-            FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+            UserHomeDirectory.standardFolder("Pictures")
         case .music:
-            FileManager.default.urls(for: .musicDirectory, in: .userDomainMask).first
+            UserHomeDirectory.standardFolder("Music")
         case .movies:
-            FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
+            UserHomeDirectory.standardFolder("Movies")
         case .systemDrive:
             URL(filePath: "/", directoryHint: .isDirectory)
         }

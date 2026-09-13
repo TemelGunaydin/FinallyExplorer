@@ -123,6 +123,24 @@ actor FFFSearchEnginePool {
         }
     }
 
+    /// Refresh only an index that already exists (including one still starting).
+    /// The temporary lease prevents a closing pane from shutting it down halfway
+    /// through access refresh. An idle search must not start a whole-disk scan.
+    func refreshExistingIndexAfterAccessChange(rootURL: URL) async throws {
+        let key = Self.canonicalRootURL(rootURL)
+        guard entries[key] != nil else { return }
+        let engine = try await acquire(rootURL: key)
+        do {
+            try await engine.waitForInitialScan()
+            try Task.checkCancellation()
+            try await engine.rescan()
+            await release(engine, rootURL: key)
+        } catch {
+            await release(engine, rootURL: key)
+            throw error
+        }
+    }
+
     func leaseCount(for rootURL: URL) -> Int {
         switch entries[Self.canonicalRootURL(rootURL)] {
         case let .ready(_, leaseCount):

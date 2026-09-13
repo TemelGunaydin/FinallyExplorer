@@ -34,10 +34,12 @@ nonisolated protocol GlobalSearchServicing: Sendable {
 
     func waitForInitialScan(rootURL: URL) async throws
     func rebuildContentIndex(rootURL: URL) async throws
+    func fileAccessDidChange(rootURL: URL) async throws
     func shutdown() async
 }
 
 extension GlobalSearchServicing {
+    func fileAccessDidChange(rootURL: URL) async throws { }
     func waitForInitialScan(rootURL: URL) async throws {
         try await prepare(rootURL: rootURL)
     }
@@ -375,6 +377,12 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
               engineRootURL == rootURL else {
             throw CancellationError()
         }
+    }
+
+    func fileAccessDidChange(rootURL: URL) async throws {
+        usesFFFNameFallback = false
+        consecutiveSpotlightFailures = 0
+        try await enginePool.refreshExistingIndexAfterAccessChange(rootURL: rootURL)
     }
 
     func shutdown() async {

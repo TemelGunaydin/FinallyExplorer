@@ -67,6 +67,7 @@ final class GlobalSearchModel {
     @ObservationIgnored private var warmupTask: Task<Void, Never>?
     @ObservationIgnored private var rebuildGeneration = 0
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
+    @ObservationIgnored private var accessRefreshGeneration = 0
 
     init(
         service: (any GlobalSearchServicing)? = nil,
@@ -442,6 +443,30 @@ final class GlobalSearchModel {
                 self.isPreparingResults = false
                 self.message = .error(error.localizedDescription)
             }
+        }
+    }
+
+    func fileAccessDidChange(in rootURL: URL) async {
+        accessRefreshGeneration += 1
+        let generation = accessRefreshGeneration
+        let lifecycle = lifecycleGeneration
+        requestGeneration += 1
+        cancelWarmup()
+        resetVisibleState()
+        do {
+            try await service.fileAccessDidChange(rootURL: rootURL)
+            try Task.checkCancellation()
+            guard generation == accessRefreshGeneration, lifecycle == lifecycleGeneration else { return }
+            // Search the latest input, not a query captured before the await.
+            if hasQuery, isIndexReady(in: rootURL) {
+                await search(in: rootURL, applyingDebounce: false)
+            }
+        } catch is CancellationError {
+            // A newer access revision or view lifetime owns the next refresh.
+        } catch {
+            guard generation == accessRefreshGeneration, lifecycle == lifecycleGeneration,
+                  Task.isCancelled == false else { return }
+            message = .error(error.localizedDescription)
         }
     }
 

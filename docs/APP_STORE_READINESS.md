@@ -1,6 +1,6 @@
 # App Store preparation — September 13, 2026
 
-This is an incremental implementation record, not a declaration that the app is ready for submission. The App Sandbox and app-icon blockers are still open. Do not upload this build as a release candidate yet.
+This is an incremental implementation record, not a declaration that the app is ready for submission. App Sandbox is now enabled, but native permission/relaunch acceptance and the app-icon blocker are still open. Do not upload this build as a release candidate yet.
 
 ## Step 1 — Local product and legal website
 
@@ -46,35 +46,38 @@ Implemented before switching on the sandbox:
 - Permission/not-found refresh failures expose recovery instead of retaining a misleading stale directory listing. A directory-access error takes precedence over the folder's search-empty state.
 - Visual Search and Offline Catalog folder pickers share the persistent grant owner. Pane listing and local search requests refresh after a new grant. The named-account Home lookup no longer relies on the current-process home, which can be the sandbox container.
 
-This is a tested prerequisite, **not a completed sandbox migration**. Debug and Release still have `ENABLE_APP_SANDBOX = NO`. No foreground mouse/keyboard UI test was resumed.
+Step 3A was tested with `ENABLE_APP_SANDBOX = NO`. It was a prerequisite, not a completed sandbox migration; Step 3B below records the subsequent switch. No foreground mouse/keyboard UI test was resumed.
 
-### Next — Step 3B: finish access consumers, then enable and validate Sandbox
+## Step 3B — Access consumers and sandbox configuration
 
-Before the shipping sandbox switch:
+Implemented:
 
-- Complete temporary file-selection and external drag/paste scope ownership, including cancellation while document reading is still unwinding. Do not assume the persistent folder owner covers unrelated individually chosen files.
-- Refresh existing global FFF indexes after access changes without creating an eager whole-disk index. Pane-local invalidation is already connected.
-- Update Offline Catalog's selected-subfolder validation: `LocalOfflineVolumeAccess.scopedSource` currently opens the volume root before traversing into the selected folder. A narrow sandbox grant must not require access to that unselected parent. Preserve volume identity, inode, symlink, and placeholder checks.
-- Validate standard Desktop/Documents/Downloads/media paths, preference/container migration, terminal/Open With handoff, and ZIP subprocess behavior with sandbox entitlements. The named-user Home change alone is not proof of all sandboxed standard-folder behavior.
-- Enable the minimal entitlements only after these consumers are ready. Check fresh sandboxed Release launch and relaunch with synthetic fixtures. The user-paused foreground UI session still requires explicit resumption.
+- Debug and Release use a shared entitlements file: App Sandbox, user-selected read/write, app-scoped bookmarks, and the existing Downloads read/write capability. No network, Apple Events, privileged-helper, executable-writing, or broad filesystem exception was added to the app's entitlements.
+- Individually selected documents adopt the panel's implicit scope. Read, answer and source-validation tasks retain their lease until cancellation actually unwinds, even after Clear or the model is released. Replacing/clearing selection releases the previous grant. Document selection itself is cancellable and mutually exclusive with document work.
+- Existing global FFF indexes rescan after folder-access changes using a temporary balanced pool lease. An idle pool remains idle. The model uses the latest query and rejects completion after shutdown/cancellation. Pane-local invalidation remains in place.
+- Offline Catalog validates volume identity, selected-root inode and every ancestor's metadata before/after opening only the selected folder. It no longer opens the disk root's directory contents first. Comparison/verified-copy ancestry checks likewise use metadata without opening unselected parents. Symlink, placeholder and identity checks remain.
+- A real sandbox-host test showed that Foundation's named-user Home lookup still returned the container on this system. A bounded, reentrant `getpwuid_r` lookup now identifies the account Home. Desktop/Documents/Downloads/media URLs are built from that location; this does not grant access to their contents.
+- `container-migration.plist` names **only** `${ApplicationSupport}/FinallyExplorer/OfflineCatalogs`. It does not request migration of user documents, caches, other apps' data or an entire Home folder. Actual first-container migration and preservation of existing preferences still need the acceptance pass below; no existing user container was deleted/reset for testing.
+- ZIP creation copies the selected source into app-owned temporary storage before invoking system `ditto`, so the helper does not need a Powerbox grant owned by the parent process. The app stages/publishes the resulting archive without overwriting a collision. Folder archives retain their root; single-file archives no longer acquire an extra parent directory. A concurrent drain consumes all stderr while retaining at most 16 KiB, removing the pipe-buffer deadlock risk. Temporary copies require additional disk space; cleanup is attempted on success, error and cancellation. App and local website privacy drafts disclose this behavior and possible crash/cleanup leftovers.
+- Drag/drop and clipboard inspection confirmed the existing implementation is **app-internal**, using opaque process-local tokens/in-memory URLs. No external Finder drop/paste import was introduced or claimed. Its existing regression tests remain; remembered folder scopes last for the app session.
+- Terminal and Open With continue using `NSWorkspace` handoff. No AppleScript or new shell-command execution was introduced for those features. Their deterministic/mocked tests do not prove live sandbox handoff.
+- Test fixtures now load corpus images and notices from bundles, and write diagnostic images into the app's temporary directory instead of global `/tmp`. Tests do not require adding a source-repository access grant. The complete bundled FFF license is checked against the audited vendored file's SHA-256.
 
-### Full sandbox acceptance checklist
+### Native sandbox acceptance — still pending user resumption
 
-This is the next substantial implementation step. It must be completed as a coherent change before enabling App Sandbox in both shipping and development configurations.
+XCTest injects a read-only `/` exception and testmanager Mach exceptions into its host. Runtime entitlement assertions prove the sandbox is on, **not** that a normal Release app has the same access. No foreground input was automated in this step.
 
-1. Add a small security-scoped bookmark store and explicit user-selected-folder grant flow. Handle cancel, stale bookmarks, moved folders, and revocation without losing favorites or misreporting an inaccessible folder as empty.
-2. Restore valid grants before browsing/search/tool models start. URLs alone are not persistent access. Verify the real user-home location separately from the sandbox container.
-3. Carry scope through browsing, previews, search, drag/drop, file operations, catalogs, and document/image analysis; balance start/stop access. Do not silently replace a narrow grant with a whole-disk request.
-4. Replace permission dead ends with a folder chooser/retry path. Retain System Settings guidance only for applicable macOS privacy denial.
-5. Enable the minimum app-sandbox and user-selected read/write entitlements, then test a fresh install and relaunch with the **sandboxed Release build**. Check archive subprocess behavior and terminal/Open With handoff explicitly.
-6. Regression matrix: grant/deny/cancel; stale/missing volume; Desktop/Documents/Downloads; 1–4 panes; copy/move/rename/Trash/ZIP; search/preview; Tools and AI with unavailable models. Use synthetic fixtures, not private user data.
+1. Use the non-test sandboxed Release app with a fresh test profile/container. Never delete the user's existing container, favorites, catalogs, permissions, or files to obtain a clean test.
+2. Native chooser grant/deny/cancel, individual document selection, stale/moved folders, unplug/reconnect and relaunch. Confirm saved favorites/AI settings/terminal choice and catalogs survive first-container migration. A container already created by development tests will not establish first-launch migration behavior.
+3. Select only a synthetic subfolder, not its parent. Exercise listing, preview, local search, **global name/content/grep search discovery through ungranted ancestors**, Visual Search, document questions and offline catalog rescan/reveal. A test-root FFF rescan does not establish global discovery under a narrow native grant.
+4. Exercise 1–4 panes and internal cross-pane drag/paste; create/rename/copy/move/Trash/ZIP. Check ZIP cancellation while staging/compressing, failure/cleanup, and low-space behavior. No unselected sibling should be read or modified.
+5. Check live Terminal/Open With handoff using synthetic fixtures, unavailable AI models, recovery copy and Settings/legal/Tools keyboard regressions.
 
-This migration is not complete. A working unsandboxed Debug build is not evidence that the Mac App Store build will work.
+Code integration is complete for this increment, but the sandbox migration is **not accepted for shipping** until this matrix passes. Background tests and a successful Release build are not App Store approval.
 
 ## Remaining review items
 
 - **App icon:** fill the empty AppIcon asset and verify the compiled icon resources at all required sizes. The website's small identity mark is not a replacement for the app's icon asset.
-- **Archive error handling:** `compressItem` currently waits for the process before draining stderr. Add bounded concurrent draining and a regression that produces more than a pipe buffer of diagnostics, plus cancellation/cleanup tests. The risk was found in code review, not reproduced in the UI.
 - **Shipping artifact:** archive/export and inspect the actual sandboxed, distribution-signed Release app, including embedded FFF signing/resources. Require sandbox entitlements and no `get-task-allow` in the distributed artifact. The current locally built Release app still has development `get-task-allow = true`; do not distribute it. Build success alone is not submission readiness.
 - **Public legal/support URLs:** publish only after user approval and legal/provider checks; verify every URL before entering App Store Connect. Re-test the app's offline documents and live web access.
 - **Commerce:** decide paid-up-front versus an in-app lifetime unlock/trial. Do not add a paywall or price until the commercial terms are confirmed. If IAP is chosen, implement and test purchase, restore, entitlement persistence, failure/cancel, and offline behavior.
@@ -90,12 +93,19 @@ This migration is not complete. A working unsandboxed Debug build is not evidenc
 - The inspected Release build is still **unsandboxed and missing its app icon**. It is not an archived/exported App Store candidate, and the public legal website is not deployed. These remain submission gates, regardless of the successful build.
 - Step 3A full background regression: **603 tests passed, 0 failures/skips** using XcodeBuildMCP. Result bundle: `test_macos_2026-09-13T11-55-14-775Z_pid86286_05eddc42.xcresult`. Includes 21 new access tests: persistence/relaunch, native macOS bookmark codec and real fixture rename, duplicate scopes, balanced release, panel cancel/failure, stale/missing/denied records, storage rollback/corruption, repeated/nested moves, reused old paths, remote-URL rejection, and named-account Home lookup. These tests ran with the current **unsandboxed** app host and synthetic fixtures; they do not establish sandboxed cross-process grant/relaunch behavior or replace native-panel UI testing.
 - Step 3A XcodeBuildMCP **Release build succeeded**. Log: `build_macos_2026-09-13T11-57-53-343Z_pid86592_af84fed5.log`. This is a build check, not an archive/export, App Store validation, or foreground UI pass. No push, deployment, or submission was performed.
+- Step 3B first targeted run: **62 tests passed** with the sandboxed XCTest host. The subsequent full run caught a container-based Home lookup, an unwanted parent directory in single-file ZIPs, and a directory-URL hint mismatch in a new narrow-parent test. These were corrected. The first real scanned-PDF OCR attempt hit the existing 15-second page timeout; the unchanged timeout passed on the targeted rerun and final full run. No test was disabled or expectation weakened to suppress that timeout.
+- The installed Xcode/macOS 27 SDK reproducibly reported an invalid inferred `nonisolated` modifier on an unchanged OCR test actor only in batch compilation. The same sources compile per-file. `SWIFT_ENABLE_BATCH_MODE = NO` is set **only on FinallyExplorerTests**, in both configurations; app compilation and actor-isolation checks are unchanged. Revisit this build-time workaround after updating the toolchain.
+- Step 3B final full background regression: **618 tests across 85 suites passed, 0 failures/skips**, through XcodeBuildMCP with the project defaults (only parallel test execution was disabled). Result bundle: `test_macos_2026-09-13T15-59-38-234Z_pid1820_31c826f5.xcresult`; log: `test_macos_2026-09-13T15-59-38-233Z_pid1820_8a3a59ec.log`. Includes lease ownership after Clear/deallocation, replacement and balanced stop; global refresh/lifecycle/pool behavior; narrow-parent catalog and verified copy; real `ditto` round trips, Unicode/hidden files and symlinks, collision preservation, cancellation before work, and a 2 MB diagnostics drain with a 4 KiB retained prefix. This remains background/model/existing window-hosted regression coverage, not the pending native chooser/relaunch acceptance.
+- Step 3B XcodeBuildMCP **Release build succeeded**. Log: `build_macos_2026-09-13T16-02-03-565Z_pid2494_893935b2.log`. Artifact: `/tmp/FinallyExplorer-Sandbox-XcodeBuildMCP/Build/Products/Release/FinallyExplorer.app`. `codesign --verify --deep --strict` passes, including embedded `libFFF.dylib`; the first restricted-environment trust check failed, and the identical read-only check with normal certificate access passed. No signing/trust setting was changed.
+- Release entitlement inspection confirms App Sandbox, app-scoped bookmarks, user-selected read/write and Downloads read/write. **No XCTest filesystem/Mach exceptions are present in Release.** Development `get-task-allow = true` is still present; this is not a distribution-signed archive/export. The legal documents and narrowly scoped migration manifest are bundled; the FFF notice matches the vendored license byte for byte. App icon, fresh permission/relaunch acceptance and distribution validation remain open.
+- Local website privacy disclosure is synchronized with the app and passes `node scripts/validate.mjs` (four pages, 72 references, layout state/accessibility checks). Website commit: `2476411`. Nothing was pushed, deployed or submitted; the paused foreground input tests were not resumed.
 
 ## Official references
 
 - [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) — Mac App Store sandbox, completeness, privacy, and support expectations.
 - [Accessing files from the macOS App Sandbox](https://developer.apple.com/documentation/security/accessing-files-from-the-macos-app-sandbox).
 - [Configuring the macOS App Sandbox](https://developer.apple.com/documentation/xcode/configuring-the-macos-app-sandbox).
+- [Migrating your app's files to its App Sandbox container](https://developer.apple.com/documentation/security/migrating-your-app-s-files-to-its-app-sandbox-container).
 - [App privacy details](https://developer.apple.com/app-store/app-privacy-details/).
 - [Apple Standard EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/).
 

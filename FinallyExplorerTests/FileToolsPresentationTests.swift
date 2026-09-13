@@ -185,7 +185,7 @@ struct FileToolsPresentationTests {
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         let png = try #require(bitmap.representation(using: .png, properties: [:]))
         #expect(png.count > 1_000)
-        try png.write(to: URL(filePath: "/tmp/FinallyExplorer-\(name)-\(dark ? "dark" : "light").png"), options: .atomic)
+        try png.write(to: URL.temporaryDirectory.appending(path: "FinallyExplorer-\(name)-\(dark ? "dark" : "light").png"), options: .atomic)
     }
 }
 

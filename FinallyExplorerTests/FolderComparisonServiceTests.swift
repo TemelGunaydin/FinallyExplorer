@@ -5,6 +5,27 @@ import Testing
 @testable import FinallyExplorer
 
 struct FolderComparisonServiceTests {
+    @Test("Comparison and verified copy need no directory-content access to unselected parents")
+    func nonReadableParent() async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer {
+            _ = chmod(fixture.root.path, 0o700)
+            fixture.remove()
+        }
+        try fixture.write("Report.txt", "Copy within selected folders")
+        #expect(chmod(fixture.root.path, 0o111) == 0)
+        #expect(throws: FolderComparisonError.fileSystem(fixture.root.path, EACCES)) {
+            try ScopedFolderDescriptor(rootURL: fixture.root)
+        }
+        let snapshot = try await fixture.compare()
+        #expect(snapshot.rows.count == 1)
+        let plan = try VerifiedCopyPlan(snapshot: snapshot)
+        let report = await VerifiedCopyService().copy(plan, progress: { _ in })
+        #expect(report.errorMessage == nil)
+        #expect(report.verifiedFiles == ["Report.txt"])
+        #expect(try String(contentsOf: fixture.destination.appending(path: "Report.txt"), encoding: .utf8) == "Copy within selected folders")
+    }
+
     @Test("Comparison hashes data, not names, size or modification date alone")
     func dataComparison() async throws {
         let fixture = try FolderComparisonTestFixture()

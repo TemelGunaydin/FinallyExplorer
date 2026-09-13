@@ -401,6 +401,30 @@ struct FFFSearchEngineTests {
         }
     }
 
+    @Test("Permission refresh neither creates an idle index nor steals an active lease")
+    func accessRefreshPreservesPoolOwnership() async throws {
+        let root = try makeFFFTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pool = FFFSearchEnginePool()
+        try await pool.refreshExistingIndexAfterAccessChange(rootURL: root)
+        #expect(await pool.activeIndexCount() == 0)
+        let engine = try await pool.acquire(rootURL: root)
+        do {
+            try await engine.waitForInitialScan()
+            let file = root.appending(path: "GrantedMarker.txt")
+            try Data("new grant contents".utf8).write(to: file)
+            try await pool.refreshExistingIndexAfterAccessChange(rootURL: root)
+            try await engine.waitForInitialScan()
+            #expect(await pool.leaseCount(for: root) == 1)
+            #expect(try await engine.searchFiles(query: "GrantedMarker").contains { $0.url == file })
+            await pool.release(engine, rootURL: root)
+            #expect(await pool.activeIndexCount() == 0)
+        } catch {
+            await pool.release(engine, rootURL: root)
+            throw error
+        }
+    }
+
     @Test("A per-root pool shares one index until its final lease is released")
     func sharedEnginePoolReferenceCountsLeases() async throws {
         let root = try makeFFFTemporaryDirectory()

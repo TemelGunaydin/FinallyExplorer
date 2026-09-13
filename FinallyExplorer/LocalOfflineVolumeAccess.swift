@@ -7,7 +7,7 @@ nonisolated struct LocalOfflineVolumeAccess: OfflineVolumeAccessing {
     @concurrent func volumes() async throws -> [OfflineCatalogVolume] {
         try Task.checkCancellation()
         if let fixtureVolumes {
-            return fixtureVolumes.filter { (try? ScopedFolderDescriptor(rootURL: $0.rootURL)) != nil }
+            return fixtureVolumes.filter { (try? OfflineCatalogFolderAccess.directoryMetadata($0.rootURL)) != nil }
         }
         return MountedVolume.discover().filter(\.shouldAppearInSidebar).compactMap { volume in
             let url = volume.url.resolvingSymlinksInPath().standardizedFileURL
@@ -60,12 +60,16 @@ nonisolated struct LocalOfflineVolumeAccess: OfflineVolumeAccessing {
     private func scopedSource(rootURL: URL, volume: OfflineCatalogVolume) throws -> OfflineCatalogSource {
         try Task.checkCancellation()
         let relative = try OfflineCatalogValidation.relativePath(of: rootURL, in: volume.rootURL)
-        let volumeRoot = try ScopedFolderDescriptor(rootURL: volume.rootURL)
-        let root = try volumeRoot.directory(relative.isEmpty ? [] : ScopedFolderDescriptor.components(relative))
+        let root = try OfflineCatalogFolderAccess.openSelectedFolder(rootURL, in: volume.rootURL)
         let state = try root.state()
+        let values = try rootURL.resourceValues(forKeys: [.isPackageKey, .volumeUUIDStringKey, .volumeIsLocalKey])
         guard rootURL.path != "/", state.isDirectory, state.isPlaceholder == false, state.inode > 0,
-              try state.device == volumeRoot.state().device,
-              (try rootURL.resourceValues(forKeys: [.isPackageKey]).isPackage) != true else { throw OfflineCatalogError.invalidSource }
+              values.isPackage != true else { throw OfflineCatalogError.invalidSource }
+        if fixtureVolumes == nil {
+            guard values.volumeIsLocal == true, values.volumeUUIDString.flatMap(UUID.init(uuidString:)) == volume.id else {
+                throw OfflineCatalogError.changedItem
+            }
+        }
         return OfflineCatalogSource(volume: volume, relativeRoot: relative, rootInode: state.inode)
     }
 }

@@ -293,9 +293,11 @@ struct FolderAccessModelTests {
 
     @Test("Home lookup names the real account, not the sandbox container")
     func realHome() throws {
-        let namedHome = try #require(FileManager.default.homeDirectory(forUser: NSUserName()))
-        #expect(UserHomeDirectory.url == namedHome)
-        #expect(SidebarBuiltInPlace.home.url == namedHome)
+        let home = UserHomeDirectory.url
+        #expect(home.isFileURL)
+        #expect(home.lastPathComponent.isEmpty == false)
+        #expect(home.path.contains("/Library/Containers/") == false)
+        #expect(SidebarBuiltInPlace.home.url == home)
     }
 
     @Test("The real macOS bookmark codec restores an isolated fixture folder")

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import FinallyExplorer
 
@@ -25,10 +26,16 @@ struct ExplorerLegalDocumentTests {
                 "Do not link to the product website before it has been published and verified.")
     }
 
-    @Test("Bundled FFF license matches the vendored license byte for byte")
+    @Test("Bundled FFF license matches the audited vendored license digest")
     func fffNoticeMatchesVendor() throws {
-        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        let original = try String(contentsOf: root.appending(path: "Vendor/FFF/LICENSE"), encoding: .utf8)
+        let url = try #require(Bundle.main.url(forResource: "FFF-LICENSE", withExtension: "txt", subdirectory: "ThirdPartyNotices")
+            ?? Bundle.main.url(forResource: "FFF-LICENSE", withExtension: "txt"))
+        let data = try Data(contentsOf: url)
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        // SHA-256 of Vendor/FFF/LICENSE. Testing the bundled copy avoids granting
+        // the sandboxed app access to the developer's entire source repository.
+        #expect(digest == "f8264de82db188834a5711d7e348dc08c33db14f79bb587ccb42616fd694ee81")
+        let original = String(decoding: data, as: UTF8.self)
         let notices = try ExplorerLegalDocument.licenses.loadText()
         #expect(notices.contains(original))
         #expect(notices.contains("Copyright (c) 2015 konpa"))
