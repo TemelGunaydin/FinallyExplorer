@@ -15,7 +15,7 @@ nonisolated enum FFFRootScanPolicy {
 
     static func allowsHomeDirectoryScanning(
         for rootURL: URL,
-        homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        homeDirectoryURL: URL = UserHomeDirectory.url
     ) -> Bool {
         canonicalPath(for: rootURL) == canonicalPath(for: homeDirectoryURL)
     }

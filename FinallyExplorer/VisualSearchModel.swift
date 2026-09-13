@@ -25,14 +25,17 @@ final class VisualSearchModel {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var searchGeneration = 0
+    @ObservationIgnored private let folderAccess: FolderAccessModel?
 
     init(service: any VisualSearchScanning = VisualSearchService(),
          interpreter: any VisualDescriptionInterpreting = FoundationModelsVisualInterpreter(),
-         now: @escaping @Sendable () -> Date = { .now }, calendar: Calendar = .current) {
+         now: @escaping @Sendable () -> Date = { .now }, calendar: Calendar = .current,
+         folderAccess: FolderAccessModel? = nil) {
         self.service = service
         self.interpreter = interpreter
         self.now = now
         self.calendar = calendar
+        self.folderAccess = folderAccess
     }
     deinit { task?.cancel(); searchTask?.cancel() }
 
@@ -49,10 +52,15 @@ final class VisualSearchModel {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose Folder"
-        panel.message = "Images inside this folder are read only when you select Analyze Folder."
+        panel.message = "Folder access is remembered on this Mac. Images are analyzed only when you select Analyze Folder."
         panel.directoryURL = sourceURL
         panel.begin { [weak self] response in
-            if response == .OK, let url = panel.url { self?.setSource(url) }
+            guard response == .OK, let url = panel.url else { return }
+            guard let self else { url.stopAccessingSecurityScopedResource(); return }
+            do {
+                let selectedURL = try folderAccess?.acceptPanelSelection(url) ?? url
+                setSource(selectedURL)
+            } catch { errorMessage = error.localizedDescription }
         }
     }
 

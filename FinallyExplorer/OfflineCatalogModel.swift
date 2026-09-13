@@ -34,14 +34,16 @@ final class OfflineCatalogModel: Identifiable {
     @ObservationIgnored private var folderPanel: NSOpenPanel?
     @ObservationIgnored private var searchGeneration = 0
     @ObservationIgnored private var connectionGeneration = 0
+    @ObservationIgnored private let folderAccess: FolderAccessModel?
 
     init(store: any OfflineCatalogStoring = OfflineCatalogStore.shared,
          volumes: any OfflineVolumeAccessing = LocalOfflineVolumeAccess(), scanner: (any OfflineCatalogScanning)? = nil,
-         now: @escaping @Sendable () -> Date = { .now }) {
+         now: @escaping @Sendable () -> Date = { .now }, folderAccess: FolderAccessModel? = nil) {
         self.store = store
         self.volumes = volumes
         self.scanner = scanner ?? OfflineCatalogScanner(volumes: volumes)
         self.now = now
+        self.folderAccess = folderAccess
     }
 
     deinit { task?.cancel(); searchTask?.cancel(); connectionTask?.cancel() }
@@ -98,17 +100,22 @@ final class OfflineCatalogModel: Identifiable {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.title = "Choose a Folder to Catalog"
-        panel.message = "Choose a folder on an external disk. Scan & Save will store names and metadata on this Mac, not file contents."
+        panel.message = "Choose a folder on an external disk. Access is remembered. Scan & Save stores names and metadata on this Mac, not file contents."
         panel.directoryURL = connectedVolumes.first?.rootURL
         guard begin("Choosing a folder…") else { return }
         folderPanel = panel
         task = Task { [weak self] in
             let response = await panel.begin()
-            guard let self else { return }
+            guard let self else {
+                if response == .OK { panel.url?.stopAccessingSecurityScopedResource() }
+                return
+            }
             folderPanel = nil
             finish()
-            guard Task.isCancelled == false, response == .OK, let url = panel.url else { return }
-            prepare(url)
+            guard response == .OK, let url = panel.url else { return }
+            guard Task.isCancelled == false else { url.stopAccessingSecurityScopedResource(); return }
+            do { prepare(try folderAccess?.acceptPanelSelection(url) ?? url) }
+            catch { errorMessage = error.localizedDescription }
         }
     }
 

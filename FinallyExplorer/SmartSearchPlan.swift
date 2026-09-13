@@ -118,7 +118,7 @@ nonisolated struct SmartSearchPlan: Equatable, Sendable {
         return String(decoding: try JSONEncoder().encode(fields), as: UTF8.self)
     }
 
-    func searchRoot(in rootURL: URL, homeURL: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> URL {
+    func searchRoot(in rootURL: URL, homeURL: URL = UserHomeDirectory.url) throws -> URL {
         let root = rootURL.standardizedFileURL.resolvingSymlinksInPath()
         guard FFFSearchValueMapper.isLocalFileURL(root) else {
             throw SmartSearchError.locationOutsideRoot

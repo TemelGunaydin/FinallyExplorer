@@ -82,7 +82,7 @@ nonisolated enum SidebarBuiltInPlace: String, CaseIterable, Identifiable, Hashab
     var url: URL? {
         switch self {
         case .home:
-            FileManager.default.homeDirectoryForCurrentUser
+            UserHomeDirectory.url
         case .applications:
             FileManager.default.urls(
                 for: .applicationDirectory,

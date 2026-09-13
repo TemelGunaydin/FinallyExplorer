@@ -36,12 +36,16 @@ struct ContentView: View {
     @State private var isDocumentQuestionsPresented = false
     @State private var isPreviewVisible = true
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var folderAccess: FolderAccessModel
 
     private let globalSearchRootURL: URL
     private let offlineCatalogStore: any OfflineCatalogStoring
     private let offlineVolumes: any OfflineVolumeAccessing
 
     init() {
+        let access = FolderAccessModel(store: MemoryFolderAccessBookmarkStore())
+        _folderAccess = State(initialValue: access)
+        _visualSearch = State(initialValue: VisualSearchModel(folderAccess: access))
         offlineCatalogStore = OfflineCatalogStore.shared
         offlineVolumes = LocalOfflineVolumeAccess()
         let rootURL = SidebarPlace.systemDrive.url
@@ -63,6 +67,7 @@ struct ContentView: View {
         aiSettings: ExplorerAISettings? = nil,
         offlineCatalogStore: any OfflineCatalogStoring = OfflineCatalogStore.shared,
         offlineVolumes: any OfflineVolumeAccessing = LocalOfflineVolumeAccess(),
+        folderAccess: FolderAccessModel? = nil,
         globalSearch: GlobalSearchModel? = nil,
         globalSearchRootURL: URL = URL(
             filePath: "/",
@@ -72,6 +77,9 @@ struct ContentView: View {
         self.globalSearchRootURL = globalSearchRootURL
         self.offlineCatalogStore = offlineCatalogStore
         self.offlineVolumes = offlineVolumes
+        let access = folderAccess ?? FolderAccessModel(store: MemoryFolderAccessBookmarkStore())
+        _folderAccess = State(initialValue: access)
+        _visualSearch = State(initialValue: VisualSearchModel(folderAccess: access))
         _workspace = State(initialValue: workspace)
         _fileOperations = State(initialValue: fileOperations)
         _fileOpenApplications = State(initialValue: fileOpenApplications)
@@ -339,7 +347,7 @@ struct ContentView: View {
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerChromeIconButtonStyle())
-                .help("Settings — Ask AI & Smart Rename")
+                .help("Settings — AI, Privacy & Folder Access")
                 .accessibilityIdentifier("window-settings-button")
             }
             .sharedBackgroundVisibility(.hidden)
@@ -359,6 +367,7 @@ struct ContentView: View {
         .fileOpenApplicationPresentation(coordinator: fileOpenApplications)
         .environment(terminalApplications)
         .environment(nearbyTransfers)
+        .environment(folderAccess)
         .focusedSceneValue(\.fileCommandContext, fileCommandContext)
     }
 
@@ -372,7 +381,7 @@ struct ContentView: View {
             guard let root = workspace.activePane?.displayedDirectory else { return }
             folderOrganization = FolderOrganizationModel(rootURL: root, operations: fileOperations)
         case .offlineCatalogs:
-            offlineCatalog = OfflineCatalogModel(store: offlineCatalogStore, volumes: offlineVolumes)
+            offlineCatalog = OfflineCatalogModel(store: offlineCatalogStore, volumes: offlineVolumes, folderAccess: folderAccess)
         case .visualSearch:
             if visualSearch.sourceURL == nil, let root = workspace.activePane?.displayedDirectory {
                 visualSearch.setSource(root)
@@ -401,6 +410,12 @@ struct ContentView: View {
         .onChange(of: focusedPaneID) {
             guard let focusedPaneID else { return }
             workspace.activate(focusedPaneID)
+        }
+        .onChange(of: folderAccess.revision, initial: true) {
+            for relocation in folderAccess.recoverableRelocations {
+                sidebar.applyRename(relocation)
+                workspace.applyRename(relocation)
+            }
         }
         .onChange(of: fileOperations.lastRenameResult) {
             guard let result = fileOperations.lastRenameResult else { return }
@@ -828,6 +843,7 @@ private nonisolated struct SearchLoadRequest: Hashable {
 
 private struct DestinationView: View {
     @Environment(FileOperationCoordinator.self) private var fileOperations
+    @Environment(FolderAccessModel.self) private var folderAccess
     @Environment(\.explorerTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -841,6 +857,8 @@ private struct DestinationView: View {
 
     @FocusState private var isDirectoryListFocused: Bool
     @State private var directoryRetryGeneration = 0
+    @State private var isChoosingFolderAccess = false
+    @State private var folderAccessError: String?
 
     private var directoryLoadRequest: DirectoryLoadRequest {
         DirectoryLoadRequest(
@@ -849,7 +867,7 @@ private struct DestinationView: View {
                 for: pane.displayedDirectory
             ),
             includesHiddenItems: pane.showsHiddenItems,
-            retryGeneration: directoryRetryGeneration
+            retryGeneration: directoryRetryGeneration + folderAccess.revision
         )
     }
 
@@ -858,7 +876,7 @@ private struct DestinationView: View {
             request: pane.searchModel.request(in: pane.displayedDirectory),
             operationRevision: fileOperations.recursiveRefreshRevision(
                 for: pane.displayedDirectory
-            )
+            ) + folderAccess.revision
         )
     }
 
@@ -1244,7 +1262,16 @@ private struct DestinationView: View {
     private var directoryBody: some View {
         @Bindable var pane = pane
 
-        if pane.searchModel.isSearchActive {
+        if let accessError = pane.directoryAccessError {
+            DirectoryAccessUnavailableView(
+                error: accessError,
+                openPrivacySettings: { SystemPrivacySettingsOpener.openFilesAndFolders() },
+                chooseFolder: chooseFolderAccess,
+                retry: { directoryRetryGeneration += 1 },
+                isChoosing: isChoosingFolderAccess,
+                selectionError: folderAccessError
+            )
+        } else if pane.searchModel.isSearchActive {
             ExplorerSearchResultsView(
                 paneID: pane.id,
                 sidebar: sidebar,
@@ -1260,13 +1287,6 @@ private struct DestinationView: View {
         } else if pane.isLoading {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let accessError = pane.directoryAccessError {
-            DirectoryAccessUnavailableView(
-                error: accessError,
-                openPrivacySettings: {
-                    SystemPrivacySettingsOpener.openFilesAndFolders()
-                }
-            )
         } else if let errorMessage = pane.errorMessage {
             ContentUnavailableView(
                 "Unable to Access Folder",
@@ -1382,6 +1402,31 @@ private struct DestinationView: View {
         }
     }
 
+    private func chooseFolderAccess() {
+        guard isChoosingFolderAccess == false else { return }
+        let requestedURL = pane.displayedDirectory
+        isChoosingFolderAccess = true
+        folderAccessError = nil
+        Task {
+            defer { isChoosingFolderAccess = false }
+            do {
+                guard let selectedURL = try await FolderAccessPicker.choose(using: folderAccess, startingAt: requestedURL),
+                      pane.displayedDirectory == requestedURL else { return }
+                let coversRequestedFolder = requestedURL.flatMap {
+                    FileURLRelocation.rebase($0.resolvingSymlinksInPath(), from: selectedURL.resolvingSymlinksInPath(), to: selectedURL)
+                } != nil
+                if coversRequestedFolder {
+                    directoryRetryGeneration += 1
+                } else {
+                    // An unrelated selection grants only that folder; never claim it
+                    // unlocked the original location or silently request a parent.
+                    pane.searchModel.clear()
+                    pane.navigation.open(selectedURL)
+                }
+            } catch { folderAccessError = error.localizedDescription }
+        }
+    }
+
     private func loadDirectoryContents(_ request: DirectoryLoadRequest) async {
         let requestedURL = request.directoryURL
         guard let requestedURL else {
@@ -1440,7 +1485,12 @@ private struct DestinationView: View {
         } catch let error as DirectoryAccessError {
             guard Task.isCancelled == false,
                   requestedURL == pane.displayedDirectory else { return }
-            if isInPlaceRefresh {
+            let needsAccessRecovery: Bool
+            switch error {
+            case .permissionDenied, .notFound: needsAccessRecovery = true
+            default: needsAccessRecovery = false
+            }
+            if isInPlaceRefresh && needsAccessRecovery == false {
                 fileOperations.presentExternalNotice(
                     message: "Couldn’t refresh folder",
                     systemImage: "exclamationmark.triangle.fill"

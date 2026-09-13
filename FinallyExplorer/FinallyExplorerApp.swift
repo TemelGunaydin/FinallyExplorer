@@ -22,6 +22,7 @@ struct FinallyExplorerApp: App {
     @State private var themeController: ExplorerThemeController
     @State private var aiSettings: ExplorerAISettings
     @State private var offlineCatalogStore: OfflineCatalogStore
+    @State private var folderAccess: FolderAccessModel
     private let offlineVolumes: LocalOfflineVolumeAccess
 
     init() {
@@ -30,6 +31,11 @@ struct FinallyExplorerApp: App {
 
     init(launchConfiguration: ExplorerLaunchConfiguration) {
         self.launchConfiguration = launchConfiguration
+        // Restore process-wide scopes before the workspace or any file tool starts.
+        let folderAccess = FolderAccessModel(store: UserDefaultsFolderAccessBookmarkStore(
+            defaults: Self.isolatedDefaults(for: launchConfiguration) ?? .standard
+        ))
+        _folderAccess = State(initialValue: folderAccess)
         let catalogRoot = (launchConfiguration.fixtureRoot ?? URL.temporaryDirectory.appending(path: "FinallyExplorer-UI-\(UUID())"))
             .appending(path: ".offline-catalog-storage")
         _offlineCatalogStore = State(initialValue: launchConfiguration.isUITesting ? OfflineCatalogStore(rootURL: catalogRoot) : .shared)
@@ -98,6 +104,7 @@ struct FinallyExplorerApp: App {
                 aiSettings: aiSettings,
                 offlineCatalogStore: offlineCatalogStore,
                 offlineVolumes: offlineVolumes,
+                folderAccess: folderAccess,
                 globalSearchRootURL: launchConfiguration.fixtureRoot
                     ?? URL(filePath: "/", directoryHint: .isDirectory)
             )
@@ -109,7 +116,7 @@ struct FinallyExplorerApp: App {
         }
 
         Settings {
-            ExplorerSettingsView(settings: aiSettings)
+            ExplorerSettingsView(settings: aiSettings, folderAccess: folderAccess)
                 .environment(\.explorerTheme, themeController.activeTheme)
         }
         .windowResizability(.contentSize)
