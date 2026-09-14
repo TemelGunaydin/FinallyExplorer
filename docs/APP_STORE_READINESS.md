@@ -1,4 +1,4 @@
-# App Store preparation — September 13, 2026
+# App Store preparation — September 14, 2026
 
 This is an incremental implementation record, not a declaration that the app is ready for submission. App Sandbox is now enabled, but native permission/relaunch acceptance and the app-icon blocker are still open. Do not upload this build as a release candidate yet.
 
@@ -63,7 +63,7 @@ Implemented:
 - Terminal and Open With continue using `NSWorkspace` handoff. No AppleScript or new shell-command execution was introduced for those features. Their deterministic/mocked tests do not prove live sandbox handoff.
 - Test fixtures now load corpus images and notices from bundles, and write diagnostic images into the app's temporary directory instead of global `/tmp`. Tests do not require adding a source-repository access grant. The complete bundled FFF license is checked against the audited vendored file's SHA-256.
 
-### Native sandbox acceptance — still pending user resumption
+### Native sandbox acceptance — pending; automation connection blocked
 
 XCTest injects a read-only `/` exception and testmanager Mach exceptions into its host. Runtime entitlement assertions prove the sandbox is on, **not** that a normal Release app has the same access. No foreground input was automated in this step.
 
@@ -75,6 +75,19 @@ XCTest injects a read-only `/` exception and testmanager Mach exceptions into it
 
 Code integration is complete for this increment, but the sandbox migration is **not accepted for shipping** until this matrix passes. Background tests and a successful Release build are not App Store approval.
 
+### September 14 — Isolated native acceptance preparation
+
+The user authorized resuming the native acceptance pass. A separate, non-XCTest Release copy was built and launched with XcodeBuildMCP. Only command-line build overrides were used; the app's source, project configuration and production bundle identifier were not changed.
+
+- QA bundle identifier: `com.temelgunaydin.finallyexplorer.sandboxqa.20260914`; product: `FinallyExplorer Sandbox QA`.
+- Artifact: `/tmp/FinallyExplorer-SandboxAcceptance-20260914/DerivedData/Build/Products/Release/FinallyExplorer Sandbox QA.app`.
+- Build log: `build_macos_2026-09-14T10-04-31-755Z_pid42027_08750955.log`.
+- The QA build excludes `container-migration.plist` so it cannot migrate the user's existing offline catalogs into the temporary QA identity. The built bundle was inspected and the manifest is absent. This copy therefore **cannot validate first-container migration**; that needs a separate synthetic-profile test.
+- Actual signed entitlements include App Sandbox, app-scoped bookmarks, user-selected read/write and Downloads read/write, with no XCTest filesystem/Mach exceptions. Development `get-task-allow` remains true. `codesign --verify --deep --strict --verbose=2` passes, including `libFFF.dylib`.
+- Synthetic text, Swift and JSON fixtures, a copy destination and a separate unselected sibling were prepared under `/private/tmp/FinallyExplorer-SandboxAcceptance-20260914/Fixture/`. The intended native grant is only `Fixture/Allowed`, never the fixture parent or all of `/tmp`.
+- **Native interaction is unverified.** The process launched and remained running, but agent-device 0.21.1 could not resolve the QA application's bundle identifier through Launch Services. Direct-path and fresh frontmost inspection attempts also failed; explicitly registering only the QA bundle did not resolve the connection. The alternative computer-use surface returned `CUA_REPL_ENABLED_SURFACES is required` before any UI state was available.
+- No chooser, grant, cancel, relaunch, file operation, search or visual UI assertion passed in this attempt. The September 13 count of 618 passing tests is historical background coverage, not a new run or proof of this acceptance matrix. No user container, favorites, catalogs, preferences or permissions were reset. Stop before foreground input until a working UI connection is available and the user is notified again.
+
 ## Remaining review items
 
 - **App icon:** fill the empty AppIcon asset and verify the compiled icon resources at all required sizes. The website's small identity mark is not a replacement for the app's icon asset.
@@ -82,7 +95,7 @@ Code integration is complete for this increment, but the sandbox migration is **
 - **Public legal/support URLs:** publish only after user approval and legal/provider checks; verify every URL before entering App Store Connect. Re-test the app's offline documents and live web access.
 - **Commerce:** decide paid-up-front versus an in-app lifetime unlock/trial. Do not add a paywall or price until the commercial terms are confirmed. If IAP is chosen, implement and test purchase, restore, entitlement persistence, failure/cancel, and offline behavior.
 - **Metadata and reviewer notes:** match screenshots and descriptions to the shipping sandboxed feature set; disclose macOS/model/language requirements and disabled Nearby Transfer. No account is required by the current app.
-- **Foreground UI pass (pending user resumption):** Settings tabs, policy/terms/license sheets, scrolling and Escape/Done, selectable support address, AI toggles after switching tabs, and existing Tools keyboard regressions. Do not automatically resume the paused mouse/keyboard session.
+- **Foreground UI pass (automation connection blocked):** Settings tabs, policy/terms/license sheets, scrolling and Escape/Done, selectable support address, AI toggles after switching tabs, and existing Tools keyboard regressions. The September 14 resumption did not reach UI interaction; announce again before taking mouse/keyboard control when the connection is restored.
 
 ## Verification record
 
