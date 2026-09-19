@@ -90,7 +90,9 @@ struct WorkspaceSplitContainer<First: View, Second: View>: View {
     ) -> CGFloat {
         guard availableLength > 0 else { return 0 }
 
-        let preferredMinimum = axis == .sideBySide ? 280.0 : 220.0
+        let preferredMinimum = axis == .sideBySide
+            ? WorkspaceLayoutMetrics.minimumPaneWidth
+            : 220.0
         let minimum = min(preferredMinimum, availableLength / 2)
         let maximum = max(minimum, availableLength - minimum)
         let proposed = availableLength * firstFraction + translation

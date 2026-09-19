@@ -26,3 +26,42 @@ Use XcodeBuildMCP, isolated temporary fixtures and XCTest for interaction checks
 - Final presentation-only cleanup puts the Connected Disks surface around its native menu (native label rendering had discarded its background/chevron) and prevents disabled cards from taking hover selection. All **11 focused presentation/keyboard tests passed**, bundle `test_macos_2026-09-12T18-03-22-605Z_pid38733_b9b489f1.xcresult`; the final renders were inspected. Native menu selection logic is unchanged from the passing catalog UI flows; interaction tests were not rerun after that outer-surface/disabled-hover adjustment.
 
 The full UI target is not part of this scoped polish regression. Existing AppKit main-thread/QoS diagnostics are separate from test pass/fail results. No temporary event or keyboard-focus diagnostics remain in production or in the new UI scenario.
+
+## Narrow workspace — September 19, 2026
+
+The 900×450 first-launch window revealed a separate width-allocation defect: the fixed preview and non-wrapping toolbar could draw controls behind the inspector. This increment keeps the existing 3D button styling/actions while changing layout only:
+
+- Use the detail column's proposal to allocate workspace/preview widths explicitly. Preview remains mounted across visibility changes but is hidden from accessibility when closed; it yields space down to 220 points, with 340 points as the preferred width.
+- Measure the navigation, file-action and split/preview groups. Keep them in one row when they fit, otherwise put actions below navigation and wrap whole groups only when necessary. The same view instances retain popover state; there are no duplicated fallback controls.
+- Prefer 1280×800 for new windows, enforce a 980×640 content minimum, and use a shared 340-point minimum column width. Existing 2×2 limits and sidebar behavior are unchanged.
+- Test the pure arrangement/width calculations separately from native interactions. The final full background rerun, including the Preview accessibility correction and source formatting, passed 630 tests in 87 suites, with no failures or skips, in 84.0 seconds of test execution; bundle `test_macos_2026-09-19T12-25-19-338Z_pid17088_ac984882.xcresult`. This is not a foreground UI result.
+
+`WorkspaceLayoutUITests` is compiled only with `FINALLY_EXPLORER_LAYOUT_ACCEPTANCE`. It requires a separately built/registered QA app whose identifier starts with `com.temelgunaydin.finallyexplorer.sandboxqa.layout`, supplied by `FINALLY_EXPLORER_LAYOUT_QA_BUNDLE_ID` and `FINALLY_EXPLORER_LAYOUT_QA_APP_PATH`. The bundle identifier is checked against the path before launch. Do not target the user's installed app.
+
+The suite uses the QA app's own Resources folder as a read-only fixture, with isolated UI-test defaults. It verifies the bundled privacy document bytes before/after, exports only QA-window screenshots to the test runner's temporary folder, attaches native hierarchies to the result bundle, and terminates only the selected QA app. No file operation, permission reset or user-container cleanup is performed. This UI fixture mode does **not** replace native sandbox bookmark/file-consumer acceptance.
+
+Foreground result: **1 complete UI scenario passed, 0 failures/skips**, in 150.1 seconds of suite execution, bundle `test_macos_2026-09-19T12-22-16-812Z_pid16277_5d532c9e.xcresult`. It verifies minimum-size clamping, exact document text preview, preview hide/show, one through four panes, divider resizing, button/path/search containment, split-button ordering and reset back to a single pane. Initial/narrow/minimum/four-pane/reset QA-window screenshots were inspected; controls remain inside their panels with a scrollable file-list area. The test quits only the QA app and verifies the source document is unchanged.
+
+The first UI run exposed the inspector identifier being inherited by three empty-state children. The inspector now defines a single labeled accessibility container, retaining its children's own identities and excluding the hidden column from accessibility. The second attempt reached narrow-window preview successfully but had an incorrect sample-word assertion: the bundled document does not contain the assumed capitalized word. The final test compares the entire preview string to the source bytes instead. Neither failure is recorded as a passing run or suppressed with a skipped assertion.
+
+Example invocation after building, registering and signature-checking the current separate QA copy (exclude `container-migration.plist` for QA only):
+
+```sh
+npx --offline -y xcodebuildmcp@2.7.0 macos test --json '{
+  "projectPath": "/Users/temelgunaydin/Desktop/DevelopmentGeneral/Apps/FinallyExplorer/FinallyExplorer.xcodeproj",
+  "scheme": "FinallyExplorer",
+  "configuration": "Debug",
+  "derivedDataPath": "/tmp/FinallyExplorer-Layout-20260919",
+  "extraArgs": [
+    "-only-testing:FinallyExplorerUITests/WorkspaceLayoutUITests",
+    "-parallel-testing-enabled", "NO",
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG FINALLY_EXPLORER_LAYOUT_ACCEPTANCE"
+  ],
+  "testRunnerEnv": {
+    "FINALLY_EXPLORER_LAYOUT_QA_BUNDLE_ID": "com.temelgunaydin.finallyexplorer.sandboxqa.layout20260919",
+    "FINALLY_EXPLORER_LAYOUT_QA_APP_PATH": "/Users/temelgunaydin/Applications/FinallyExplorer Layout QA 20260919.app"
+  }
+}'
+```
+
+The Debug product is the driver; the selected app is the preflighted Release copy. Rebuild/re-preflight that copy after production changes. These fixtures do not exercise bookmarked external folders, copy/move/Trash, external volumes or first-container migration. Those release checks remain open in [APP_STORE_READINESS.md](APP_STORE_READINESS.md).

@@ -108,8 +108,17 @@ struct FinallyExplorerApp: App {
                 globalSearchRootURL: launchConfiguration.fixtureRoot
                     ?? URL(filePath: "/", directoryHint: .isDirectory)
             )
+            .frame(
+                minWidth: WorkspaceLayoutMetrics.minimumWindowWidth,
+                minHeight: WorkspaceLayoutMetrics.minimumWindowHeight
+            )
         }
         .windowStyle(.titleBar)
+        .defaultSize(
+            width: WorkspaceLayoutMetrics.defaultWindowWidth,
+            height: WorkspaceLayoutMetrics.defaultWindowHeight
+        )
+        .windowResizability(.contentMinSize)
         .windowBackgroundDragBehavior(.enabled)
         .commands {
             FileEditCommands()

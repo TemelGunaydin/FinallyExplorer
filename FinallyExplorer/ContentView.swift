@@ -210,38 +210,50 @@ struct ContentView: View {
                 )
                 .toolbar(removing: .sidebarToggle)
         } detail: {
-            HStack(spacing: 0) {
-                WorkspaceRootView(
-                    workspace: workspace,
-                    sidebar: sidebar,
-                    isPreviewVisible: isPreviewVisible,
-                    onTogglePreview: togglePreview,
-                    onResetView: resetWorkspaceView
+            GeometryReader { geometry in
+                let previewWidth = WorkspaceLayoutMetrics.previewWidth(
+                    availableWidth: geometry.size.width,
+                    isVisible: isPreviewVisible && workspace.paneCount == 1
                 )
+                HStack(spacing: 0) {
+                    WorkspaceRootView(
+                        workspace: workspace,
+                        sidebar: sidebar,
+                        isPreviewVisible: isPreviewVisible,
+                        onTogglePreview: togglePreview,
+                        onResetView: resetWorkspaceView
+                    )
+                    .frame(width: max(0, geometry.size.width - previewWidth))
+                    .clipped()
 
-                if workspace.paneCount == 1 {
-                    inspectorContent
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(theme.inspector)
-                        .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: 18,
-                                style: .continuous
+                    if workspace.paneCount == 1 {
+                        inspectorContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(theme.inspector)
+                            .clipShape(
+                                RoundedRectangle(
+                                    cornerRadius: 18,
+                                    style: .continuous
+                                )
                             )
-                        )
-                        .overlay {
-                            RoundedRectangle(
-                                cornerRadius: 18,
-                                style: .continuous
-                            )
-                            .stroke(theme.divider, lineWidth: 0.75)
-                        }
-                        .padding(6)
-                        .frame(width: isPreviewVisible ? 340 : 0)
-                        .opacity(isPreviewVisible ? 1 : 0)
-                        .allowsHitTesting(isPreviewVisible)
-                        .accessibilityIdentifier("preview-inspector")
+                            .overlay {
+                                RoundedRectangle(
+                                    cornerRadius: 18,
+                                    style: .continuous
+                                )
+                                .stroke(theme.divider, lineWidth: 0.75)
+                            }
+                            .padding(6)
+                            .frame(width: previewWidth)
+                            .opacity(isPreviewVisible ? 1 : 0)
+                            .allowsHitTesting(isPreviewVisible)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Preview")
+                            .accessibilityHidden(isPreviewVisible == false)
+                            .accessibilityIdentifier("preview-inspector")
+                    }
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
             .background(theme.canvas)
             .clipShape(.rect(topLeadingRadius: 18))
@@ -934,7 +946,8 @@ private struct DestinationView: View {
         }
         .padding(12)
         .frame(
-            minWidth: 280,
+            minWidth: WorkspaceLayoutMetrics.minimumPaneWidth
+                - 2 * WorkspaceLayoutMetrics.paneOuterPadding,
             maxWidth: .infinity,
             minHeight: 220,
             maxHeight: .infinity,
@@ -964,7 +977,7 @@ private struct DestinationView: View {
                 )
                 .allowsHitTesting(false)
         }
-        .padding(6)
+        .padding(WorkspaceLayoutMetrics.paneOuterPadding)
         .background(theme.canvas)
         .contentShape(Rectangle())
         .focusedValue(\.explorerPaneID, pane.id)
@@ -1051,147 +1064,151 @@ private struct DestinationView: View {
         @Bindable var searchModel = pane.searchModel
 
         return VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                if pane.navigation.canGoBack {
-                    Button("Back", systemImage: "chevron.left") {
-                        _ = workspace.goBack(in: pane.id)
+            PaneToolbarLayout {
+                HStack(spacing: 8) {
+                    if pane.navigation.canGoBack {
+                        Button("Back", systemImage: "chevron.left") {
+                            _ = workspace.goBack(in: pane.id)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(
+                            ExplorerPanePrimaryButtonStyle(
+                                isCompact: true,
+                                usesAccentForeground: true
+                            )
+                        )
+                        .explorerTooltip(
+                            "Go back",
+                            alignment: .topLeading
+                        )
+                    }
+
+                    PaneLocationMenu(
+                        selectedPlace: pane.place,
+                        places: sidebar.allPlaces,
+                        isCompact: workspace.paneCount > 1
+                    ) { place in
+                        workspace.select(place, in: pane.id)
+                    }
+                    .help("Choose the folder shown in this pane")
+                }
+
+                HStack(spacing: 8) {
+                    if workspace.paneCount == 1 {
+                        Button("New Folder", systemImage: "folder.badge.plus") {
+                            createFolder()
+                        }
+                        .buttonStyle(
+                            ExplorerPanePrimaryButtonStyle(isCompact: false)
+                        )
+                        .disabled(
+                            pane.displayedDirectory == nil
+                                || fileOperations.isPerforming
+                        )
+                        .help("Create a new folder in this pane")
+
+                    } else {
+                        Button("New Folder", systemImage: "folder.badge.plus") {
+                            createFolder()
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(
+                            ExplorerPanePrimaryButtonStyle(isCompact: true)
+                        )
+                        .disabled(
+                            pane.displayedDirectory == nil
+                                || fileOperations.isPerforming
+                        )
+                        .explorerTooltip(
+                            "Create a new folder",
+                            alignment: .topLeading
+                        )
+
+                    }
+
+                    TerminalToolbarButton(directoryURL: pane.displayedDirectory)
+
+                    if ExplorerFeatureFlags.nearbyTransferEnabled {
+                        NearbyTransferToolbarButton(sourceURLs: pane.selectedCommandURLs)
+                    }
+
+                    Button(
+                        pane.showsHiddenItems ? "Hide Hidden Items" : "Show Hidden Items",
+                        systemImage: pane.showsHiddenItems ? "eye.slash" : "eye"
+                    ) {
+                        toggleHiddenItems()
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(
-                        ExplorerPanePrimaryButtonStyle(
-                            isCompact: true,
-                            usesAccentForeground: true
-                        )
-                    )
+                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
                     .explorerTooltip(
-                        "Go back",
-                        alignment: .topLeading
+                        pane.showsHiddenItems
+                            ? "Hide hidden items"
+                            : "Show hidden items"
                     )
                 }
 
-                PaneLocationMenu(
-                    selectedPlace: pane.place,
-                    places: sidebar.allPlaces,
-                    isCompact: workspace.paneCount > 1
-                ) { place in
-                    workspace.select(place, in: pane.id)
-                }
-                .help("Choose the folder shown in this pane")
-
-                Spacer(minLength: 4)
-
-                if workspace.paneCount == 1 {
-                    Button("New Folder", systemImage: "folder.badge.plus") {
-                        createFolder()
-                    }
-                    .buttonStyle(
-                        ExplorerPanePrimaryButtonStyle(isCompact: false)
-                    )
-                    .disabled(
-                        pane.displayedDirectory == nil
-                            || fileOperations.isPerforming
-                    )
-                    .help("Create a new folder in this pane")
-
-                } else {
-                    Button("New Folder", systemImage: "folder.badge.plus") {
-                        createFolder()
+                HStack(spacing: 8) {
+                    Button("Split Right", systemImage: "rectangle.split.2x1") {
+                        _ = workspace.split(paneID: pane.id, direction: .right)
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(
-                        ExplorerPanePrimaryButtonStyle(isCompact: true)
-                    )
+                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
                     .disabled(
-                        pane.displayedDirectory == nil
-                            || fileOperations.isPerforming
+                        workspace.canSplit(paneID: pane.id, direction: .right) == false
                     )
-                    .explorerTooltip(
-                        "Create a new folder",
-                        alignment: .topLeading
+                    .explorerTooltip("Add a pane on the right")
+
+                    Button("Split Below", systemImage: "rectangle.split.1x2") {
+                        _ = workspace.split(paneID: pane.id, direction: .below)
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                    .disabled(
+                        workspace.canSplit(paneID: pane.id, direction: .below) == false
                     )
+                    .explorerTooltip("Add a pane below")
 
-                }
+                    if workspace.paneCount > 1 {
+                        if workspace.activePaneID == pane.id {
+                            Button(
+                                "Reset View",
+                                systemImage: "rectangle",
+                                action: onResetView
+                            )
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                            .explorerTooltip(
+                                "Close the other panes",
+                                alignment: .topTrailing
+                            )
+                        }
 
-                TerminalToolbarButton(directoryURL: pane.displayedDirectory)
-
-                if ExplorerFeatureFlags.nearbyTransferEnabled {
-                    NearbyTransferToolbarButton(sourceURLs: pane.selectedCommandURLs)
-                }
-
-                Button(
-                    pane.showsHiddenItems ? "Hide Hidden Items" : "Show Hidden Items",
-                    systemImage: pane.showsHiddenItems ? "eye.slash" : "eye"
-                ) {
-                    toggleHiddenItems()
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                .explorerTooltip(
-                    pane.showsHiddenItems
-                        ? "Hide hidden items"
-                        : "Show hidden items"
-                )
-
-                Button("Split Right", systemImage: "rectangle.split.2x1") {
-                    _ = workspace.split(paneID: pane.id, direction: .right)
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                .disabled(
-                    workspace.canSplit(paneID: pane.id, direction: .right) == false
-                )
-                .explorerTooltip("Add a pane on the right")
-
-                Button("Split Below", systemImage: "rectangle.split.1x2") {
-                    _ = workspace.split(paneID: pane.id, direction: .below)
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                .disabled(
-                    workspace.canSplit(paneID: pane.id, direction: .below) == false
-                )
-                .explorerTooltip("Add a pane below")
-
-                if workspace.paneCount > 1 {
-                    if workspace.activePaneID == pane.id {
-                        Button(
-                            "Reset View",
-                            systemImage: "rectangle",
-                            action: onResetView
-                        )
+                        Button("Close Pane", systemImage: "xmark") {
+                            _ = workspace.close(pane.id)
+                        }
                         .labelStyle(.iconOnly)
                         .buttonStyle(ExplorerPaneUtilityButtonStyle())
                         .explorerTooltip(
-                            "Close the other panes",
+                            "Close this pane",
                             alignment: .topTrailing
                         )
                     }
 
-                    Button("Close Pane", systemImage: "xmark") {
-                        _ = workspace.close(pane.id)
+                    if workspace.paneCount == 1 {
+                        Button(
+                            isPreviewVisible ? "Hide Preview" : "Show Preview",
+                            systemImage: "sidebar.trailing",
+                            action: onTogglePreview
+                        )
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                        .explorerTooltip(
+                            isPreviewVisible
+                                ? "Hide preview"
+                                : "Show preview",
+                            alignment: .topTrailing
+                        )
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                    .explorerTooltip(
-                        "Close this pane",
-                        alignment: .topTrailing
-                    )
-                }
-
-                if workspace.paneCount == 1 {
-                    Button(
-                        isPreviewVisible ? "Hide Preview" : "Show Preview",
-                        systemImage: "sidebar.trailing",
-                        action: onTogglePreview
-                    )
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
-                    .explorerTooltip(
-                        isPreviewVisible
-                            ? "Hide preview"
-                            : "Show preview",
-                        alignment: .topTrailing
-                    )
                 }
             }
             .padding(7)
