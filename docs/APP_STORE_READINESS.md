@@ -125,6 +125,13 @@ Test-harness preparation exposed macOS-specific selectors, a 128-character XCTes
 - The expanded global case also passed its separate repeat (**1 test, 0 failures/skips**), result `test_macos_2026-09-19T13-49-13-761Z_pid54332_f76ccfd4.xcresult`: an absent query clears old content results, and global regex finds the same file under the restored narrow native grant. No timeout increase or parent grant was used. Original fixture hashes remain unchanged and the QA app is closed.
 - Final full background regression, including the additional shutdown/access-change/fallback/routing assertions: **643 tests, 0 failures/skips**, result `test_macos_2026-09-19T13-51-11-586Z_pid54971_46e4ea40.xcresult` (101.2 seconds MCP elapsed). Existing test-target accessibility deprecation warnings are unchanged. The native-tested production source was not modified after its Release build.
 
+### September 19 — Native copy/move partial evidence; ZIP pending
+
+- Added opt-in native mutation tests for the separately signed, normally launched Files QA app. Only new synthetic `/private/tmp/fe-native-m*` roots are granted; no production files, defaults, entitlements or permissions were changed.
+- The initial combined native case passed copy, collision-safe repeated copy and moving the generated duplicate, then failed because XCTest could not find the visible move-collision alert. Its QA-window screenshot shows the correct destination-collision warning; the original and generated files remain intact. A repeat hit a test-driver exception from a speculative system-service lookup, which has been removed. Neither run is counted as a passing UI case, and neither reached ZIP.
+- The tests are now separated into positive copy/move, move-collision and ZIP cases. They compile; independent native runs remain pending. A fresh ZIP fixture is ready, with foreground readiness requested after releasing the user's keyboard/mouse. The native alert accessibility/dismissal gap remains explicit, not suppressed. See [NATIVE_SANDBOX_ACCEPTANCE.md](NATIVE_SANDBOX_ACCEPTANCE.md) for exact artifacts, fixture safety and coverage limits.
+- The four focused file-operation/archive suites passed **75 background tests, 0 failures/skips**, including a final rerun after the test split: `test_macos_2026-09-19T14-50-32-656Z_pid73305_e023d4a7.xcresult`. Production code is unchanged; this is not a new full 643-test or release-readiness pass.
+
 ## Remaining review items
 
 - **Native access coverage:** upper name/plain-content/regex discovery through the September 19 narrow grant now passes. Explicit unselected-sibling denial, external volumes/reconnection, AI consumers and the remaining native file-operation matrix are still open.
