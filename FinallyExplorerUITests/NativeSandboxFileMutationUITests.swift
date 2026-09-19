@@ -92,8 +92,22 @@ final class NativeSandboxFileMutationUITests: XCTestCase {
         let failure = try collisionDialog(in: application, destination: fixture.source.appending(path: "FECopy.txt"))
         try fixture.assertOriginalsUnchanged()
         try fixture.assertText(NativeSandboxMutationFixture.copyText, at: fixture.destination.appending(path: "FECopy.txt"))
+        evidence("Native move collision dialog before dismissal", in: application)
+        XCTAssertTrue(failure.buttons["OK"].isEnabled)
+        XCTAssertTrue(failure.buttons["OK"].isHittable)
         failure.buttons["OK"].click()
         XCTAssertTrue(failure.waitForNonExistence(timeout: 5))
+        assertPath(fixture.source, in: source)
+        assertPath(fixture.destination, in: destination)
+        XCTAssertTrue(row("FECopy.txt", in: source).isHittable)
+        XCTAssertTrue(row("FECopy.txt", in: destination).isHittable)
+        // A visible error alone is insufficient: neither file may disappear,
+        // and dismissing it must restore normal pane interaction.
+        select(row("Anchor.txt", in: destination))
+        try fixture.assertOriginalsUnchanged()
+        try fixture.assertText(NativeSandboxMutationFixture.copyText, at: fixture.destination.appending(path: "FECopy.txt"))
+        XCTAssertEqual(try fixture.children(fixture.source), ["FECopy.txt", "Package"])
+        XCTAssertEqual(try fixture.children(fixture.destination), ["Anchor.txt", "FECopy.txt"])
         evidence("Move collision keeps both sources intact", in: application)
     }
 
@@ -176,20 +190,32 @@ final class NativeSandboxFileMutationUITests: XCTestCase {
     }
 
     private func collisionDialog(in application: XCUIApplication, destination: URL) throws -> XCUIElement {
-        // This remains a separate acceptance gate: on the September 19 host
-        // the visible alert was absent from XCTest's accessibility tree.
-        // Do not attach to/launch a guessed system service or dismiss blindly.
-        let alert = application.alerts.firstMatch
-        XCTAssertTrue(alert.waitForExistence(timeout: 10), "Native collision alert must be accessible to XCTest.")
-        let text = alert.staticTexts.allElementsBoundByIndex.map {
-            [$0.label, $0.value as? String ?? ""].joined(separator: " ")
-        }.joined(separator: "\n")
-        XCTAssertTrue(text.contains("File Operation Failed"))
-        XCTAssertTrue(text.contains("already exists"))
-        XCTAssertTrue(text.contains(destination.lastPathComponent))
-        XCTAssertTrue(text.contains(destination.deletingLastPathComponent().lastPathComponent))
-        XCTAssertTrue(alert.buttons["OK"].exists)
-        return alert
+        // macOS exposes separate alert/dialog/sheet element types. Query only
+        // this QA app and require the expected message plus the full path.
+        // Never attach to a guessed service or blindly press Return/Escape.
+        let paths = Set([destination.path, destination.standardizedFileURL.path,
+                         destination.resolvingSymlinksInPath().path])
+        var match: XCUIElement?
+        let expected = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            for query in [application.alerts, application.dialogs, application.sheets] {
+                for candidate in query.allElementsBoundByIndex {
+                    let elements = [candidate] + candidate.staticTexts.allElementsBoundByIndex
+                    let text = elements.map {
+                        [$0.label, $0.value as? String ?? ""].joined(separator: "\n")
+                    }.joined(separator: "\n")
+                    guard text.contains("File Operation Failed"),
+                          text.contains("An item with the same name already exists in the destination folder."),
+                          paths.contains(where: { text.contains("Path: \($0)") }),
+                          candidate.buttons["OK"].exists else { continue }
+                    match = candidate
+                    return true
+                }
+            }
+            return false
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 10), .completed,
+                       "Expected a QA-app alert, dialog or sheet containing the exact collision path.")
+        return try XCTUnwrap(match)
     }
 
     private func select(_ item: XCUIElement) {
