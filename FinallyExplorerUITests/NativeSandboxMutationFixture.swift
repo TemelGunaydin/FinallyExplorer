@@ -1,8 +1,8 @@
 #if FINALLY_EXPLORER_NATIVE_SANDBOX_ACCEPTANCE
 import XCTest
 
-/// Prepared outside XCTest. The runner only validates bytes; all mutations
-/// must be performed through the separately signed, normally launched QA app.
+/// Prepared outside XCTest. Only the separately signed QA app mutates this
+/// fixture. The runner validates bytes and extracts ZIPs into its own temp area.
 struct NativeSandboxMutationFixture {
     static let copyText = "Synthetic copy payload 7319. Original must remain unchanged.\n"
     static let noteText = "Synthetic ZIP payload — Unicode 7319.\n"
@@ -69,22 +69,36 @@ struct NativeSandboxMutationFixture {
         let listing = String(decoding: try unzip(["-Z1", archive.path]), as: UTF8.self)
             .split(separator: "\n").map(String.init)
         // Finder-style metadata/directories are allowed; every payload must be
-        // named explicitly and have exact original bytes. No extraction occurs.
+        // named explicitly and have exact original bytes.
         let payloads = listing.filter { $0.hasSuffix("/") == false && $0.hasPrefix("__MACOSX/") == false }
         XCTAssertEqual(Set(payloads), Set(entries.keys), file: file, line: line)
+        XCTAssertEqual(payloads.count, entries.count, file: file, line: line)
+        // Process arguments can reach unzip in decomposed Unicode form even
+        // when the archive stores precomposed names. Validate the real macOS
+        // extraction result instead of using a filename pattern with unzip -p.
+        // Only this generated runner-owned directory is written or removed.
+        let extracted = FileManager.default.temporaryDirectory
+            .appending(path: "NativeZIPVerification-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: extracted) }
+        _ = try run("/usr/bin/ditto", arguments: ["-x", "-k", archive.path, extracted.path])
         for (entry, text) in entries {
-            XCTAssertEqual(try unzip(["-p", archive.path, entry]), Data(text.utf8), file: file, line: line)
+            try assertText(text, at: extracted.appending(path: entry), file: file, line: line)
         }
     }
 
     private func unzip(_ arguments: [String]) throws -> Data {
+        try run("/usr/bin/unzip", arguments: arguments)
+    }
+
+    private func run(_ executable: String, arguments: [String]) throws -> Data {
         let process = Process()
         let output = Pipe()
-        process.executableURL = URL(filePath: "/usr/bin/unzip")
+        process.executableURL = URL(filePath: executable)
         process.arguments = arguments
         // XCTest can launch with the C locale. macOS unzip then renders each
         // non-ASCII filename byte as '?' even when the ZIP name is intact.
-        // Pin only this read-only verifier, not the QA app or user's locale.
+        // Pin only these verification subprocesses, not the QA app/user locale.
         process.environment = ["LC_ALL": "en_US.UTF-8"]
         process.standardOutput = output
         process.standardError = output
