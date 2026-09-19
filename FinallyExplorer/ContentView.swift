@@ -52,7 +52,7 @@ struct ContentView: View {
             ?? URL(filePath: "/", directoryHint: .isDirectory)
         globalSearchRootURL = rootURL
         _globalSearch = State(
-            initialValue: GlobalSearchModel(initialRootURL: rootURL)
+            initialValue: Self.makeGlobalSearch(rootURL: rootURL, folderAccess: access)
         )
     }
 
@@ -99,7 +99,21 @@ struct ContentView: View {
         }
         _globalSearch = State(
             initialValue: globalSearch
-                ?? GlobalSearchModel(initialRootURL: globalSearchRootURL)
+                ?? Self.makeGlobalSearch(rootURL: globalSearchRootURL, folderAccess: access)
+        )
+    }
+
+    private static func makeGlobalSearch(rootURL: URL, folderAccess: FolderAccessModel) -> GlobalSearchModel {
+        let authorized = AuthorizedFolderSearchService {
+            await MainActor.run {
+                // Downloads is already granted by the app's entitlement. Never
+                // infer Home or a parent from a narrower security-scoped grant.
+                folderAccess.folders.filter(\.isAvailable).map(\.url)
+                    + [SidebarPlace.downloads.url].compactMap { $0 }
+            }
+        }
+        return GlobalSearchModel(
+            service: HybridGlobalSearchService(authorizedSearch: authorized), initialRootURL: rootURL
         )
     }
 

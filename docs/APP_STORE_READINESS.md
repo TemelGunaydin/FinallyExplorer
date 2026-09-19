@@ -1,4 +1,4 @@
-# App Store preparation — September 14, 2026
+# App Store preparation — September 19, 2026
 
 This is an incremental implementation record, not a declaration that the app is ready for submission. App Sandbox is now enabled, but native permission/relaunch acceptance and the app-icon blocker are still open. Do not upload this build as a release candidate yet.
 
@@ -116,9 +116,18 @@ Test-harness preparation exposed macOS-specific selectors, a 128-character XCTes
 - The QA signature and actual sandbox entitlements passed inspection, with migration excluded for this copy and development signing explicitly retained. This increment adds acceptance tests/evidence only; app behavior is unchanged. See [NATIVE_SANDBOX_ACCEPTANCE.md](NATIVE_SANDBOX_ACCEPTANCE.md) for exact fixture/launch instructions, failed setup attempts, helper-extraction scope and remaining limits.
 - The four focused sandbox/access/global-search background suites passed **42 tests, 0 failures/skips**, result `test_macos_2026-09-19T12-59-14-879Z_pid30468_92180c60.xcresult`. This is not a full background rerun and does not supersede the native global-search failure.
 
+### September 19 — Narrow-grant global search corrected
+
+- Added direct searches of available bookmark roots plus the already-entitled Downloads location, rather than requiring FFF to discover them by walking from `/`. Spotlight matches are retained and deduplicated with direct results; content/regex uses the direct roots. Indexes remain lazy, pooled and cancellation-safe. Forget refreshes search membership without revoking scopes from in-flight file operations. No permission widening, entitlement change or AI-service change was made.
+- Rebuilt and re-preflighted the same separate Release QA copy without resetting its container or changing the synthetic fixture. Strict bundle/FFF signing checks pass; native sandbox entitlements remain unchanged with no XCTest exceptions. Migration remains deliberately excluded from QA and development `get-task-allow` remains true.
+- The complete background target passed **640 tests in 88 suites, 0 failures/skips**, result `test_macos_2026-09-19T13-43-05-487Z_pid51523_b3ff54e4.xcresult`.
+- The two native file-consumer cases passed **2 UI tests, 0 failures/skips**, result `test_macos_2026-09-19T13-46-11-845Z_pid52617_502084cd.xcresult`. Upper name and plain-content search now discover the restored narrow grant. Preview exact bytes, local names/content/regex and absent-query/clear regressions also pass. The previous failure above is retained as history, not the current name/content status. Details, artifacts and limitations are in [NATIVE_SANDBOX_ACCEPTANCE.md](NATIVE_SANDBOX_ACCEPTANCE.md).
+- The expanded global case also passed its separate repeat (**1 test, 0 failures/skips**), result `test_macos_2026-09-19T13-49-13-761Z_pid54332_f76ccfd4.xcresult`: an absent query clears old content results, and global regex finds the same file under the restored narrow native grant. No timeout increase or parent grant was used. Original fixture hashes remain unchanged and the QA app is closed.
+- Final full background regression, including the additional shutdown/access-change/fallback/routing assertions: **643 tests, 0 failures/skips**, result `test_macos_2026-09-19T13-51-11-586Z_pid54971_46e4ea40.xcresult` (101.2 seconds MCP elapsed). Existing test-target accessibility deprecation warnings are unchanged. The native-tested production source was not modified after its Release build.
+
 ## Remaining review items
 
-- **Native global-search discovery:** fix and rerun the September 19 narrow-grant failure before accepting the sandbox build. Listing/Preview/local-search success does not prove global name/content/grep discovery through ungranted ancestors.
+- **Native access coverage:** upper name/plain-content/regex discovery through the September 19 narrow grant now passes. Explicit unselected-sibling denial, external volumes/reconnection, AI consumers and the remaining native file-operation matrix are still open.
 
 - **App icon:** fill the empty AppIcon asset and verify the compiled icon resources at all required sizes. The website's small identity mark is not a replacement for the app's icon asset.
 - **Shipping artifact:** archive/export and inspect the actual sandboxed, distribution-signed Release app, including embedded FFF signing/resources. Require sandbox entitlements and no `get-task-allow` in the distributed artifact. The current locally built Release app still has development `get-task-allow = true`; do not distribute it. Build success alone is not submission readiness.

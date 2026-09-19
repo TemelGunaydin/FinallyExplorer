@@ -106,12 +106,24 @@ final class NativeSandboxFileAccessUITests: XCTestCase {
         attachFixtureEvidence("Global name search discovers native narrow grant", in: application)
 
         replaceText("native-token-7319", in: search, application: application)
+        XCTAssertTrue(result.waitForNonExistence(timeout: 10),
+                      "The name result must clear before validating content search.")
         let contents = application.radioGroups["global-search-scope-picker"].radioButtons["Contents"]
         XCTAssertTrue(contents.waitForExistence(timeout: 5))
         contents.click()
         XCTAssertTrue(result.waitForExistence(timeout: 45),
                       "Global content search must read files under the narrow native grant.")
         attachFixtureEvidence("Global content search discovers native narrow grant", in: application)
+
+        replaceText("absent-token-9999", in: search, application: application)
+        XCTAssertTrue(result.waitForNonExistence(timeout: 10), "Global search must clear stale content results.")
+        let regex = application.radioGroups["global-search-content-mode-picker"].radioButtons["Regex"]
+        XCTAssertTrue(regex.waitForExistence(timeout: 5))
+        regex.click()
+        replaceText("native-token-[0-9]{4}", in: search, application: application)
+        XCTAssertTrue(result.waitForExistence(timeout: 45),
+                      "Global regex search must read the same narrowly granted document.")
+        attachFixtureEvidence("Global regex search discovers native narrow grant", in: application)
     }
 
     private func grantAndRestoreSource(_ fixture: NativeSandboxFileFixture,

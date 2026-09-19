@@ -81,6 +81,7 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
     private let spotlightService: any SpotlightGlobalSearchServicing
     private let spotlightTimeout: Duration
     private let injectedNameFallback: HybridGlobalNameSearchFallback?
+    private let authorizedSearch: (any GlobalSearchServicing)?
     private var engine: FFFSearchEngine?
     private var engineRootURL: URL?
     private var lifecycleGeneration = 0
@@ -92,12 +93,14 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
         spotlightService: any SpotlightGlobalSearchServicing =
             SpotlightGlobalSearchService(),
         spotlightTimeout: Duration = .seconds(2),
-        nameFallback: HybridGlobalNameSearchFallback? = nil
+        nameFallback: HybridGlobalNameSearchFallback? = nil,
+        authorizedSearch: (any GlobalSearchServicing)? = nil
     ) {
         self.enginePool = enginePool
         self.spotlightService = spotlightService
         self.spotlightTimeout = spotlightTimeout
         injectedNameFallback = nameFallback
+        self.authorizedSearch = authorizedSearch
     }
 
     func prepare(rootURL: URL) async throws {
@@ -171,7 +174,7 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
                     )
                 }
 
-                return GlobalSearchPage(
+                let spotlightPage = GlobalSearchPage(
                     results: spotlightResults,
                     message: persistentPage.isTruncated
                         || persistentPage.hits.count > Self.maximumResultCount
@@ -179,6 +182,17 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
                             "Showing the closest matches. Refine the search to narrow the result set."
                         )
                         : nil
+                )
+                // A nonempty Spotlight page is not proof that it covers every
+                // security-scoped folder (e.g. a folder excluded from Spotlight).
+                guard let authorizedSearch else { return spotlightPage }
+                let grantedPage = try await authorizedSearch.search(
+                    rootURL: resolvedRootURL, query: query,
+                    scope: .names, contentMode: contentMode
+                )
+                try validateLifecycle(generation: generation)
+                return AuthorizedFolderSearchService.merged(
+                    [spotlightPage, grantedPage], query: query, scope: .names
                 )
             }
 
@@ -188,6 +202,16 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
             )
 
         case .contents:
+            if Self.usesPersistentSpotlightIndex(for: resolvedRootURL),
+               let authorizedSearch {
+                let generation = lifecycleGeneration
+                let page = try await authorizedSearch.search(
+                    rootURL: resolvedRootURL, query: query,
+                    scope: scope, contentMode: contentMode
+                )
+                try validateLifecycle(generation: generation)
+                return page
+            }
             let engine = try await preparedEngine(for: resolvedRootURL)
             let generation = lifecycleGeneration
             try validateCurrentEngine(
@@ -271,6 +295,14 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
         query: String,
         fallbackNotice: String? = nil
     ) async throws -> GlobalSearchPage {
+        if Self.usesPersistentSpotlightIndex(for: rootURL), let authorizedSearch {
+            let generation = lifecycleGeneration
+            let page = try await authorizedSearch.search(
+                rootURL: rootURL, query: query, scope: .names, contentMode: .plain
+            )
+            try validateLifecycle(generation: generation)
+            return page
+        }
         if let injectedNameFallback {
             let generation = lifecycleGeneration
             let page = try await injectedNameFallback.search(rootURL, query)
@@ -328,6 +360,10 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
 
     func waitForInitialScan(rootURL: URL) async throws {
         let resolvedRootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        if Self.usesPersistentSpotlightIndex(for: resolvedRootURL), let authorizedSearch {
+            try await authorizedSearch.waitForInitialScan(rootURL: resolvedRootURL)
+            return
+        }
         guard let engine, engineRootURL == resolvedRootURL else { return }
         let generation = lifecycleGeneration
 
@@ -341,6 +377,10 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
 
     func rebuildContentIndex(rootURL: URL) async throws {
         let resolvedRootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        if Self.usesPersistentSpotlightIndex(for: resolvedRootURL), let authorizedSearch {
+            try await authorizedSearch.rebuildContentIndex(rootURL: resolvedRootURL)
+            return
+        }
         try await prepare(rootURL: resolvedRootURL)
         let engine = try await preparedEngine(for: resolvedRootURL)
         let generation = lifecycleGeneration
@@ -380,8 +420,13 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
     }
 
     func fileAccessDidChange(rootURL: URL) async throws {
+        lifecycleGeneration += 1
         usesFFFNameFallback = false
         consecutiveSpotlightFailures = 0
+        if Self.usesPersistentSpotlightIndex(for: rootURL), let authorizedSearch {
+            try await authorizedSearch.fileAccessDidChange(rootURL: rootURL)
+            return
+        }
         try await enginePool.refreshExistingIndexAfterAccessChange(rootURL: rootURL)
     }
 
@@ -394,6 +439,7 @@ actor HybridGlobalSearchService: GlobalSearchServicing {
         engine = nil
         engineRootURL = nil
 
+        await authorizedSearch?.shutdown()
         if let oldEngine, let oldRootURL {
             await enginePool.release(oldEngine, rootURL: oldRootURL)
         }

@@ -125,6 +125,7 @@ final class FolderAccessModel {
         bookmarks = updated
         folders.removeAll { $0.id == id }
         forgottenForNextLaunch = true
+        revision += 1
         // Keep this process's scope until exit: forgetting a record must not cut off
         // an in-flight copy, scan, or preview. This is not a macOS permission revoke.
     }

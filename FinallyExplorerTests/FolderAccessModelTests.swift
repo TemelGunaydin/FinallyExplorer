@@ -225,6 +225,7 @@ struct FolderAccessModelTests {
         try model?.rememberAuthorizedFolder(folder)
         let id = try #require(model?.folders.first?.id)
         try model?.forget(id)
+        #expect(model?.revision == 2, "Global search must reconcile its direct roots when a saved grant is forgotten.")
         #expect(store.bookmarks.isEmpty)
         #expect(model?.folders.isEmpty == true)
         #expect(model?.forgottenForNextLaunch == true)
