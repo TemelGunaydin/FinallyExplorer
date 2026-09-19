@@ -132,6 +132,11 @@ Test-harness preparation exposed macOS-specific selectors, a 128-character XCTes
 - The tests are now separated into positive copy/move, move-collision and ZIP cases. They compile; independent native runs remain pending. A fresh ZIP fixture is ready, with foreground readiness requested after releasing the user's keyboard/mouse. The native alert accessibility/dismissal gap remains explicit, not suppressed. See [NATIVE_SANDBOX_ACCEPTANCE.md](NATIVE_SANDBOX_ACCEPTANCE.md) for exact artifacts, fixture safety and coverage limits.
 - The four focused file-operation/archive suites passed **75 background tests, 0 failures/skips**, including a final rerun after the test split: `test_macos_2026-09-19T14-50-32-656Z_pid73305_e023d4a7.xcresult`. Production code is unchanged; this is not a new full 643-test or release-readiness pass.
 
+### September 19 — Independent ZIP UI attempt
+
+- The independent native ZIP case created `Package.zip` through the custom context menu, then failed because the verification subprocess rendered Unicode names as question marks under the C locale. Result: `test_macos_2026-09-19T15-07-46-604Z_pid74624_f839849d.xcresult`. Read-only UTF-8 listing/CRC/payload-hash checks prove the retained archive's Unicode and hidden-file contents are intact; all originals are unchanged. Repeated-name preservation and single-file ZIP were not reached, so the complete native ZIP gate remains open.
+- Pinned UTF-8 only for the test's read-only unzip verifier. Compilation and **75 focused background tests passed** (`test_macos_2026-09-19T15-10-22-753Z_pid75207_edc69ac2.xcresult`). Production app behavior/permissions are unchanged. A fresh fixture is ready for the native rerun; renewed foreground readiness is pending. The QA app is closed. Details and safety evidence are in [NATIVE_SANDBOX_ACCEPTANCE.md](NATIVE_SANDBOX_ACCEPTANCE.md).
+
 ## Remaining review items
 
 - **Native access coverage:** upper name/plain-content/regex discovery through the September 19 narrow grant now passes. Explicit unselected-sibling denial, external volumes/reconnection, AI consumers and the remaining native file-operation matrix are still open.

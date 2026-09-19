@@ -82,6 +82,10 @@ struct NativeSandboxMutationFixture {
         let output = Pipe()
         process.executableURL = URL(filePath: "/usr/bin/unzip")
         process.arguments = arguments
+        // XCTest can launch with the C locale. macOS unzip then renders each
+        // non-ASCII filename byte as '?' even when the ZIP name is intact.
+        // Pin only this read-only verifier, not the QA app or user's locale.
+        process.environment = ["LC_ALL": "en_US.UTF-8"]
         process.standardOutput = output
         process.standardError = output
         try process.run()
