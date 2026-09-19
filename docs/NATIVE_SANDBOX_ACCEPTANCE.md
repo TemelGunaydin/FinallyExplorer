@@ -51,3 +51,50 @@ Native path entry uses individual `typeKey` events after focusing the path field
 These assertions establish the visible grant-record workflow, not every downstream consumer's ability to read a restored scope. Listing/preview/search under a restored grant, unselected sibling denial, global FFF/grep discovery through ungranted ancestors, file operations, external-volume reconnection, first-container migration and the rest of the release UI matrix remain separate acceptance work. Passing these tests is not App Store approval.
 
 Results and outstanding release gates are recorded in [APP_STORE_READINESS.md](APP_STORE_READINESS.md).
+
+## September 19 — Native file-consumer acceptance
+
+`NativeSandboxFileAccessUITests` adds actual listing, text preview and search checks against another separately installed Release copy. It uses the same compile-time opt-in, but requires a bundle identifier beginning with `com.temelgunaydin.finallyexplorer.sandboxqa.files` and an app path whose bundle identifier matches. It never launches the ordinary test host as the application under test.
+
+The preflighted copy is `/Users/temelgunaydin/Applications/FinallyExplorer Files QA 20260919.app`, identifier `com.temelgunaydin.finallyexplorer.sandboxqa.files20260919`. It was built from commit `425a356` plus the user's existing working-tree icon/project edits. No production code was changed in this increment. Build log: `build_macos_2026-09-19T12-45-21-250Z_pid24874_9b9b6139.log`. The migration manifest is excluded, signature verification passes, and the actual signed entitlements contain App Sandbox, bookmarks, user-selected read/write and Downloads read/write, with no XCTest filesystem/Mach exceptions. Development `get-task-allow` is still true: this is not a distribution artifact. A restricted-environment entitlement display initially warned about an invalid blob; the same read with normal certificate access showed the expected entitlements and strict signature verification passed. No signing settings were changed.
+
+### Fixture and launch
+
+Prepare a new non-symlink `/private/tmp/fe-native-f*` root outside the runner. `NativeSandboxFileFixture` verifies its directory types and these exact UTF-8 originals (each ending with a newline) before launch and after teardown:
+
+- `SandboxMarker.txt`: `Synthetic native Sandbox file-consumer fixture.`
+- `QA Source/FENativeNeedle.json`: `{"message":"Synthetic native-token-7319","count":19}`
+- `QA Source/Control.txt`: `Synthetic control document without the search token.`
+- `QA Destination/`: an empty directory reserved for a later file-operation increment.
+
+The September 19 root is `/private/tmp/fe-native-f19a`. Its parent is never selected in the native chooser. The runner only reads these originals; the QA app owns its normal container/preferences and native bookmark scopes. Do not add a runner filesystem write exception or silently switch to `--ui-testing`. Repeat runs may reuse the same exact synthetic favorite; the suite checks the current folder's favorite action and requires exactly one QA favorite rather than resetting preferences. Prepare another QA identity if it contains unrelated state.
+
+```sh
+npx --offline -y xcodebuildmcp@2.7.0 macos test --json '{
+  "projectPath": "/Users/temelgunaydin/Desktop/DevelopmentGeneral/Apps/FinallyExplorer/FinallyExplorer.xcodeproj",
+  "scheme": "FinallyExplorer",
+  "configuration": "Debug",
+  "derivedDataPath": "/tmp/FinallyExplorer-Layout-20260919",
+  "extraArgs": [
+    "-only-testing:FinallyExplorerUITests/NativeSandboxFileAccessUITests",
+    "-parallel-testing-enabled", "NO",
+    "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG FINALLY_EXPLORER_NATIVE_SANDBOX_ACCEPTANCE"
+  ],
+  "testRunnerEnv": {
+    "FINALLY_EXPLORER_NATIVE_QA_BUNDLE_ID": "com.temelgunaydin.finallyexplorer.sandboxqa.files20260919",
+    "FINALLY_EXPLORER_NATIVE_QA_APP_PATH": "/Users/temelgunaydin/Applications/FinallyExplorer Files QA 20260919.app",
+    "FINALLY_EXPLORER_NATIVE_QA_FOLDER": "/private/tmp/fe-native-f19a"
+  }
+}'
+```
+
+### Observed results, not a fully green suite
+
+- **Passed:** `testRestoredNarrowGrantSupportsListingPreviewAndLocalSearch`, 1 test, 0 failures/skips; MCP elapsed 80.3 seconds. Result: `test_macos_2026-09-19T12-51-39-864Z_pid27866_e7356a19.xcresult`. The native recovery chooser grants only the fixture root. The QA app lists its children, favorites `QA Source`, reads the full JSON text, quits with Command-Q, relaunches normally, and reads the same JSON again via the restored favorite without another chooser. Folder-local names, plain content and regex queries find the fixture; an absent-token query removes the previous result and clearing search restores the listing. Source bytes remain unchanged. Successful UI stages have screenshot/hierarchy attachments; they have not received a separate visual-design review.
+- **Failed / release gate:** global name search did not return `FENativeNeedle.json` within 45 seconds, even though the same run had already read its exact bytes after restoring the native grant. Result: `test_macos_2026-09-19T12-54-29-972Z_pid28919_23f9fc46.xcresult` (93.6 seconds MCP elapsed). The case was subsequently renamed from `...UngrantableAncestors` to `...UngrantedAncestors` for accurate terminology; its assertions are unchanged. It matches only `global-search-result-*` elements, so a still-visible file row cannot produce a false pass. Global content search is **not reached** after this failure; it is not counted as passed. The shared grant/relaunch helper was extracted between these two runs; the local-search assertions were unchanged but not rerun after extraction.
+- **Investigation:** `ContentView` supplies `/` to global search, and the hybrid service's FFF fallback/content engine is rooted there. Available bookmark folders are not separately supplied as traversal roots. This is a candidate cause, not proof of whether the missed fixture was excluded by traversal permissions, engine policy or another indexing issue. Keep this regression red until the cause is fixed and the native case passes; do not grant `/`, Home or `/private/tmp`, enable symlink following, lengthen the timeout to hide the problem, or replace the Release app with an XCTest host.
+- Preparation attempts are not passing runs: two fixture guards initially rejected Foundation's `/tmp` versus `/private/tmp` alias representation before app launch. The guard now accepts only those exact parent component lists and still rejects symlink fixture roots. One interaction attempt was obstructed by another app's window; explicitly activating only the QA app before interaction resolved it. No unrelated app was closed.
+
+The QA app is terminated after each run. Native cross-pane mutations, ZIP/Trash/cancellation, an explicit unselected-sibling negative control, external volumes, global content discovery, and first-container migration remain unaccepted. The earlier 630-test background result does not establish these native behaviors.
+
+After the foreground tests, the four focused background suites (`SandboxConfigurationTests`, `FolderAccessModelTests`, `HybridGlobalSearchServiceTests`, `GlobalSearchModelTests`) passed **42 tests, 0 failures/skips** under normal build conditions. Result: `test_macos_2026-09-19T12-59-14-879Z_pid30468_92180c60.xcresult` (17.6 seconds MCP elapsed). This verifies the existing model/configuration regressions still pass; it does not override the failed native global-search test. The complete 630-test target was not rerun in this test-only increment.
