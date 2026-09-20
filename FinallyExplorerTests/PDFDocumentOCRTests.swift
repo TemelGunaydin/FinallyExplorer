@@ -101,6 +101,6 @@ struct PDFDocumentOCRTests {
         defer { fixture.remove() }
         let file = fixture.source.appending(path: "Blank.pdf")
         try DocumentOCRFixtures.pdf(scannedPages: [""]).write(to: file)
-        await #expect(throws: DocumentQuestionError.noText) { try await LocalDocumentReader().read([file]) }
+        await #expect(throws: DocumentReadFailure(fileName: file.lastPathComponent, reason: .noText)) { try await LocalDocumentReader().read([file]) }
     }
 }

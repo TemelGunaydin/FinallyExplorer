@@ -165,6 +165,19 @@ struct FileToolsPresentationTests {
         try render(ExplorerAISettingsView(settings: ExplorerAISettings(defaults: defaults)), name: "ExpandedAISettings", width: 580, height: 720, dark: dark)
     }
 
+    @Test("Document read errors remain visible with five selected files", arguments: [false, true],
+          [DocumentQuestionError.pdfPageLimit(416), .accessDenied, .passwordProtected])
+    func documentErrorLayout(_ dark: Bool, _ reason: DocumentQuestionError) async throws {
+        let model = DocumentQuestionModel(reader: PresentationDocumentReadFailure(reason: reason))
+        model.select((1...5).map { URL(filePath: "/tmp/Quarterly Invoice Report \($0).pdf") })
+        await model.readDocuments()?.value
+        #expect(model.errorMessage == DocumentReadFailure(fileName: "Quarterly Invoice Report 5.pdf", reason: reason).localizedDescription)
+        #expect(model.documents.isEmpty)
+        let suffix = reason == .accessDenied ? "Access" : reason == .passwordProtected ? "Password" : "Pages"
+        try render(DocumentQuestionSheet(model: model, onReveal: { _ in }),
+            name: "DocumentError\(suffix)", width: 820, height: 720, dark: dark)
+    }
+
     @Test("Visual search empty and analyzed states fit in light and dark", arguments: [false, true])
     func visualSearchLayout(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()
@@ -283,6 +296,14 @@ private nonisolated struct PresentationSearchFailure: GlobalSearchServicing {
         GlobalSearchPage(results: [], message: .error("Couldn’t search Downloads. The index is unavailable."))
     }
     func shutdown() async { }
+}
+
+private nonisolated struct PresentationDocumentReadFailure: DocumentReading {
+    let reason: DocumentQuestionError
+    func read(_ urls: [URL]) async throws -> [QuestionDocument] {
+        throw DocumentReadFailure(fileName: "Quarterly Invoice Report 5.pdf", reason: reason)
+    }
+    func validate(_ documents: [QuestionDocument]) async throws { }
 }
 
 private nonisolated struct PresentationVisualAnalyzer: VisualImageAnalyzing {

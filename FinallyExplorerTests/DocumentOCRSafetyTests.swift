@@ -24,7 +24,7 @@ struct DocumentOCRSafetyTests {
         let scan = fixture.source.appending(path: "Dense.pdf")
         try DocumentQuestionFixtures.pdf(pages: Array(repeating: "", count: 6)).write(to: scan)
         let recognizer = RecordingDocumentTextRecognizer(text: String(repeating: "b", count: 19_000))
-        await #expect(throws: DocumentQuestionError.tooLarge) {
+        await #expect(throws: DocumentReadFailure(fileName: "Dense.pdf", reason: .totalTextLimit)) {
             try await LocalDocumentReader(textRecognizer: recognizer).read([text, scan])
         }
     }
@@ -36,7 +36,7 @@ struct DocumentOCRSafetyTests {
         let file = fixture.source.appending(path: "Many.pdf")
         try DocumentQuestionFixtures.pdf(pages: Array(repeating: "", count: 21)).write(to: file)
         let recognizer = RecordingDocumentTextRecognizer()
-        await #expect(throws: DocumentQuestionError.ocrLimit) { try await LocalDocumentReader(textRecognizer: recognizer).read([file]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Many.pdf", reason: .ocrLimit)) { try await LocalDocumentReader(textRecognizer: recognizer).read([file]) }
         #expect(await recognizer.calls == 0)
     }
 
@@ -51,7 +51,7 @@ struct DocumentOCRSafetyTests {
             files.append(file)
         }
         let recognizer = RecordingDocumentTextRecognizer()
-        await #expect(throws: DocumentQuestionError.ocrLimit) {
+        await #expect(throws: DocumentReadFailure(fileName: "Second.pdf", reason: .ocrLimit)) {
             try await LocalDocumentReader(textRecognizer: recognizer, maximumOCRPages: 1).read(files)
         }
         #expect(await recognizer.calls == 1)
@@ -64,7 +64,7 @@ struct DocumentOCRSafetyTests {
         let file = fixture.source.appending(path: "Dense.pdf")
         try DocumentQuestionFixtures.pdf(pages: Array(repeating: "", count: fileLimit ? 11 : 1)).write(to: file)
         let recognizer = RecordingDocumentTextRecognizer(text: String(repeating: "x", count: fileLimit ? 19_000 : 20_001))
-        await #expect(throws: fileLimit ? DocumentQuestionError.tooLarge : .ocrLimit) {
+        await #expect(throws: DocumentReadFailure(fileName: "Dense.pdf", reason: fileLimit ? .textLimit : .ocrLimit)) {
             try await LocalDocumentReader(textRecognizer: recognizer).read([file])
         }
     }
@@ -129,7 +129,7 @@ struct DocumentOCRSafetyTests {
         try DocumentQuestionFixtures.pdf(pages: [""]).write(to: scan)
         let model = DocumentQuestionModel(reader: LocalDocumentReader(textRecognizer: RecordingDocumentTextRecognizer(error: .ocrFailed)))
         model.select([first, scan]); await model.readDocuments()?.value
-        #expect(model.errorMessage == DocumentQuestionError.ocrFailed.localizedDescription)
+        #expect(model.errorMessage == DocumentReadFailure(fileName: "Scan.pdf", reason: .ocrFailed).localizedDescription)
         #expect(model.documents.isEmpty && model.retrievalIndex == nil)
     }
 }

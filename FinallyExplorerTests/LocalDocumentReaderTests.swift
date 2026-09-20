@@ -28,14 +28,14 @@ struct LocalDocumentReaderTests {
         await #expect(throws: DocumentQuestionError.selection) { try await reader.read([]) }
         await #expect(throws: DocumentQuestionError.selection) { try await reader.read([file, file]) }
         let broken = try fixture.write("Broken.pdf", "not a PDF")
-        await #expect(throws: DocumentQuestionError.unreadable) { try await reader.read([broken]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Broken.pdf", reason: .invalidPDF)) { try await reader.read([broken]) }
         let link = fixture.source.appending(path: "Link.txt")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
-        await #expect(throws: DocumentQuestionError.unsupported) { try await reader.read([link]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Link.txt", reason: .linkedFile)) { try await reader.read([link]) }
         let large = try fixture.write("Large.txt", String(repeating: "x", count: 200_001))
-        await #expect(throws: DocumentQuestionError.tooLarge) { try await reader.read([large]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Large.txt", reason: .textLimit)) { try await reader.read([large]) }
         let empty = try fixture.write("Empty.txt", "  \n ")
-        await #expect(throws: DocumentQuestionError.noText) { try await reader.read([empty]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Empty.txt", reason: .noText)) { try await reader.read([empty]) }
     }
 
     @Test("Changed or replaced sources cannot be used for answers", arguments: [false, true])
@@ -72,15 +72,15 @@ struct LocalDocumentReaderTests {
         let reader = LocalDocumentReader()
         let oversized = fixture.source.appending(path: "Oversized.txt")
         try Data(repeating: 65, count: 20 * 1_024 * 1_024 + 1).write(to: oversized)
-        await #expect(throws: DocumentQuestionError.tooLarge) { try await reader.read([oversized]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Oversized.txt", reason: .fileSizeLimit)) { try await reader.read([oversized]) }
         let pdf = fixture.source.appending(path: "TooManyPages.pdf")
         try DocumentQuestionFixtures.pdf(pages: Array(repeating: "Payment deadline is Friday.", count: 101)).write(to: pdf)
-        await #expect(throws: DocumentQuestionError.tooLarge) { try await reader.read([pdf]) }
+        await #expect(throws: DocumentReadFailure(fileName: "TooManyPages.pdf", reason: .pdfPageLimit(101))) { try await reader.read([pdf]) }
         let first = try fixture.write("First.txt", String(repeating: "a", count: 150_001))
         let second = try fixture.write("Second.txt", String(repeating: "b", count: 150_001))
-        await #expect(throws: DocumentQuestionError.tooLarge) { try await reader.read([first, second]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Second.txt", reason: .totalTextLimit)) { try await reader.read([first, second]) }
         let invalidUTF8 = fixture.source.appending(path: "Invalid.txt")
         try Data([0xff, 0xfe, 0x00]).write(to: invalidUTF8)
-        await #expect(throws: DocumentQuestionError.unreadable) { try await reader.read([invalidUTF8]) }
+        await #expect(throws: DocumentReadFailure(fileName: "Invalid.txt", reason: .unsupportedTextEncoding)) { try await reader.read([invalidUTF8]) }
     }
 }

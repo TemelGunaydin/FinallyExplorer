@@ -26,6 +26,7 @@ struct DocumentQuestionSheet: View {
             }
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle").font(.callout).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(theme.accentSoft, in: .rect(cornerRadius: 8)).accessibilityIdentifier("document-error")
             }

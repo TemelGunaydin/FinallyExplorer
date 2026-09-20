@@ -182,12 +182,14 @@ final class DocumentQuestionModel {
     }
 
     private func recordFailure(_ error: any Error) {
-        guard Task.isCancelled == false else { return }
+        guard Task.isCancelled == false, (error is CancellationError) == false else { return }
         errorMessage = DocumentQuestionError.message(for: error)
-        if error as? DocumentQuestionError == .changed {
+        let reason = DocumentQuestionError.readReason(for: error)
+        if reason == .changed || reason == .accessDenied || reason == .missing {
+            let message = errorMessage
             documents = []; retrievalIndex = nil
             resetConversation()
-            errorMessage = DocumentQuestionError.changed.localizedDescription
+            errorMessage = message
         }
     }
     private func reportReadProgress(_ progress: DocumentReadProgress, readID: UUID) {

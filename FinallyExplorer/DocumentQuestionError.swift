@@ -1,14 +1,27 @@
+import Darwin
 import Foundation
 
 nonisolated enum DocumentQuestionError: LocalizedError, Equatable, Sendable {
-    case selection, unsupported, tooLarge, unreadable, noText, changed, noEvidence, invalidAnswer, invalidQuestion, ambiguousFollowUp
+    case selection, unsupported, unreadable, noText, changed, noEvidence, invalidAnswer, invalidQuestion, ambiguousFollowUp
+    case accessDenied, missing, notDownloaded, linkedFile, passwordProtected, invalidPDF, unsupportedTextEncoding
+    case fileSizeLimit, pdfPageLimit(Int), textLimit, totalTextLimit
     case ocrLimit, ocrFailed, ocrTimedOut
     var errorDescription: String? {
         switch self {
         case .selection: "Select between 1 and 5 local PDF, TXT, MD, JSON, or CSV documents."
         case .unsupported: "Only local PDF, TXT, MD, JSON and CSV files are supported. Links and cloud placeholders are not read."
-        case .tooLarge: "Choose smaller documents: 20 MB, 100 PDF pages and 200,000 text characters per file; 300,000 characters in total."
-        case .unreadable: "This document cannot be read. Check its permissions, encoding, or PDF password."
+        case .fileSizeLimit: "This file exceeds the 20 MB limit. Choose a smaller file."
+        case let .pdfPageLimit(count): "This PDF has \(count) pages; the limit is 100. Choose a shorter PDF or export just the pages you need."
+        case .textLimit: "This document exceeds the 200,000-character limit. Choose a shorter document or an excerpt."
+        case .totalTextLimit: "These documents exceed the combined 300,000-character limit. Select fewer or shorter documents."
+        case .accessDenied: "Access was denied. Select the file again using Choose Documents. If it still fails, check its permissions in Finder."
+        case .missing: "This file is no longer available. Select it again using Choose Documents."
+        case .notDownloaded: "This file is not downloaded. Download it in Finder, then try again."
+        case .linkedFile: "Links are not supported. Select the original document instead."
+        case .passwordProtected: "This PDF requires a password. Open it in Preview and export an unencrypted copy, then select that copy."
+        case .invalidPDF: "This PDF could not be opened. Check it in Preview, then try a newly exported or downloaded copy."
+        case .unsupportedTextEncoding: "This file is not readable as UTF-8 text. Save a UTF-8 copy in a text editor, then select it."
+        case .unreadable: "This file could not be read. Try selecting it again or use another copy."
         case .noText: "No readable text was found. For scans, try a clearer PDF with printed English text."
         case .changed: "A selected document changed or disappeared. Read the documents again before asking another question."
         case .noEvidence: "I could not find supporting passages in the selected documents. Try a more specific question."
@@ -24,7 +37,39 @@ nonisolated enum DocumentQuestionError: LocalizedError, Equatable, Sendable {
     static func message(for error: any Error) -> String {
         // Descriptor helpers are shared with comparison tools; do not expose
         // their compare/copy-specific wording in this read-only feature.
-        if error is FolderComparisonError || error is CocoaError { return unreadable.localizedDescription }
+        if error is FolderComparisonError || error is CocoaError || error is POSIXError {
+            return readReason(for: error).localizedDescription
+        }
         return error.localizedDescription
+    }
+
+    static func readReason(for error: any Error) -> Self {
+        if let failure = error as? DocumentReadFailure { return failure.reason }
+        if let reason = error as? Self { return reason }
+        if let error = error as? FolderComparisonError {
+            switch error {
+            case let .fileSystem(_, code): return fileSystemReason(code)
+            case .changed: return .changed
+            default: return .unreadable
+            }
+        }
+        if let error = error as? POSIXError { return fileSystemReason(error.code.rawValue) }
+        if let error = error as? CocoaError {
+            switch error.code {
+            case .fileReadNoPermission: return .accessDenied
+            case .fileReadNoSuchFile, .fileNoSuchFile: return .missing
+            default: return .unreadable
+            }
+        }
+        return .unreadable
+    }
+
+    private static func fileSystemReason(_ code: Int32) -> Self {
+        switch code {
+        case EACCES, EPERM: .accessDenied
+        case ENOENT, ENOTDIR: .missing
+        case ELOOP: .linkedFile
+        default: .unreadable
+        }
     }
 }
