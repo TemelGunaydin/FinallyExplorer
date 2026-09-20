@@ -5,6 +5,43 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("Compact privacy and folder-access settings fit in both themes", arguments: [false, true])
+    func privacyAndFolderAccessLayout(_ dark: Bool) throws {
+        try render(ExplorerPrivacySettingsView(), name: "CompactPrivacySettings", width: 580, height: 640, dark: dark)
+        let store = MemoryFolderAccessBookmarkStore()
+        let empty = FolderAccessModel(store: store)
+        try render(FolderAccessSettingsView(access: empty), name: "CompactFolderAccessEmpty", width: 580, height: 640, dark: dark)
+        #expect(empty.folders.isEmpty)
+
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        try empty.rememberAuthorizedFolder(fixture.source)
+        store.bookmarks.append(FolderAccessBookmark(id: UUID(),
+            originalURL: URL(filePath: "/Volumes/Disconnected Archive/Projects/Quarterly Reports and Supporting Documents"),
+            data: Data("unavailable-layout-fixture".utf8)))
+        let populated = FolderAccessModel(store: store)
+        #expect(populated.folders.count == 2)
+        #expect(populated.folders.filter { $0.isAvailable == false }.count == 1)
+        try render(FolderAccessSettingsView(access: populated), name: "CompactFolderAccessPopulated", width: 580, height: 640, dark: dark)
+        let unavailableID = try #require(populated.folders.first(where: { $0.isAvailable == false })?.id)
+        try populated.forget(unavailableID)
+        try render(FolderAccessSettingsView(access: populated), name: "CompactFolderAccessForgotten", width: 580, height: 640, dark: dark)
+        #expect(populated.forgottenForNextLaunch)
+        #expect(FileManager.default.fileExists(atPath: fixture.source.path))
+    }
+
+    @Test("Folder-access storage errors stay visible in the compact layout", arguments: [false, true])
+    func folderAccessErrorLayout(_ dark: Bool) throws {
+        let suite = "FinallyExplorer.FolderAccess.Layout.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("invalid-fixture", forKey: UserDefaultsFolderAccessBookmarkStore.key)
+        let model = FolderAccessModel(store: UserDefaultsFolderAccessBookmarkStore(defaults: defaults))
+        #expect(model.storageError != nil)
+        try render(FolderAccessSettingsView(access: model), name: "CompactFolderAccessError", width: 580, height: 640, dark: dark)
+        #expect(defaults.string(forKey: UserDefaultsFolderAccessBookmarkStore.key) == "invalid-fixture")
+    }
+
     @Test("Simplified comparison controls fit before and after comparison", arguments: [false, true])
     func comparisonControls(_ dark: Bool) async throws {
         let fixture = try FolderComparisonTestFixture()
@@ -230,8 +267,8 @@ struct FileToolsPresentationTests {
         window.contentView = hosting
         defer { window.close() }
         hosting.layoutSubtreeIfNeeded()
-        #expect(hosting.fittingSize.width <= width)
-        #expect(hosting.fittingSize.height <= height)
+        #expect(hosting.fittingSize.width <= width, "\(name) must fit the available width")
+        #expect(hosting.fittingSize.height <= height, "\(name) must fit the available height")
         let bitmap = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         let png = try #require(bitmap.representation(using: .png, properties: [:]))

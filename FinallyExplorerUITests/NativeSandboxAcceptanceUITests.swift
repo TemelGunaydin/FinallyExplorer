@@ -143,9 +143,7 @@ final class NativeSandboxAcceptanceUITests: XCTestCase {
 
         settings.buttons[forgetLabel].click()
         XCTAssertTrue(settings.buttons[forgetLabel].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(settings.staticTexts[
-            "Folder access will no longer be restored after you quit and reopen the app."
-        ].exists)
+        XCTAssertTrue(settings.descendants(matching: .any)["folder-access-forgotten"].exists)
         quitAndRelaunch(application)
         settings = openFolderAccessSettings(in: application)
         XCTAssertFalse(settings.buttons[forgetLabel].exists)

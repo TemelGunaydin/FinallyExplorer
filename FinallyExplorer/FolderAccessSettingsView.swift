@@ -9,73 +9,68 @@ struct FolderAccessSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Label("Folder Access", systemImage: "folder.badge.gearshape")
-                    .font(.system(.title2, design: .rounded).weight(.semibold))
-                Text("Choose folders once and remember access on this Mac. macOS privacy and file permissions still apply.")
-                    .foregroundStyle(theme.textSecondary)
-
-                Button("Allow a Folder…", systemImage: "folder.badge.plus") { chooseFolder() }
-                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
-                    .disabled(isChoosing)
-                    .accessibilityIdentifier("settings-allow-folder")
+                HStack(spacing: 12) {
+                    Text("Remembered folders")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(theme.textSecondary)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 0)
+                    Button("Allow a Folder…", systemImage: "folder.badge.plus", action: chooseFolder)
+                        .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
+                        .disabled(isChoosing)
+                        .accessibilityIdentifier("settings-allow-folder")
+                }
 
                 if let message = errorMessage ?? access.storageError {
                     Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
                         .foregroundStyle(theme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("folder-access-error")
                 }
 
-                VStack(alignment: .leading, spacing: 16) {
-                    if access.folders.isEmpty {
-                        Text("No folders remembered yet.")
-                            .foregroundStyle(theme.textSecondary)
-                    }
-                    ForEach(access.folders) { folder in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Label(folder.url.lastPathComponent.isEmpty ? "Startup Disk" : folder.url.lastPathComponent,
-                                      systemImage: folder.isAvailable ? "folder" : "folder.badge.questionmark")
-                                    .font(ExplorerTheme.actionFont)
-                                    .lineLimit(2)
-                                Spacer(minLength: 8)
-                                Button("Forget") { forget(folder.id) }
-                                    .help("Do not restore this folder's access on the next launch")
-                                    .accessibilityLabel("Forget access to \(folder.url.lastPathComponent)")
-                            }
-                            Text(folder.url.path)
-                                .font(.callout)
+                if access.folders.isEmpty == false || access.storageError == nil {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if access.folders.isEmpty {
+                            Text("No folders remembered yet.")
                                 .foregroundStyle(theme.textSecondary)
-                                .textSelection(.enabled)
-                            if folder.isAvailable == false {
-                                Text("Reconnect its disk or choose this folder again.")
-                                    .font(.callout)
-                                    .foregroundStyle(theme.textSecondary)
+                                .padding(.vertical, 12)
+                                .accessibilityIdentifier("folder-access-empty")
+                        }
+                        ForEach(access.folders) { folder in
+                            FolderAccessSettingsRow(folder: folder) { forget(folder.id) }
+                            if folder.id != access.folders.last?.id {
+                                Divider().overlay(theme.divider)
                             }
                         }
-                        if folder.id != access.folders.last?.id {
-                            Divider().overlay(theme.divider)
+                        if access.folders.contains(where: { $0.isAvailable == false }) {
+                            Button("Retry Unavailable", systemImage: "arrow.clockwise") {
+                                access.restoreUnavailableFolders()
+                            }
+                            .accessibilityIdentifier("folder-access-retry")
                         }
                     }
-                    if access.folders.contains(where: { $0.isAvailable == false }) {
-                        Button("Retry Unavailable Folders", systemImage: "arrow.clockwise") {
-                            access.restoreUnavailableFolders()
-                        }
-                    }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.control, in: .rect(cornerRadius: 14))
                 }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.control, in: .rect(cornerRadius: 14))
 
                 if access.forgottenForNextLaunch {
-                    Label("Folder access will no longer be restored after you quit and reopen the app.", systemImage: "checkmark.circle")
+                    Label("Saved access removed for next launch.", systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .accessibilityIdentifier("folder-access-forgotten")
                 }
-                Text("Forgetting access does not remove files or sidebar favorites. Current access lasts until the app quits so active file operations can finish. It does not revoke access granted separately in macOS Settings.")
-                    .font(.callout)
-                    .foregroundStyle(theme.textSecondary)
+                if access.folders.isEmpty == false || access.forgottenForNextLaunch {
+                    Text("Forget clears saved access. Current access lasts until you quit; files, favorites and macOS permissions stay unchanged.")
+                        .font(.callout)
+                        .foregroundStyle(theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: 580)
+        .frame(maxHeight: .infinity)
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)

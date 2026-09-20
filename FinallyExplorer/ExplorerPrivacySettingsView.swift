@@ -7,46 +7,63 @@ struct ExplorerPrivacySettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Label("Privacy & Support", systemImage: "hand.raised")
-                    .font(.system(.title2, design: .rounded).weight(.semibold))
-
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 8) {
                     Label("Your files stay on your Mac", systemImage: "internaldrive")
-                        .font(ExplorerTheme.actionFont)
-                    Text("File searches, image analysis, and AI requests are processed locally. No account or external AI API is required.")
-                        .foregroundStyle(theme.textSecondary)
-                    Text("Preferences and offline catalogs are saved locally. Clear document or photo analysis to forget its context; closing only the tool panel may retain it in this window.")
-                        .foregroundStyle(theme.textSecondary)
-
-                    Divider().overlay(theme.divider)
-
-                    ForEach(ExplorerLegalDocument.allCases) { document in
-                        Button(document.title, systemImage: document.systemImage) {
-                            selectedDocument = document
-                        }
-                        .accessibilityIdentifier("settings-\(document.rawValue)-button")
-                    }
-
-                    Text("These documents are included in the app and can be read offline. Policy and terms are pre-release drafts pending publication review.")
+                        .font(.headline)
+                    Text("Search and AI run locally. No account required.")
                         .font(.callout)
                         .foregroundStyle(theme.textSecondary)
                 }
                 .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(theme.control, in: .rect(cornerRadius: 14))
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Label("Need a hand?", systemImage: "envelope")
-                        .font(ExplorerTheme.actionFont)
-                    Text("Include your app version, macOS version, and steps to reproduce the issue. Redact personal paths and sensitive information before attaching a screenshot.")
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Documents")
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(theme.textSecondary)
-                    if let emailURL = ExplorerSupport.emailURL {
-                        Link("Email Support", destination: emailURL)
-                            .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
-                            .accessibilityIdentifier("settings-email-support-button")
+                        .accessibilityAddTraits(.isHeader)
+
+                    ForEach(ExplorerLegalDocument.allCases) { document in
+                        Button {
+                            selectedDocument = document
+                        } label: {
+                            HStack {
+                                Label(document.title, systemImage: document.systemImage)
+                                Spacer(minLength: 12)
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(theme.textSecondary)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .accessibilityIdentifier("settings-\(document.rawValue)-button")
                     }
-                    Text(ExplorerSupport.email)
-                        .textSelection(.enabled)
-                    Text("Nothing is attached or sent automatically.")
+
+                    Text("Available offline. Privacy & Terms are pre-release drafts.")
+                        .font(.callout)
+                        .foregroundStyle(theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Support")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(theme.textSecondary)
+                        .accessibilityAddTraits(.isHeader)
+
+                    HStack(spacing: 12) {
+                        Text(ExplorerSupport.email)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 0)
+                        if let emailURL = ExplorerSupport.emailURL {
+                            Link("Email Support", destination: emailURL)
+                                .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
+                                .fixedSize()
+                                .accessibilityIdentifier("settings-email-support-button")
+                        }
+                    }
+                    Text("No files or diagnostics are sent automatically.")
                         .font(.callout)
                         .foregroundStyle(theme.textSecondary)
                 }
@@ -56,7 +73,8 @@ struct ExplorerPrivacySettingsView: View {
             .font(.body)
             .padding(24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: 580)
+        .frame(maxHeight: .infinity)
         .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
         .tint(theme.accent)

@@ -16,6 +16,7 @@ struct VisualDescriptionControls: View {
                 Button("Find Photos", systemImage: "sparkle.magnifyingglass") { model.findPhotos() }
                     .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled(model.snapshot == nil || model.naturalDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help(model.snapshot == nil ? "Analyze a folder first" : "Search the analyzed photos")
                     .accessibilityIdentifier("visual-description-submit")
             }
             .disabled(model.isWorking || model.isNaturalEnabled == false)
@@ -23,11 +24,6 @@ struct VisualDescriptionControls: View {
                 HStack { ProgressView().controlSize(.small).tint(theme.textPrimary); Text("Understanding the photo description…") }.font(.callout)
             } else if model.isNaturalEnabled == false {
                 Text("Photo descriptions are off. Enable Ask AI & Smart Search in Settings.").font(.caption)
-            } else if model.snapshot == nil {
-                Text("Analyze a folder first, then describe the photos in English.").font(.callout).foregroundStyle(theme.textSecondary)
-            } else {
-                Text("Try “beach photos from last week”, then “Only HEIC”. A new scene starts fresh filters.")
-                    .font(.callout).foregroundStyle(theme.textSecondary)
             }
             if let request = model.naturalRequest, let plan = model.naturalPlan {
                 HStack(alignment: .top) {

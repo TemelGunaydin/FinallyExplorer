@@ -10,9 +10,7 @@ struct VisualSearchSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            Text("Find scenes and text in your photos. Analyze a folder to get started.")
-                .font(.callout).foregroundStyle(theme.textSecondary)
-            sourceControls
+            VisualSearchSourceControls(model: model)
             VisualDescriptionControls(model: model)
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -24,7 +22,7 @@ struct VisualSearchSheet: View {
             if let progress = model.progress {
                 VStack(spacing: 8) {
                     FileToolsProgressView(progress: progress, isCancelling: model.isCancelling,
-                        detail: "Analyzing this folder only. Cancel keeps your last completed analysis.")
+                        detail: "Cancel keeps your previous analysis.")
                     if progress.totalItems > 0 {
                         Text("\(progress.completedItems) of \(progress.totalItems) images processed").font(.callout)
                         ProgressView(value: Double(progress.completedItems), total: Double(progress.totalItems))
@@ -35,8 +33,7 @@ struct VisualSearchSheet: View {
             } else if let snapshot = model.snapshot {
                 results(snapshot)
             } else {
-                ContentUnavailableView("Your Photos, Searchable", systemImage: "photo.badge.magnifyingglass",
-                    description: Text("Choose a folder and select Analyze Folder.\nThen try “beach photos” or words from a receipt."))
+                ContentUnavailableView("No Photos Analyzed", systemImage: "photo.badge.magnifyingglass")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("visual-search-empty")
             }
@@ -56,31 +53,11 @@ struct VisualSearchSheet: View {
             Label("Visual Search", systemImage: "photo.badge.magnifyingglass")
                 .font(.system(.title2, design: .rounded).weight(.semibold))
             Spacer()
-            Text("ON DEVICE · MEMORY ONLY").font(.caption.weight(.semibold))
-                .padding(6).background(theme.accentSoft, in: .rect(cornerRadius: 6))
+            VisualSearchOptionsButton(model: model)
             Button("Close Visual Search", systemImage: "xmark") { model.cancel(); dismiss() }
                 .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
                 .keyboardShortcut(.cancelAction).accessibilityIdentifier("visual-search-close")
         }
-    }
-
-    private var sourceControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Button("Choose Folder…", systemImage: "folder", action: model.chooseFolder)
-                    .accessibilityIdentifier("visual-search-choose-folder")
-                Spacer()
-                Toggle("Include hidden items", isOn: $model.includesHidden)
-                Button(model.snapshot == nil ? "Analyze Folder" : "Analyze Again", systemImage: "sparkle.magnifyingglass") { model.analyze() }
-                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
-                    .disabled(model.sourceURL == nil).accessibilityIdentifier("visual-search-analyze")
-            }.disabled(model.isWorking)
-            Text(model.sourceURL?.path ?? "Choose the folder you want to analyze.")
-                .font(.callout).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
-                .accessibilityIdentifier("visual-search-source")
-            ExplorerReadingDetails(title: "Supported images & privacy", text: "Up to 300 images · 40 MB / 80 MP each · JPEG, PNG, HEIC, TIFF, BMP. English labels and text. Links, packages and cloud placeholders are skipped. Analysis stays in memory and does not require Apple Intelligence; other photo descriptions may. Visual matches can miss or misidentify subjects.")
-        }
-        .padding(12).background(theme.control, in: .rect(cornerRadius: 12)).disabled(model.isWorking)
     }
 
     private func results(_ snapshot: VisualSearchSnapshot) -> some View {
@@ -95,8 +72,10 @@ struct VisualSearchSheet: View {
             Text("\(model.matches.count) \(model.matches.count == 1 ? "match" : "matches") · \(snapshot.entries.count) analyzed · \(snapshot.skipped.count) skipped")
                 .font(.callout).foregroundStyle(theme.textPrimary)
                 .accessibilityIdentifier("visual-search-summary")
-            Text("\(snapshot.excludedHiddenCount) hidden / \(snapshot.excludedOtherCount) unsupported entries excluded · Visual matches can be imperfect.")
-                .font(.caption).foregroundStyle(theme.textSecondary)
+            if snapshot.excludedHiddenCount > 0 || snapshot.excludedOtherCount > 0 {
+                Text("Excluded: \(snapshot.excludedHiddenCount) hidden · \(snapshot.excludedOtherCount) unsupported entries")
+                    .font(.callout).foregroundStyle(theme.textSecondary)
+            }
             if model.query.count > 200 {
                 Text(VisualSearchError.queryTooLong.localizedDescription).font(.callout)
             }
@@ -104,6 +83,8 @@ struct VisualSearchSheet: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if snapshot.entries.isEmpty {
                         Text("No supported images could be analyzed in this folder.")
+                        Text("Choose JPEG, PNG, HEIC, TIFF or BMP images.")
+                            .font(.callout).foregroundStyle(theme.textSecondary)
                     } else if model.matches.isEmpty {
                         Text(model.naturalPlan == nil
                              ? "No matches found. Try another scene or fewer words."
@@ -135,12 +116,12 @@ struct VisualSearchSheet: View {
                 Button(model.isCancelling ? "Stopping…" : "Cancel", action: model.cancel)
                     .disabled(model.isCancelling).accessibilityIdentifier("visual-search-stop")
             }
-            Text("No uploads. Kept in this Explorer window; Clear to forget.")
-                .font(.caption).foregroundStyle(theme.textSecondary)
             Spacer()
-            Button("Clear Analysis", systemImage: "eraser", action: model.clearIndex)
-                .disabled(model.snapshot == nil && model.isWorking == false)
-                .accessibilityIdentifier("visual-search-clear")
+            if model.snapshot != nil || model.isWorking {
+                Button("Clear Analysis", systemImage: "eraser", action: model.clearIndex)
+                    .help("Forget this window’s image analysis. Your photos stay unchanged.")
+                    .accessibilityIdentifier("visual-search-clear")
+            }
         }
     }
 }

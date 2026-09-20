@@ -1604,21 +1604,23 @@ final class FinallyExplorerUITests: XCTestCase {
         let choose = app.buttons["visual-search-choose-folder"]
         let find = app.buttons["visual-description-submit"]
         let clear = app.buttons["visual-search-clear"]
-        for action in [choose, find, clear] {
+        for action in [choose, find] {
             XCTAssertTrue(action.exists)
             XCTAssertGreaterThanOrEqual(action.frame.height, 36)
         }
         XCTAssertTrue(choose.isEnabled)
         XCTAssertFalse(find.isEnabled)
-        XCTAssertFalse(clear.isEnabled)
-        let source = element(withIdentifier: "visual-search-source").value as? String
+        XCTAssertFalse(clear.exists, "There is no analysis to clear yet")
+        XCTAssertFalse(app.checkBoxes["visual-search-hidden-items"].exists, "Advanced options should not clutter the main controls")
+        XCTAssertTrue(app.buttons["visual-search-options"].exists)
+        let source = choose.value as? String
         choose.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).click()
         let picker = app.windows["open-panel"]
         let cancel = picker.buttons["CancelButton"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         cancel.click()
         XCTAssertTrue(picker.waitForNonExistence(timeout: 5))
-        XCTAssertEqual(element(withIdentifier: "visual-search-source").value as? String, source)
+        XCTAssertEqual(choose.value as? String, source)
         XCTAssertFalse(app.staticTexts["visual-search-summary"].exists)
         XCTAssertTrue(app.buttons["visual-search-analyze"].isEnabled)
         app.buttons["visual-search-close"].click()
