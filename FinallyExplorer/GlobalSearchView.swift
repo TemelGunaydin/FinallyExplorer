@@ -11,7 +11,9 @@ struct GlobalSearchToolbar: View {
     let model: GlobalSearchModel
     let aiSettings: ExplorerAISettings
     let rootURL: URL
+    var visibleItems: [FileItem] = []
     let onReveal: (ExplorerSearchResult) -> Void
+    var onAskAI: (String) -> Void = { _ in }
 
     @State private var isResultsPresented = false
     @FocusState private var isSearchFocused: Bool
@@ -22,134 +24,131 @@ struct GlobalSearchToolbar: View {
         let isIndexing = model.isIndexing(in: rootURL)
         let indexFailureMessage = model.indexFailureMessage(in: rootURL)
 
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(
-                    isIndexReady ? theme.chromeText : theme.chromeText.opacity(0.78)
-                )
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(
+                        isIndexReady ? theme.chromeText : theme.chromeText.opacity(0.78)
+                    )
 
-            ZStack(alignment: .leading) {
-                TextField("", text: $model.query)
-                    .textFieldStyle(.plain)
-                    .focused($isSearchFocused)
-                    .disabled(isIndexReady == false)
-                    .foregroundStyle(isIndexReady ? theme.chromeText : Color.clear)
-                    .accessibilityLabel("Search this Mac")
-                    .accessibilityValue(searchFieldAccessibilityValue)
-                    .accessibilityHint(searchFieldAccessibilityHint)
-                    .accessibilityIdentifier("global-search-text-field")
-                    .onSubmit(activateSelection)
-                    .onKeyPress(.upArrow) {
-                        model.moveSelection(.previous)
-                        return .handled
+                ZStack(alignment: .leading) {
+                    TextField("", text: $model.query)
+                        .textFieldStyle(.plain)
+                        .focused($isSearchFocused)
+                        .disabled(isIndexReady == false)
+                        .foregroundStyle(isIndexReady ? theme.chromeText : Color.clear)
+                        .accessibilityLabel("Search this Mac")
+                        .accessibilityValue(searchFieldAccessibilityValue)
+                        .accessibilityHint(searchFieldAccessibilityHint)
+                        .accessibilityIdentifier("global-search-text-field")
+                        .onSubmit(activateSelection)
+                        .onKeyPress(.upArrow) {
+                            model.moveSelection(.previous)
+                            return .handled
+                        }
+                        .onKeyPress(.downArrow) {
+                            model.moveSelection(.next)
+                            return .handled
+                        }
+
+                    if isIndexing {
+                        Text("Indexing this Mac…")
+                            .foregroundStyle(theme.chromeText.opacity(0.84))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    } else if indexFailureMessage != nil {
+                        Text("Search unavailable")
+                            .foregroundStyle(theme.chromeText.opacity(0.84))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    } else if model.query.isEmpty {
+                        Text("Search this Mac")
+                            .foregroundStyle(theme.chromeText.opacity(0.58))
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
-                    .onKeyPress(.downArrow) {
-                        model.moveSelection(.next)
-                        return .handled
-                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if isIndexing {
-                    Text("Indexing this Mac…")
-                        .foregroundStyle(theme.chromeText.opacity(0.84))
-                        .allowsHitTesting(false)
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.small)
+                        .tint(.white)
+                        .environment(\.colorScheme, .dark)
                         .accessibilityHidden(true)
                 } else if indexFailureMessage != nil {
-                    Text("Search unavailable")
-                        .foregroundStyle(theme.chromeText.opacity(0.84))
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                } else if model.query.isEmpty {
-                    Text(model.usesSmartSearch ? "Describe a file…" : "Search this Mac")
-                        .foregroundStyle(theme.chromeText.opacity(0.58))
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    Button(
+                        "Retry Search Indexing",
+                        systemImage: "arrow.clockwise",
+                        action: retryIndexing
+                    )
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .help(
+                        "Retry search preparation. \(indexFailureMessage ?? "Unknown error.")"
+                    )
+                    .accessibilityIdentifier("global-search-index-retry")
+                } else if model.isSearching || model.isPreparingResults {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.small)
+                        .tint(.white)
+                        .environment(\.colorScheme, .dark)
+                        .accessibilityLabel("Searching this Mac")
+                }
+
+                if model.hasQuery {
+                    Button("Clear Search", systemImage: "xmark.circle.fill") {
+                        model.clear()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button("Smart", systemImage: "sparkles", action: toggleSmartSearch)
-                .buttonStyle(.plain)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(model.usesSmartSearch ? theme.accent : theme.chromeText.opacity(0.80))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(model.usesSmartSearch ? theme.accent.opacity(0.18) : .clear, in: .capsule)
-                .disabled(isIndexReady == false || aiSettings.isSmartSearchEnabled == false)
-                .accessibilityLabel(model.usesSmartSearch ? "Use Normal Search" : "Use Smart Search")
-                .accessibilityValue(model.usesSmartSearch ? "On" : "Off")
-                .accessibilityIdentifier("global-search-smart-toggle")
-                .help(aiSettings.isSmartSearchEnabled
-                      ? "Describe a file, date or type, then press Return. Uses on-device Apple Intelligence."
-                      : "Enable Smart Search in AI Settings.")
-
-            if isIndexing {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-                    .tint(.white)
-                    .environment(\.colorScheme, .dark)
-                    .accessibilityHidden(true)
-            } else if indexFailureMessage != nil {
-                Button(
-                    "Retry Search Indexing",
-                    systemImage: "arrow.clockwise",
-                    action: retryIndexing
-                )
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .help(
-                    "Retry search preparation. \(indexFailureMessage ?? "Unknown error.")"
-                )
-                .accessibilityIdentifier("global-search-index-retry")
-            } else if model.isSearching || model.isPreparingResults {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-                    .tint(.white)
-                    .environment(\.colorScheme, .dark)
-                    .accessibilityLabel("Searching this Mac")
-            }
-
-            if model.hasQuery {
-                Button("Clear Search", systemImage: "xmark.circle.fill") {
-                    model.clear()
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-            }
-        }
-        .font(.system(.callout, design: .rounded))
-        .foregroundStyle(theme.chromeText)
-        .padding(.horizontal, 12)
-        .frame(width: 460, height: 34)
-        .background(
-            Color.black.opacity(
-                isIndexReady ? (isSearchFocused ? 0.28 : 0.17) : 0.12
-            ),
-            in: .rect(cornerRadius: 10)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(
-                    isIndexReady && isSearchFocused
-                        ? theme.accent.opacity(0.72)
-                        : Color.white.opacity(isIndexReady ? 0.14 : 0.08),
-                    lineWidth: isIndexReady && isSearchFocused ? 1.25 : 0.75
-                )
-        }
-        .popover(isPresented: $isResultsPresented, arrowEdge: .bottom) {
-            GlobalSearchResultsPopover(
-                model: model,
-                rootURL: rootURL,
-                onReveal: reveal
+            .font(.system(.callout, design: .rounded))
+            .foregroundStyle(theme.chromeText)
+            .padding(.horizontal, 12)
+            .frame(width: 460, height: 34)
+            .background(
+                Color.black.opacity(
+                    isIndexReady ? (isSearchFocused ? 0.28 : 0.17) : 0.12
+                ),
+                in: .rect(cornerRadius: 10)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(
+                        isIndexReady && isSearchFocused
+                            ? theme.accent.opacity(0.72)
+                            : Color.white.opacity(isIndexReady ? 0.14 : 0.08),
+                        lineWidth: isIndexReady && isSearchFocused ? 1.25 : 0.75
+                    )
+            }
+            .popover(isPresented: $isResultsPresented, arrowEdge: .bottom) {
+                GlobalSearchResultsPopover(
+                    model: model,
+                    rootURL: rootURL,
+                    onReveal: reveal
+                )
+            }
+
+            Button("Ask AI", systemImage: "sparkles") {
+                isResultsPresented = false
+                isSearchFocused = false
+                onAskAI(model.query)
+            }
+            .labelStyle(.titleAndIcon)
+            .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
+            .help("Use this search as a question, or start a conversation. Runs on this Mac.")
+            .accessibilityIdentifier("window-ask-ai-button")
         }
         .task(id: rootURL) {
             await model.runIndexLifecycle(in: rootURL)
         }
-        .task(id: model.request(in: rootURL)) {
-            await model.search(in: rootURL)
+        .task(id: model.request(in: rootURL, visibleItems: visibleItems)) {
+            await model.search(in: rootURL, visibleItems: visibleItems)
         }
         .onChange(of: model.query) {
             // Editing an existing query must reopen results after an outside
@@ -177,18 +176,12 @@ struct GlobalSearchToolbar: View {
     }
 
     private func activateSelection() {
-        guard model.isSearching == false else { return }
         if model.usesSmartSearch, model.smartSearchPlan == nil || model.selectedResult == nil {
             model.submitSmartSearch()
             return
         }
         guard let result = model.selectedResult else { return }
         reveal(result)
-    }
-
-    private func toggleSmartSearch() {
-        model.usesSmartSearch.toggle()
-        isSearchFocused = true
     }
 
     private var searchFieldAccessibilityValue: String {
@@ -227,7 +220,7 @@ struct GlobalSearchToolbar: View {
     }
 }
 
-private struct GlobalSearchResultsPopover: View {
+struct GlobalSearchResultsPopover: View {
     @Environment(\.explorerTheme) private var theme
 
     let model: GlobalSearchModel
@@ -245,6 +238,7 @@ private struct GlobalSearchResultsPopover: View {
                     scope: $model.scope,
                     contentMode: $model.contentMode,
                     resultCount: model.results.count,
+                    showsResultCount: model.message == nil || model.results.isEmpty == false,
                     isRebuildingContentIndex: model.isRebuildingContentIndex,
                     onRebuildContentIndex: {
                         model.rebuildContentIndex(in: rootURL)
@@ -255,8 +249,7 @@ private struct GlobalSearchResultsPopover: View {
             Divider()
                 .overlay(theme.divider)
 
-            if let message = model.message,
-               message.isError == false || model.results.isEmpty == false {
+            if let message = model.message, model.results.isEmpty == false {
                 GlobalSearchMessageBanner(message: message)
             }
 
@@ -264,6 +257,7 @@ private struct GlobalSearchResultsPopover: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 680, height: 470)
+        .foregroundStyle(theme.textPrimary)
         .background(theme.panel)
     }
 
@@ -283,20 +277,22 @@ private struct GlobalSearchResultsPopover: View {
             )
             .tint(theme.accent)
             .foregroundStyle(theme.textPrimary)
-        } else if let message = model.message,
-                  message.isError,
-                  model.results.isEmpty {
-            ContentUnavailableView(
-                "Unable to Search This Mac",
-                systemImage: "exclamationmark.triangle.fill",
-                description: Text(message.text)
-            )
+        } else if let message = model.message, model.results.isEmpty {
+            ContentUnavailableView {
+                Label("Search Incomplete", systemImage: "exclamationmark.magnifyingglass")
+            } description: {
+                Text(message.text)
+            } actions: {
+                Button("Try Again", systemImage: "arrow.clockwise", action: model.retrySearch)
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
+            }
+            .accessibilityIdentifier("global-search-incomplete")
         } else if model.results.isEmpty {
             if model.usesSmartSearch {
                 ContentUnavailableView(
                     "No Matching Indexed Files",
                     systemImage: "doc.text.magnifyingglass",
-                    description: Text("Check the interpreted filters above or edit your description. Smart Search can only find files and contents indexed by Spotlight.")
+                    description: Text("Try a different description. Only Spotlight-indexed files can appear here.")
                 )
             } else {
                 ContentUnavailableView.search(text: model.query)
@@ -350,6 +346,7 @@ private struct GlobalSearchScopeBar: View {
     @Binding var contentMode: FFFContentSearchMode
 
     let resultCount: Int
+    let showsResultCount: Bool
     let isRebuildingContentIndex: Bool
     let onRebuildContentIndex: () -> Void
 
@@ -399,10 +396,12 @@ private struct GlobalSearchScopeBar: View {
 
             Spacer(minLength: 8)
 
-            Text("\(resultCount) results")
-                .font(.callout)
-                .foregroundStyle(theme.textSecondary)
-                .monospacedDigit()
+            if showsResultCount {
+                Text("\(resultCount) results")
+                    .font(.callout)
+                    .foregroundStyle(theme.textSecondary)
+                    .monospacedDigit()
+            }
         }
         .padding(12)
         .background(theme.elevatedPanel)

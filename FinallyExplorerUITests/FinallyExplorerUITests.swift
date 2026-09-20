@@ -1966,27 +1966,33 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Global Needle Beta.txt"].waitForExistence(timeout: 10))
     }
 
-    func testSmartSearchWaitsForSubmitAndCanReturnToNormalSearch() throws {
+    func testUnifiedSearchHasOneExplicitAIEntryAndKeepsNormalSearch() throws {
         XCTAssertTrue(rows(named: "Source Item.txt").firstMatch.waitForExistence(timeout: 10))
         let field = app.descendants(matching: .any)["global-search-text-field"]
-        let smartButton = app.buttons["global-search-smart-toggle"]
+        let aiButton = app.buttons["window-ask-ai-button"]
         XCTAssertTrue(waitForEnabled(field, timeout: 10))
-        XCTAssertTrue(smartButton.waitForExistence(timeout: 5))
-        smartButton.click()
-        let prompt = app.descendants(matching: .any)["smart-search-prompt"]
-        typeCatalogQuery("Find the accounting report from 2 days ago", in: field)
-        XCTAssertEqual(field.value as? String, "Find the accounting report from 2 days ago")
-        XCTAssertTrue(prompt.waitForExistence(timeout: 5), "Typing must not start model inference.")
-        XCTAssertTrue(app.buttons["smart-search-submit-button"].isEnabled)
-        XCTAssertFalse(app.descendants(matching: .any)["smart-search-filters"].exists)
-        app.buttons["smart-search-normal-button"].click()
-        field.click()
-        field.typeKey("a", modifierFlags: .command)
-        for character in "Global Needle" { field.typeKey(String(character), modifierFlags: []) }
+        XCTAssertTrue(aiButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(identifier: "window-ask-ai-button").count, 1)
+        XCTAssertEqual(aiButton.label, "Ask AI")
+        XCTAssertFalse(app.buttons["global-search-smart-toggle"].exists)
+        typeCatalogQuery("Global Needle", in: field)
         XCTAssertEqual(field.value as? String, "Global Needle")
         XCTAssertTrue(app.staticTexts["Global Needle Alpha.txt"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Global Needle Beta.txt"].waitForExistence(timeout: 10))
-        recordWindowHierarchy("Normal search preserved after Smart Search")
+        XCTAssertFalse(app.textFields["ask-ai-input"].exists, "Typing stays in normal search.")
+        // Dismiss the nonmodal results first; the query must survive the handoff.
+        field.typeKey(.escape, modifierFlags: [])
+        aiButton.click()
+        let input = app.textFields["ask-ai-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Global Needle"].firstMatch.waitForExistence(timeout: 10),
+                      "The explicit AI action submits the existing query once.")
+        app.buttons["ask-ai-close"].click()
+        XCTAssertTrue(input.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, "Global Needle")
+        typeCatalogQuery("Global Needle Alpha", in: field)
+        XCTAssertTrue(app.staticTexts["Global Needle Alpha.txt"].waitForExistence(timeout: 10))
+        recordWindowHierarchy("Unified search preserves normal file search")
     }
 
     func testGlobalSearchSupportsArrowSelectionAndReturnReveal() throws {

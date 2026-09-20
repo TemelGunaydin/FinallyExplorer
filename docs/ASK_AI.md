@@ -2,10 +2,10 @@
 
 ## Available now
 
-- The toolbar's **Ask AI** button opens a separate, themed search conversation. Existing FFF name search and grep/content search remain independent.
+- A single labeled **Ask AI** button sits beside the toolbar search field. Normal typing searches names/contents without invoking a model. Clicking **Ask AI** carries a nonempty query into a fresh conversation and explicitly submits it once; with an empty field it opens the existing conversation. The former tiny Smart-mode toggle and duplicate toolbar sparkle are no longer exposed.
 - Submit an English description, inspect the displayed filters, and reveal a result in the active Explorer pane.
 - Follow-ups preserve the last successful plan. Exact shortcuts such as `Only PDFs`, `Only HEIC`, `In Documents instead`, and `Last week instead` are handled deterministically, without another inference. Other descriptions use Apple's on-device model.
-- `New Search` clears the context. Closing cancels pending work. Disabling **Ask AI & Smart Search** in AI Settings clears the conversation when the panel observes the setting.
+- `New Search` clears the context. Closing cancels pending work and leaves the ordinary search field unchanged. Disabling **Ask AI** in AI Settings clears the conversation when the panel observes the setting. The stored preference key is unchanged.
 - Recent conversation history is bounded to 12 completed requests and held only in window memory. No chat database or cloud API is added.
 - English scene requests such as `Find photos taken by the sea` open [Visual Search](VISUAL_SEARCH.md), carrying the description. Its first folder analysis still requires explicit approval. The **Search Photos** button opens the same tool directly.
 - **Ask Documents** opens [Document Questions](DOCUMENT_QUESTIONS.md) with the active file selection. Select **Read Documents** before asking. This is a separate, source-cited Q&A tool; document contents do not enter the Spotlight search conversation.

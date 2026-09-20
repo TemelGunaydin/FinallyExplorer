@@ -11,6 +11,84 @@ import Testing
 struct GlobalSearchModelTests {
     private let rootURL = URL(filePath: "/", directoryHint: .isDirectory)
 
+    @Test("A visible 12.png appears before the index responds, then deduplicates without losing selection", .timeLimit(.minutes(1)))
+    func visibleNumericFilename() async throws {
+        let file = globalResult(named: "12.png")
+        let service = ControlledGlobalSearchService()
+        let model = GlobalSearchModel(service: service, initialRootURL: rootURL, debounce: {})
+        model.query = "12"
+        let work = Task { await model.search(in: rootURL, visibleItems: [file.item, file.item]) }
+        await service.waitUntilRequested("12")
+        #expect(model.isSearching)
+        #expect(model.results.map(\.item.name) == ["12.png"])
+        let selected = try #require(model.selectedResultID)
+        await service.resolve("12", with: GlobalSearchPage(results: [file], message: nil))
+        await work.value
+        #expect(model.results.count == 1)
+        #expect(model.selectedResultID == selected)
+        #expect(model.selectedResult?.item.url == file.item.url)
+        await model.shutdown()
+    }
+
+    @Test("An index error keeps visible matches and does not become an empty successful search", arguments: [false, true])
+    func visibleMatchesSurviveFailure(_ hasVisibleItem: Bool) async {
+        let service = GlobalSearchServiceStub(pages: [:], error: .failed)
+        let model = GlobalSearchModel(service: service, initialRootURL: rootURL, debounce: {})
+        model.query = "12"
+        await model.search(in: rootURL, visibleItems: hasVisibleItem ? [globalResult(named: "12.png").item] : [])
+        #expect(model.results.count == (hasVisibleItem ? 1 : 0))
+        #expect(model.message?.isError == true)
+        #expect(model.message?.text == "Search failed for testing.")
+        #expect(!model.isSearching)
+        await model.shutdown()
+    }
+
+    @Test("Visible name matches never masquerade as content hits or expose hidden/out-of-root items")
+    func visibleMatchesRespectScope() async {
+        let service = GlobalSearchServiceStub(pages: [:])
+        let model = GlobalSearchModel(service: service, initialRootURL: rootURL, debounce: {})
+        let file = globalResult(named: "12.png").item
+        let hidden = FileItem(url: URL(filePath: "/Fixture/hidden12.png"), isDirectory: false,
+                              isImage: true, fileSize: nil, modificationDate: nil, isHidden: true)
+        model.query = "12"
+        await model.search(in: rootURL, visibleItems: [file, hidden, globalResult(named: ".12.png").item])
+        #expect(model.results.map(\.item.name) == ["12.png"])
+        model.scope = .contents
+        await model.search(in: rootURL)
+        #expect(model.results.isEmpty)
+        model.scope = .names
+        let otherRoot = URL(filePath: "/Other")
+        await model.prepare(in: otherRoot)
+        #expect(model.results.isEmpty)
+        await model.shutdown()
+    }
+
+    @Test("Changing a pane listing or retrying changes the request; removed items do not linger")
+    func visibleListingRevision() async {
+        let model = GlobalSearchModel(service: GlobalSearchServiceStub(pages: [:]), initialRootURL: rootURL, debounce: {})
+        let item = globalResult(named: "12.png").item
+        model.query = "12"
+        let first = model.request(in: rootURL, visibleItems: [item])
+        #expect(first != model.request(in: rootURL, visibleItems: []))
+        await model.search(in: rootURL, visibleItems: [item])
+        #expect(model.results.count == 1)
+        model.retrySearch()
+        #expect(first != model.request(in: rootURL, visibleItems: [item]))
+        await model.search(in: rootURL, visibleItems: [])
+        #expect(model.results.isEmpty)
+        await model.shutdown()
+    }
+
+    @Test("A capped visible listing retains the incomplete-results notice")
+    func visibleListingLimit() async {
+        let model = GlobalSearchModel(service: GlobalSearchServiceStub(pages: [:]), initialRootURL: rootURL, debounce: {})
+        model.query = "file"
+        await model.search(in: rootURL, visibleItems: (0..<130).map { globalResult(named: "file\($0).txt").item })
+        #expect(model.results.count == 120)
+        #expect(model.message?.text.contains("closest matches") == true)
+        await model.shutdown()
+    }
+
     @Test("Permission refresh uses the latest query, but never republishes after shutdown", .timeLimit(.minutes(1)), arguments: [false, true])
     func accessRefresh(_ shutdown: Bool) async throws {
         let gate = FolderComparisonTestGate()

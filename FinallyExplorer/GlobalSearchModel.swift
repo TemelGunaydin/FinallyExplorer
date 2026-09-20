@@ -13,6 +13,8 @@ nonisolated struct GlobalSearchRequest: Hashable, Sendable {
     let contentMode: FFFContentSearchMode
     var usesSmartSearch = false
     var smartSearchSubmission = 0
+    var visibleItems: [FileItem] = []
+    var retryGeneration = 0
 }
 
 nonisolated enum GlobalSearchIndexState: Equatable, Sendable {
@@ -54,7 +56,9 @@ final class GlobalSearchModel {
     private(set) var isRebuildingContentIndex = false
     private(set) var indexState: GlobalSearchIndexState = .idle
     private(set) var message: ExplorerSearchMessage?
+    private(set) var retryGeneration = 0
 
+    @ObservationIgnored private var visibleItems: [FileItem] = []
     @ObservationIgnored private let service: any GlobalSearchServicing
     @ObservationIgnored private let smartInterpreter: any SmartSearchInterpreting
     @ObservationIgnored private let smartService: any SmartSearchExecuting
@@ -158,14 +162,16 @@ final class GlobalSearchModel {
         return message
     }
 
-    func request(in rootURL: URL) -> GlobalSearchRequest {
+    func request(in rootURL: URL, visibleItems: [FileItem] = []) -> GlobalSearchRequest {
         GlobalSearchRequest(
             rootURL: rootURL,
             query: query,
             scope: scope,
             contentMode: contentMode,
             usesSmartSearch: usesSmartSearch,
-            smartSearchSubmission: smartSearchSubmission
+            smartSearchSubmission: smartSearchSubmission,
+            visibleItems: visibleItems,
+            retryGeneration: retryGeneration
         )
     }
 
@@ -226,7 +232,10 @@ final class GlobalSearchModel {
         }
     }
 
-    func search(in rootURL: URL) async {
+    func retrySearch() { retryGeneration += 1 }
+
+    func search(in rootURL: URL, visibleItems: [FileItem]? = nil) async {
+        if let visibleItems { self.visibleItems = visibleItems }
         guard isIndexReady(in: rootURL) else { return }
         await search(in: rootURL, applyingDebounce: true)
     }
@@ -261,8 +270,9 @@ final class GlobalSearchModel {
 
         isSearching = true
         isPreparingResults = false
-        results = []
-        selectedResultID = nil
+        let localPage = visibleNameMatches(in: rootURL, query: requestedQuery, scope: requestedScope)
+        results = localPage.results
+        selectedResultID = results.first?.id
         message = nil
 
         do {
@@ -295,9 +305,13 @@ final class GlobalSearchModel {
                 return
             }
 
-            results = page.results
-            selectedResultID = page.results.first?.id
-            message = page.message
+            let selection = selectedResultID
+            let combinedPage = localPage.results.isEmpty ? page : AuthorizedFolderSearchService.merged(
+                [localPage, page], query: requestedQuery, scope: requestedScope
+            )
+            results = combinedPage.results
+            selectedResultID = results.contains { $0.id == selection } ? selection : results.first?.id
+            message = combinedPage.message
             isSearching = false
             isPreparingResults = page.isIndexWarming
             indexState = .ready(rootURL: Self.canonicalRootURL(rootURL))
@@ -313,12 +327,28 @@ final class GlobalSearchModel {
             guard generation == requestGeneration, Task.isCancelled == false else {
                 return
             }
-            results = []
-            selectedResultID = nil
+            // An index failure must not erase matches already visible in a pane.
+            results = localPage.results
+            selectedResultID = results.first?.id
             message = .error(error.localizedDescription)
             isSearching = false
             isPreparingResults = false
         }
+    }
+
+    private func visibleNameMatches(in rootURL: URL, query: String, scope: ExplorerSearchScope) -> GlobalSearchPage {
+        guard scope == .names else { return GlobalSearchPage(results: [], message: nil) }
+        let rootComponents = rootURL.standardizedFileURL.pathComponents
+        let matches = visibleItems.filter {
+            !$0.isHidden && !$0.name.hasPrefix(".")
+                && $0.url.standardizedFileURL.pathComponents.starts(with: rootComponents)
+                && SearchTextMatch.match(in: $0.name, matching: query) != nil
+        }.map {
+            ExplorerSearchResult(id: $0.url.path, item: $0, relativePath: $0.url.path, contentMatch: nil)
+        }
+        return AuthorizedFolderSearchService.merged(
+            [GlobalSearchPage(results: matches, message: nil)], query: query, scope: .names
+        )
     }
 
     private func runSmartSearch(
@@ -490,6 +520,7 @@ final class GlobalSearchModel {
         rebuildTask = nil
         isRebuildingContentIndex = false
         submittedSmartQuery = nil
+        visibleItems = []
         resetVisibleState()
         indexState = .idle
         await service.shutdown()

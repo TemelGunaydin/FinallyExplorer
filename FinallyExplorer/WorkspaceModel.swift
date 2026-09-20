@@ -538,6 +538,17 @@ final class WorkspaceModel {
     }
 
     var activePane: WorkspacePaneState? { panes[activePaneID] }
+    /// Reuse only a currently loaded, readable listing. Never read a new scope
+    /// or retain a previous folder's items during navigation/access failure.
+    var searchableDirectoryItems: [FileItem] {
+        layoutRoot.paneIDs.compactMap { panes[$0] }.flatMap { pane in
+            guard pane.isLoading == false, pane.directoryAccessError == nil,
+                  pane.errorMessage == nil,
+                  let loaded = pane.loadedDirectoryURL,
+                  loaded.standardizedFileURL == pane.displayedDirectory?.standardizedFileURL else { return [FileItem]() }
+            return pane.directoryContents.filter { $0.isHidden == false && !$0.name.hasPrefix(".") }
+        }
+    }
     var paneCount: Int { layoutRoot.paneIDs.count }
     var canSplit: Bool { layout.canSplit }
 

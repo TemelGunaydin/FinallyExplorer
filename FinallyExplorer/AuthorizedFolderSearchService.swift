@@ -146,8 +146,8 @@ actor AuthorizedFolderSearchService: GlobalSearchServicing {
                     catch {
                         try Task.checkCancellation()
                         guard recoversErrors else { throw error }
-                        return (job.0, GlobalSearchPage(results: [], message: .notice(
-                            "Could not search \(job.0.lastPathComponent). Check its folder access."
+                        return (job.0, GlobalSearchPage(results: [], message: .error(
+                            "Couldn’t search \(job.0.lastPathComponent). \(error.localizedDescription)"
                         )))
                     }
                 }
@@ -191,9 +191,11 @@ actor AuthorizedFolderSearchService: GlobalSearchServicing {
         }
         var notices = Array(Set(pages.compactMap { $0.message?.text })).sorted()
         if results.count > 120 { notices.append("Showing the closest matches. Refine the search to see more.") }
+        let text = notices.joined(separator: " ")
+        let hasError = pages.contains { $0.message?.isError == true }
         return GlobalSearchPage(
             results: Array(results.prefix(120)),
-            message: notices.isEmpty ? nil : .notice(notices.joined(separator: " ")),
+            message: notices.isEmpty ? nil : hasError ? .error(text) : .notice(text),
             isIndexWarming: pages.contains { $0.isIndexWarming }
         )
     }

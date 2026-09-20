@@ -1,5 +1,26 @@
 # AI and Tools UI polish
 
+## Search, comparison and AI settings — September 20, 2026
+
+- **Compare Folders:** source/destination have full-width surfaced buttons, a visible chevron, and a themed picker listing the open panels and their paths. A native `Menu` discarded the button surface in the first render, so the final control uses a real button/popover. Remove the redundant local/no-AI badge. Keep the hidden-items checkbox; move comparison exclusions into a collapsed disclosure. Show the missing-file review action only after a comparison. The separate copy review/confirmation and file-operation rules are unchanged.
+- **AI settings:** remove the repeated On-Device AI heading. Feature titles, short secondary explanations and trailing switches form consistent rows. Model readiness is a separate section; privacy/technical details stay available in a disclosure. Preference keys and availability/opt-out behavior are unchanged.
+- **One search entry:** name/content search continues as the user types. The tiny sparkle toggle and separate icon-only Ask AI button are replaced by one labeled, surfaced Ask AI button next to the field. It uses the existing query on explicit activation, preserving photo routing and follow-up conversations. AI is never invoked merely by typing. The old Smart Search model regression coverage is retained; its legacy controls also use the shared surfaced style and shorter copy.
+- **No false empty success:** an empty failed/limited search displays one incomplete-search state and Retry, not an access banner plus a spelling/no-results prompt. Partial results retain their warning. Root failures preserve the actual reason instead of calling every failure a folder-permission issue.
+- **Visible files are immediate:** the upper name search also matches the already-loaded, currently readable pane listings. It publishes those matches before awaiting an index, deduplicates by path, keeps the selection as indexed results arrive, and retains visible matches if the index fails. Hidden items, stale/loading/unreadable listings and items outside the search root are excluded; filename matches are never inserted into content/grep results. Listing changes reissue the search; no new folder permission, disk-wide traversal or AI work is added.
+
+The reported `12.png` exists, and a read-only Spotlight metadata check returned its filename and `public.png` type. The earlier blanket access notice cannot establish why the app's indexed lookup failed. The visible-file regression is covered with a synthetic `12.png`, including a delayed/failed index; a fresh native sandbox run against the reported Downloads state is still needed to diagnose that particular index failure. Do not report it as a proven missing Spotlight entry.
+
+### Validation and remaining interaction checks
+
+XcodeBuildMCP was used throughout; no FlowDeck and no foreground automation in this UI-polish increment. Shared SwiftUI controls and the design guide's hierarchy/affordance guidance informed the layout. Light/dark offscreen renders were inspected for the comparison initial/ready/results/options states, AI settings, the unified toolbar, and failed/partially successful search. Offscreen windows are never ordered front; their native switches/checkboxes can therefore appear inactive in captures.
+
+- Initial focused run: **39 passed, 0 failures/skips**, `test_macos_2026-09-20T14-36-54-034Z_pid28778_16462266.xcresult`.
+- First full regression: **651 passed, 1 failed, 0 skipped**, `test_macos_2026-09-20T14-40-57-449Z_pid29486_2f5d3cc6.xcresult`. `DocumentQuestionOnDeviceTests.scannedDocument` hit the existing per-page OCR timeout. No OCR/model timeouts or assertions were weakened.
+- Focused retry with the real-device document suite, final search-cap notice, workspace, presentation and Ask AI models: **56 passed, 0 failures/skips**, `test_macos_2026-09-20T14-43-36-784Z_pid30120_23e2f2e3.xcresult`. The OCR case passed on this run; the earlier failure remains recorded.
+- Final full rerun on the completed source: **652 passed, 1 failed, 0 skipped**, `test_macos_2026-09-20T14-45-21-991Z_pid30478_58d4506c.xcresult`. The same scanned-PDF OCR timeout recurred in the full suite. This is an unresolved batch-run failure, not an all-green regression result; focused success does not close it. Search/UI regressions passed. The only build warnings were the existing deprecated accessibility API calls in `AccessibilityPreviewRegressionTests`.
+
+The updated unified-search XCTest interaction case is compiled but has **not** been run in this increment. Native acceptance remains pending for the query-to-AI handoff, full-button/keyboard location selection, right-aligned Settings switches, and toolbar containment at the 980-point minimum window. Rebuild a separate QA app from this source before those tests; the previously installed September 19 QA copies contain older UI. The postponed copy/move/drag-drop work and existing release gates are not marked complete here.
+
 ## Scope — September 12, 2026
 
 - Keep the launcher at the right of the window toolbar, with a visible **Tools** label instead of an unexplained wrench-only native menu. The popover uses the current app palette, full-width actions, short descriptions and two groups: **Find & Understand** and **Organize & Manage**. It does not imply that every tool uses AI.

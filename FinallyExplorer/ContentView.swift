@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var globalSearch = GlobalSearchModel()
     @State private var askAISearch = AskAISearchModel()
     @State private var isAskAIPresented = false
+    @State private var askAIInitialRequest = ""
     @State private var folderComparison: FolderComparisonModel?
     @State private var duplicateFiles: DuplicateFilesModel?
     @State private var folderOrganization: FolderOrganizationModel?
@@ -332,16 +333,13 @@ struct ContentView: View {
                     model: globalSearch,
                     aiSettings: aiSettings,
                     rootURL: globalSearchRootURL,
-                    onReveal: revealGlobalSearchResult
+                    visibleItems: workspace.searchableDirectoryItems,
+                    onReveal: revealGlobalSearchResult,
+                    onAskAI: { query in
+                        askAIInitialRequest = query
+                        isAskAIPresented = true
+                    }
                 )
-            }
-            .sharedBackgroundVisibility(.hidden)
-
-            ToolbarItem(placement: .primaryAction) {
-                Button("Ask AI", systemImage: "sparkles") { isAskAIPresented = true }
-                    .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
-                    .help("Find files with on-device AI and follow-up questions")
-                    .accessibilityIdentifier("window-ask-ai-button")
             }
             .sharedBackgroundVisibility(.hidden)
 
@@ -534,6 +532,7 @@ struct ContentView: View {
             AskAISearchSheet(
                 model: askAISearch, settings: aiSettings,
                 rootURL: globalSearchRootURL, onReveal: revealGlobalSearchResult,
+                initialRequest: askAIInitialRequest,
                 visualSearch: visualSearch, photoRoot: workspace.activePane?.displayedDirectory,
                 documentQuestions: documentQuestions, documentSelection: workspace.activePane?.selectedCommandURLs ?? []
             )

@@ -298,6 +298,29 @@ nonisolated struct WorkspaceSplitExpectation: Sendable {
 
 @MainActor
 struct WorkspaceModelTests {
+    @Test("Global search reuses only current readable pane listings")
+    func searchableListings() throws {
+        let model = WorkspaceModel()
+        let pane = try #require(model.activePane)
+        let root = try #require(pane.displayedDirectory)
+        let visible = FileItem(url: root.appending(path: "12.png"), isDirectory: false, isImage: true,
+                               fileSize: 10, modificationDate: nil)
+        let hidden = FileItem(url: root.appending(path: ".12.png"), isDirectory: false, isImage: true,
+                              fileSize: 10, modificationDate: nil)
+        pane.directoryContents = [visible, hidden]
+        #expect(model.searchableDirectoryItems.isEmpty)
+        pane.loadedDirectoryURL = root
+        #expect(model.searchableDirectoryItems == [visible])
+        pane.isLoading = true
+        #expect(model.searchableDirectoryItems.isEmpty)
+        pane.isLoading = false
+        pane.directoryAccessError = .permissionDenied(path: root.path, folderTitle: "Downloads")
+        #expect(model.searchableDirectoryItems.isEmpty)
+        pane.directoryAccessError = nil
+        pane.navigation.open(root.appending(path: "Child"))
+        #expect(model.searchableDirectoryItems.isEmpty)
+    }
+
     @Test("Activating a pane does not invalidate the split structure")
     func activationPreservesSplitStructureObservation() async throws {
         let firstID = uuid(45)

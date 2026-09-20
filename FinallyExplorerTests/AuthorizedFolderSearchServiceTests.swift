@@ -51,7 +51,21 @@ struct AuthorizedFolderSearchServiceTests {
         let page = try await search(service)
         #expect(page.results.map(\.item.name) == ["Needle.txt"])
         #expect(page.message?.text.contains("Disconnected") == true)
+        #expect(page.message?.isError == true)
+        #expect(page.message?.text.contains("Check its folder access") == false)
         #expect(page.isIndexWarming == false)
+        await service.shutdown()
+    }
+
+    @Test("All roots failing remains an error, with the actual reason, not a no-results notice")
+    func completeFailure() async throws {
+        let child = AuthorizedSearchFake(fails: true)
+        let service = AuthorizedFolderSearchService(roots: { [Self.folder] }, serviceFactory: { _ in child })
+        let page = try await search(service)
+        #expect(page.results.isEmpty)
+        #expect(page.message?.isError == true)
+        #expect(page.message?.text.contains("Test index unavailable") == true)
+        #expect(page.message?.text.contains("folder access") == false)
         await service.shutdown()
     }
 
@@ -235,7 +249,10 @@ private actor AuthorizedRootsFake {
 }
 
 private actor AuthorizedSearchFake: GlobalSearchServicing {
-    enum Failure: Error { case unavailable }
+    enum Failure: LocalizedError {
+        case unavailable
+        var errorDescription: String? { "Test index unavailable" }
+    }
     let page: GlobalSearchPage
     let fails: Bool
     let gate: AuthorizedSearchGate?

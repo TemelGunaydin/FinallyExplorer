@@ -15,6 +15,7 @@ struct FolderComparisonSheet: View {
             .disabled(model.isWorking)
             HStack {
                 Toggle("Include hidden items", isOn: $model.includesHidden)
+                    .toggleStyle(.checkbox)
                     .disabled(model.isWorking)
                     .accessibilityIdentifier("folder-comparison-hidden")
                 Spacer()
@@ -25,11 +26,10 @@ struct FolderComparisonSheet: View {
                 .disabled(model.canCompare == false)
                 .accessibilityIdentifier("folder-comparison-start")
             }
-            Text("Compare regular file data with SHA‑256. Metadata is not compared. Packages, links, special files, mounted subfolders and cloud placeholders are not followed. Nothing changes until you approve a copy.")
-                .font(.caption)
-                .foregroundStyle(theme.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+            ExplorerReadingDetails(
+                title: "What’s compared?",
+                text: "File contents are checked with SHA-256, not metadata. Packages, links, special files, mounted subfolders and cloud placeholders are skipped. Nothing changes until you approve a copy."
+            )
             Divider().overlay(theme.divider)
             results
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,9 +56,6 @@ struct FolderComparisonSheet: View {
             Label("Compare Folders", systemImage: "arrow.left.arrow.right")
                 .font(.system(.title2, design: .rounded).weight(.semibold))
             Spacer()
-            Text("LOCAL · NO AI REQUIRED")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(theme.textSecondary)
             Button("Close Comparison", systemImage: "xmark") { dismiss() }
                 .labelStyle(.iconOnly)
                 .buttonStyle(ExplorerPaneUtilityButtonStyle())
@@ -70,14 +67,11 @@ struct FolderComparisonSheet: View {
 
     private func locationPicker(_ title: String, selection: Binding<UUID?>, location: FolderComparisonLocation?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker(title, selection: selection) {
-                Text("Choose a panel").tag(nil as UUID?)
-                ForEach(model.locations) { location in
-                    Text(location.title).tag(Optional(location.id))
-                }
-            }
-            .accessibilityIdentifier("folder-comparison-\(title.lowercased())")
-            Text(location?.url.path ?? "Open a second folder in another panel.")
+            Text(title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(theme.textSecondary)
+            FolderComparisonLocationPicker(title: title, locations: model.locations, selection: selection)
+            Text(location?.url.path ?? "No folder selected")
                 .font(.caption)
                 .foregroundStyle(theme.textSecondary)
                 .lineLimit(2, reservesSpace: true)
@@ -132,7 +126,9 @@ struct FolderComparisonSheet: View {
             ContentUnavailableView {
                 Label("Compare Two Open Folders", systemImage: "folder")
             } description: {
-                Text("Open different, non-overlapping folders in two panels, choose a source and destination above, then compare. You can review differences before copying missing items.")
+                Text(model.locations.count < 2
+                     ? "Open another folder in a second panel to compare."
+                     : "Choose two different folders above to see what’s missing or changed.")
             }
         }
     }
@@ -176,10 +172,12 @@ struct FolderComparisonSheet: View {
                     .accessibilityIdentifier("folder-comparison-cancel")
             }
             Spacer()
-            Button("Review Copy Missing…", systemImage: "checkmark.shield", action: model.reviewCopy)
-                .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
-                .disabled(model.canReviewCopy == false)
-                .accessibilityIdentifier("folder-comparison-review-copy")
+            if model.snapshot != nil {
+                Button("Review Missing Files…", systemImage: "checkmark.shield", action: model.reviewCopy)
+                    .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
+                    .disabled(model.canReviewCopy == false)
+                    .accessibilityIdentifier("folder-comparison-review-copy")
+            }
         }
     }
 }

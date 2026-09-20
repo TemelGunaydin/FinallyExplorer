@@ -9,6 +9,7 @@ struct AskAISearchSheet: View {
     @FocusState private var isInputFocused: Bool
     let rootURL: URL
     let onReveal: (ExplorerSearchResult) -> Void
+    var initialRequest = ""
     var visualSearch: VisualSearchModel? = nil
     var photoRoot: URL? = nil
     var documentQuestions: DocumentQuestionModel? = nil
@@ -16,6 +17,7 @@ struct AskAISearchSheet: View {
     @State private var isPhotosPresented = false
     @State private var isDocumentsPresented = false
     @State private var isPhotoConversation = false
+    @State private var didStartInitialRequest = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -37,9 +39,12 @@ struct AskAISearchSheet: View {
                             .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                             .background(theme.control, in: .rect(cornerRadius: 12))
                         }
-                        if model.turns.isEmpty { introduction }
+                        if model.turns.isEmpty && model.isWorking == false { introduction }
                         ForEach(model.turns) { turn in
-                            AskAISearchTurnView(turn: turn)
+                            AskAISearchTurnView(
+                                turn: turn,
+                                showsResponse: turn.id != model.turns.last?.id || (model.plan == nil && model.message == nil)
+                            )
                         }
                         if let pending = model.pendingRequest {
                             Text(pending)
@@ -126,6 +131,16 @@ struct AskAISearchSheet: View {
         }
         .task {
             model.setEnabled(settings.isSmartSearchEnabled)
+            if didStartInitialRequest == false {
+                didStartInitialRequest = true
+                if initialRequest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                    model.startNewSearch()
+                    model.draft = initialRequest
+                    // The explicit Ask AI action submits once, including photo routing.
+                    // Merely typing in the main search field never invokes a model.
+                    submit()
+                }
+            }
             isInputFocused = true
             await settings.refreshAvailability()
         }
@@ -142,9 +157,6 @@ struct AskAISearchSheet: View {
         HStack(spacing: 12) {
             Label("Ask AI", systemImage: "sparkles")
                 .font(.system(.title2, design: .rounded).weight(.semibold))
-            Text("ON-DEVICE")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(theme.textSecondary)
             Spacer()
             if visualSearch != nil {
                 Button("Search Photos", systemImage: "photo.badge.magnifyingglass") { presentPhotos("") }
@@ -187,7 +199,7 @@ struct AskAISearchSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Find files, then refine your search.")
                 .font(.title3.weight(.semibold))
-            Text("Describe what you need in English, then refine with “Only PDFs” or “In Documents instead”.")
+            Text("Describe what you need in English. Ask follow-up questions to narrow it down.")
                 .foregroundStyle(theme.textSecondary)
             ForEach(["PDFs in Downloads from last week", "Photos taken three days ago", "Find the accounting report from two days ago"], id: \.self) { example in
                 Button(example, systemImage: "arrow.up.left") {
@@ -208,7 +220,7 @@ struct AskAISearchSheet: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             if model.isEnabled == false {
-                Text("Ask AI is off. Enable Ask AI & Smart Search in AI Settings.")
+                Text("Ask AI is off. Enable it in AI Settings.")
                     .font(.callout)
             } else if let availability = settings.availability, availability != .available {
                 Text(SmartSearchError.unavailable(availability).localizedDescription)

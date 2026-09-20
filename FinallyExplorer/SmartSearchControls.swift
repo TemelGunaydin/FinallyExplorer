@@ -9,13 +9,12 @@ struct SmartSearchControls: View {
             HStack(spacing: 12) {
                 Label("Smart Search", systemImage: "sparkles")
                     .font(.headline)
-                Text("ON-DEVICE")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(theme.textSecondary)
                 Spacer(minLength: 0)
                 SettingsLink { Text("AI Settings") }
+                    .buttonStyle(ExplorerDialogButtonStyle())
                     .accessibilityIdentifier("smart-search-settings-link")
                 Button("Normal Search", action: useNormalSearch)
+                    .buttonStyle(ExplorerDialogButtonStyle())
                     .accessibilityIdentifier("smart-search-normal-button")
                 Button("Search", systemImage: "arrow.right", action: model.submitSmartSearch)
                     .buttonStyle(ExplorerPanePrimaryButtonStyle(isCompact: false))
@@ -30,13 +29,10 @@ struct SmartSearchControls: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Interpreted search filters")
                     .accessibilityIdentifier("smart-search-filters")
-                Text("\(model.results.count) results · Edit your description to change these filters.")
+                Text("\(model.results.count) results")
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
             }
-            Text("Searches Spotlight-indexed files and supported document contents. Your description stays on this Mac.")
-                .font(.caption)
-                .foregroundStyle(theme.textSecondary)
         }
         .padding(12)
         .foregroundStyle(theme.textPrimary)

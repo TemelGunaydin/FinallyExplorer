@@ -5,6 +5,57 @@ import Testing
 
 @MainActor
 struct FileToolsPresentationTests {
+    @Test("Simplified comparison controls fit before and after comparison", arguments: [false, true])
+    func comparisonControls(_ dark: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        try fixture.write("12.png", "numeric name")
+        let locations = [
+            FolderComparisonLocation(id: UUID(), title: "Panel 1 · Downloads", url: fixture.source),
+            FolderComparisonLocation(id: UUID(), title: "Panel 2 · Long Destination Folder Name", url: fixture.destination)
+        ]
+        let single = FolderComparisonModel(locations: Array(locations.prefix(1)), preferredSourceID: nil, operations: FileOperationCoordinator())
+        try render(FolderComparisonSheet(model: single), name: "ComparisonSingle", width: 760, height: 660, dark: dark)
+        #expect(single.snapshot == nil && single.canCompare == false)
+        let ready = FolderComparisonModel(locations: locations, preferredSourceID: nil, operations: FileOperationCoordinator())
+        try render(FolderComparisonSheet(model: ready), name: "ComparisonReady", width: 760, height: 660, dark: dark)
+        try render(FolderComparisonLocationOptions(locations: locations, selection: locations.first?.id, onSelect: { _ in }),
+                   name: "ComparisonOptions", width: 340, height: 140, dark: dark)
+        let compared = FolderComparisonModel(locations: locations, preferredSourceID: nil, operations: FileOperationCoordinator())
+        await compared.compare()?.value
+        #expect(compared.canReviewCopy)
+        try render(FolderComparisonSheet(model: compared), name: "ComparisonResults", width: 760, height: 660, dark: dark)
+    }
+
+    @Test("Search shows one failure state instead of an error banner plus no-results", arguments: [false, true])
+    func incompleteSearchLayout(_ dark: Bool) async throws {
+        let root = URL(filePath: "/")
+        let model = GlobalSearchModel(service: PresentationSearchFailure(), initialRootURL: root, debounce: {})
+        model.query = "12"
+        await model.search(in: root)
+        #expect(model.message?.isError == true && model.results.isEmpty)
+        try render(GlobalSearchResultsPopover(model: model, rootURL: root, onReveal: { _ in }),
+                   name: "SearchIncomplete", width: 680, height: 470, dark: dark)
+        let file = FileItem(url: URL(filePath: "/Fixture/12.png"), isDirectory: false, isImage: true, fileSize: 100, modificationDate: nil)
+        await model.search(in: root, visibleItems: [file])
+        try render(GlobalSearchResultsPopover(model: model, rootURL: root, onReveal: { _ in }),
+                   name: "SearchVisibleMatch", width: 680, height: 470, dark: dark)
+        await model.shutdown()
+    }
+
+    @Test("Unified toolbar has a labeled AI action beside the regular field", arguments: [false, true])
+    func unifiedSearchToolbar(_ dark: Bool) throws {
+        let suite = "FinallyExplorer.SearchToolbar.Layout.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let root = URL(filePath: "/")
+        let model = GlobalSearchModel(service: PresentationSearchFailure(), initialRootURL: root)
+        model.query = "12"
+        try render(GlobalSearchToolbar(model: model, aiSettings: ExplorerAISettings(defaults: defaults), rootURL: root, onReveal: { _ in })
+            .padding(10).background(ExplorerTheme.palette(for: .mesa).windowChrome),
+                   name: "UnifiedSearchToolbar", width: 580, height: 60, dark: dark)
+    }
+
     @Test("Tools launcher and disabled actions render in every palette", arguments: ExplorerThemeChoice.allCases, [false, true])
     func toolsPresentation(_ choice: ExplorerThemeChoice, _ dark: Bool) throws {
         try render(ExplorerToolsPopover(hasFolder: true, onSelect: { _ in }, onClose: {}),
@@ -187,6 +238,14 @@ struct FileToolsPresentationTests {
         #expect(png.count > 1_000)
         try png.write(to: URL.temporaryDirectory.appending(path: "FinallyExplorer-\(name)-\(dark ? "dark" : "light").png"), options: .atomic)
     }
+}
+
+private nonisolated struct PresentationSearchFailure: GlobalSearchServicing {
+    func prepare(rootURL: URL) async throws { }
+    func search(rootURL: URL, query: String, scope: ExplorerSearchScope, contentMode: FFFContentSearchMode) async throws -> GlobalSearchPage {
+        GlobalSearchPage(results: [], message: .error("Couldn’t search Downloads. The index is unavailable."))
+    }
+    func shutdown() async { }
 }
 
 private nonisolated struct PresentationVisualAnalyzer: VisualImageAnalyzing {
