@@ -56,6 +56,7 @@ final class NativeSandboxFileMutationUITests: XCTestCase {
         let duplicate = row("FECopy copy.txt", in: destination)
         XCTAssertTrue(duplicate.waitForExistence(timeout: 15))
         try fixture.assertText(NativeSandboxMutationFixture.copyText, at: fixture.destination.appending(path: "FECopy copy.txt"))
+        try fixture.assertText(NativeSandboxMutationFixture.copyText, at: fixture.destination.appending(path: "FECopy.txt"))
         evidence("Copy collision preserves both files", in: application)
 
         // Move only the copy just created by this test, never the original.
@@ -67,9 +68,15 @@ final class NativeSandboxFileMutationUITests: XCTestCase {
         XCTAssertTrue(duplicate.waitForNonExistence(timeout: 5))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.destination.appending(path: "FECopy copy.txt").path))
         try fixture.assertText(NativeSandboxMutationFixture.copyText, at: fixture.source.appending(path: "FECopy copy.txt"))
+        try fixture.assertText(NativeSandboxMutationFixture.copyText, at: fixture.destination.appending(path: "FECopy.txt"))
         try fixture.assertOriginalsUnchanged()
         XCTAssertEqual(try fixture.children(fixture.source), ["FECopy copy.txt", "FECopy.txt", "Package"])
         XCTAssertEqual(try fixture.children(fixture.destination), ["Anchor.txt", "FECopy.txt"])
+        assertPath(fixture.source, in: source)
+        assertPath(fixture.destination, in: destination)
+        XCTAssertTrue(row("FECopy copy.txt", in: source).isHittable)
+        XCTAssertTrue(row("FECopy.txt", in: destination).isHittable)
+        select(row("Anchor.txt", in: destination))
         evidence("Native cross-pane copy and move verified bytes", in: application)
     }
 
