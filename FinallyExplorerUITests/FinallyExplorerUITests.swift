@@ -1475,13 +1475,12 @@ final class FinallyExplorerUITests: XCTestCase {
         app.buttons["visual-search-analyze"].click()
         XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
         app.buttons["visual-description-submit"].click()
-        XCTAssertTrue(app.staticTexts["visual-description-evidence"].waitForExistence(timeout: 10))
-        XCTAssertTrue((app.staticTexts["visual-description-evidence"].value as? String ?? "").contains("beach"))
-        recordWindowHierarchy("Photo sentence resolved to visible visual evidence")
+        assertVisualSearchEvidenceInOptions("beach")
+        recordWindowHierarchy("Photo sentence resolved with evidence available in options")
         app.buttons["visual-search-close"].click()
         XCTAssertTrue(app.buttons["ask-ai-submit"].waitForExistence(timeout: 5))
         app.buttons["ask-ai-submit"].click()
-        XCTAssertTrue(app.staticTexts["visual-description-evidence"].waitForExistence(timeout: 10))
+        assertVisualSearchEvidenceInOptions("beach")
         XCTAssertFalse(app.staticTexts["visual-search-error"].exists)
         app.buttons["visual-search-close"].click()
         app.buttons["ask-ai-documents"].click()
@@ -1541,7 +1540,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertTrue(waitForValue(originalDate + " · Type: PNG", on: filters, timeout: 10))
         XCTAssertTrue(app.buttons["visual-search-reveal-Coast.png"].exists)
         XCTAssertFalse(app.buttons["visual-search-reveal-Coast.jpg"].exists)
-        XCTAssertTrue((app.staticTexts["visual-description-evidence"].value as? String ?? "").contains("beach"))
+        assertVisualSearchEvidenceInOptions("beach")
 
         let description = app.textFields["visual-description-input"]
         description.click()
@@ -1561,6 +1560,17 @@ final class FinallyExplorerUITests: XCTestCase {
         app.buttons["visual-search-close"].click()
         app.buttons["ask-ai-new-search"].click()
         XCTAssertEqual(input.value as? String, "")
+    }
+
+    private func assertVisualSearchEvidenceInOptions(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(app.buttons["visual-description-new-search"].waitForExistence(timeout: 10), file: file, line: line)
+        let evidence = app.staticTexts["visual-description-evidence"]
+        XCTAssertFalse(evidence.exists, "Search evidence should not add another explanation to the main screen", file: file, line: line)
+        app.buttons["visual-search-options"].click()
+        XCTAssertTrue(evidence.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertTrue((evidence.value as? String ?? "").contains(expected), file: file, line: line)
+        app.popovers.firstMatch.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+        XCTAssertTrue(evidence.waitForNonExistence(timeout: 5), file: file, line: line)
     }
 
     func testToolsLauncherKeyboardAndFullRowActions() throws {

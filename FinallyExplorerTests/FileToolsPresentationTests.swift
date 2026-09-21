@@ -216,6 +216,42 @@ struct FileToolsPresentationTests {
         try render(VisualSearchSheet(model: filtered, onReveal: { _ in }), name: "FilteredVisualSearch", width: 820, height: 720, dark: dark)
     }
 
+    @Test("A no-match photo search stays compact while diagnostics remain in options", arguments: [false, true])
+    func visualSearchNoMatchesLayout(_ dark: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        try VisualSearchTestFixtures.receiptImage().write(to: fixture.source.appending(path: "Receipt.png"))
+        for index in 1...6 { try fixture.write(".Hidden\(index).png", "hidden") }
+        try fixture.write("Notes.txt", "unsupported")
+        try FileManager.default.createSymbolicLink(at: fixture.source.appending(path: "Linked.png"),
+            withDestinationURL: fixture.source.appending(path: "Receipt.png"))
+        try fixture.write("Skipped.png", "skip")
+        let model = VisualSearchModel(service: VisualSearchService(analyzer: PresentationPartialVisualAnalyzer()),
+            interpreter: PresentationNoMatchVisualInterpreter())
+        model.setSource(fixture.source)
+        await model.analyze()?.value
+        model.naturalDraft = "ios"
+        await model.findPhotos()?.value
+        let snapshot = try #require(model.snapshot)
+        #expect(snapshot.entries.count == 1 && snapshot.skipped.count == 1)
+        #expect(snapshot.excludedHiddenCount == 6 && snapshot.excludedOtherCount == 1)
+        #expect(model.matches.isEmpty && model.naturalPlan != nil && model.errorMessage == nil)
+        try render(VisualSearchOptionsContent(model: model), name: "VisualSearchDetails", width: 340, height: 400, dark: dark)
+        try render(VisualSearchSheet(model: model, onReveal: { _ in }), name: "VisualSearchNoMatches", width: 820, height: 720, dark: dark)
+    }
+
+    @Test("An analyzed folder without photos has a single empty state", arguments: [false, true])
+    func visualSearchNoPhotosLayout(_ dark: Bool) async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        let model = VisualSearchModel(service: VisualSearchService(analyzer: FixedVisualAnalyzer()))
+        model.setSource(fixture.source)
+        await model.analyze()?.value
+        await model.waitForSearch()
+        #expect(model.snapshot?.entries.isEmpty == true && model.errorMessage == nil)
+        try render(VisualSearchSheet(model: model, onReveal: { _ in }), name: "VisualSearchNoPhotos", width: 820, height: 720, dark: dark)
+    }
+
     @Test("Offline catalogs fit in light and dark without accessing a live disk", arguments: [false, true])
     func offlineCatalogLayout(_ dark: Bool) async throws {
         let fixture = try OfflineCatalogTestFixture()
@@ -310,5 +346,18 @@ private nonisolated struct PresentationVisualAnalyzer: VisualImageAnalyzing {
     func analyze(_ data: Data) async throws -> VisualImageEvidence {
         VisualImageEvidence(labels: [.init(name: "document", confidence: 0.9)],
             text: "INVOICE 4827", textWasTruncated: false, thumbnail: data)
+    }
+}
+
+private nonisolated struct PresentationPartialVisualAnalyzer: VisualImageAnalyzing {
+    func analyze(_ data: Data) async throws -> VisualImageEvidence {
+        if data == Data("skip".utf8) { throw VisualSearchError.unreadableImage }
+        return try await PresentationVisualAnalyzer().analyze(data)
+    }
+}
+
+private nonisolated struct PresentationNoMatchVisualInterpreter: VisualDescriptionInterpreting {
+    func interpret(_ description: String) async throws -> VisualDescriptionPlan {
+        try VisualDescriptionPlan(concepts: [["ios"]])
     }
 }

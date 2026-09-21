@@ -69,45 +69,42 @@ struct VisualSearchSheet: View {
                     ForEach(VisualSearchMode.allCases) { Text($0.rawValue).tag($0) }
                 }.frame(width: 215).accessibilityIdentifier("visual-search-mode")
             }.disabled(model.isWorking)
-            Text("\(model.matches.count) \(model.matches.count == 1 ? "match" : "matches") · \(snapshot.entries.count) analyzed · \(snapshot.skipped.count) skipped")
-                .font(.callout).foregroundStyle(theme.textPrimary)
-                .accessibilityIdentifier("visual-search-summary")
-            if snapshot.excludedHiddenCount > 0 || snapshot.excludedOtherCount > 0 {
-                Text("Excluded: \(snapshot.excludedHiddenCount) hidden · \(snapshot.excludedOtherCount) unsupported entries")
+            if model.matches.isEmpty == false {
+                Text("\(model.matches.count) \(model.matches.count == 1 ? "photo" : "photos")")
                     .font(.callout).foregroundStyle(theme.textSecondary)
+                    .accessibilityIdentifier("visual-search-summary")
             }
             if model.query.count > 200 {
                 Text(VisualSearchError.queryTooLong.localizedDescription).font(.callout)
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if snapshot.entries.isEmpty {
-                        Text("No supported images could be analyzed in this folder.")
-                        Text("Choose JPEG, PNG, HEIC, TIFF or BMP images.")
-                            .font(.callout).foregroundStyle(theme.textSecondary)
-                    } else if model.matches.isEmpty {
-                        Text(model.naturalPlan == nil
-                             ? "No matches found. Try another scene or fewer words."
-                             : "No photos match these filters. Try “All dates” or “All image types”.")
-                    }
-                    ForEach(model.matches.prefix(150)) { match in
-                        VisualSearchResultRow(match: match) {
-                            model.reveal(match.entry) { url in onReveal(url); dismiss() }
-                        }.disabled(model.isWorking)
-                    }
-                    if model.matches.count > 150 { Text("Showing the first 150 matches. Narrow your search to see the rest.").font(.caption) }
-                    if snapshot.skipped.isEmpty == false {
-                        DisclosureGroup("Skipped images (\(snapshot.skipped.count))") {
-                            ForEach(snapshot.skipped) { item in
-                                Text("\(item.relativePath) — \(item.reason)").font(.caption).textSelection(.enabled)
-                            }
-                        }
-                    }
+            if model.matches.isEmpty {
+                if model.errorMessage == nil, model.query.count <= 200 {
+                    ContentUnavailableView(snapshot.entries.isEmpty ? "No Photos to Search" : "No Photos Found",
+                                           systemImage: "photo.badge.magnifyingglass")
+                        .accessibilityIdentifier("visual-search-no-results")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                resultList
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var resultList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                ForEach(model.matches.prefix(150)) { match in
+                    VisualSearchResultRow(match: match) {
+                        model.reveal(match.entry) { url in onReveal(url); dismiss() }
+                    }.disabled(model.isWorking)
+                }
+                if model.matches.count > 150 { Text("Showing the first 150 matches. Narrow your search to see the rest.").font(.caption) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var footer: some View {
