@@ -378,6 +378,25 @@ nonisolated enum FFFSearchValueMapper {
         return normalized.isEmpty ? nil : String(normalized)
     }
 
+    static func directoryHit(
+        rootURL: URL,
+        rawRelativePath: String?,
+        directoryName: String?,
+        score: Int
+    ) -> FFFDirectorySearchHit? {
+        guard let rawRelativePath,
+              let relativePath = normalizedDirectoryRelativePath(rawRelativePath),
+              let url = itemURL(rootURL: rootURL, relativePath: relativePath) else {
+            return nil
+        }
+        return FFFDirectorySearchHit(
+            url: url,
+            relativePath: relativePath,
+            directoryName: directoryName ?? URL(fileURLWithPath: relativePath).lastPathComponent,
+            score: score
+        )
+    }
+
     static func itemURL(rootURL: URL, relativePath: String) -> URL? {
         guard isLocalFileURL(rootURL),
               relativePath.isEmpty == false,
@@ -831,40 +850,19 @@ actor FFFSearchEngine {
                 )
             }
 
-            let rawRelativePath = try requiredString(
-                item.pointee.relative_path,
-                operation: "search directories",
-                field: "relative path"
-            )
-            guard let relativePath = FFFSearchValueMapper.normalizedDirectoryRelativePath(
-                rawRelativePath
-            ) else {
-                throw FFFSearchError.invalidPayload(
-                    operation: "search directories",
-                    field: "relative path"
-                )
-            }
-            let directoryName = copiedString(item.pointee.dir_name)
-                ?? URL(fileURLWithPath: relativePath).lastPathComponent
-            guard let itemURL = FFFSearchValueMapper.itemURL(
-                rootURL: rootURL,
-                relativePath: relativePath
-            ) else {
-                throw FFFSearchError.invalidPayload(
-                    operation: "search directories",
-                    field: "relative path"
-                )
-            }
             let score = fff_dir_search_result_get_score(result, index)?.pointee.total ?? 0
-
-            hits.append(
-                FFFDirectorySearchHit(
-                    url: itemURL,
-                    relativePath: relativePath,
-                    directoryName: directoryName,
-                    score: Int(score)
-                )
-            )
+            // A broad query can include a malformed entry from FFF. It must
+            // never become a navigable URL, but it must not discard the valid
+            // file and directory matches in the same search page either.
+            guard let hit = FFFSearchValueMapper.directoryHit(
+                rootURL: rootURL,
+                rawRelativePath: copiedString(item.pointee.relative_path),
+                directoryName: copiedString(item.pointee.dir_name),
+                score: Int(score)
+            ) else {
+                continue
+            }
+            hits.append(hit)
         }
 
         return hits

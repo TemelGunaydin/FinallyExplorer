@@ -52,6 +52,10 @@ struct FFFSearchEngineTests {
                 query: "Reports Archive",
                 limit: 20
             )
+            async let broadDirectoriesRequest = engine.searchDirectories(
+                query: "v",
+                limit: 20
+            )
             async let plainRequest = engine.searchContent(
                 query: "uniqueSearchNeedle",
                 mode: .plain,
@@ -70,9 +74,10 @@ struct FFFSearchEngineTests {
                 limit: 20,
                 timeBudgetMilliseconds: 1_000
             )
-            let (files, directories, plain, regex, fuzzy) = try await (
+            let (files, directories, broadDirectories, plain, regex, fuzzy) = try await (
                 filesRequest,
                 directoriesRequest,
+                broadDirectoriesRequest,
                 plainRequest,
                 regexRequest,
                 fuzzyRequest
@@ -80,6 +85,7 @@ struct FFFSearchEngineTests {
 
             #expect(files.contains { $0.url == sourceURL })
             #expect(directories.contains { $0.relativePath == "Reports Archive" })
+            #expect(broadDirectories.contains { $0.relativePath == "Reports Archive" })
             #expect(plain.contains { $0.url == sourceURL && $0.lineNumber == 1 })
             #expect(regex.contains { $0.url == sourceURL })
             #expect(fuzzy.contains { $0.url == sourceURL })
@@ -214,6 +220,23 @@ struct FFFSearchEngineTests {
         )
         #expect(FFFSearchValueMapper.normalizedDirectoryRelativePath("/") == nil)
         #expect(FFFSearchValueMapper.normalizedDirectoryRelativePath("") == nil)
+    }
+
+    @Test("Invalid native directory entries are dropped without losing valid matches")
+    func malformedDirectoryEntryDoesNotDiscardPage() {
+        let root = URL(filePath: "/tmp/fff-root", directoryHint: .isDirectory)
+        let rawPaths: [String?] = [nil, "/", "../outside", ".", "Reports Archive/", "nested/path///"]
+        let hits = rawPaths.compactMap {
+            FFFSearchValueMapper.directoryHit(
+                rootURL: root, rawRelativePath: $0,
+                directoryName: nil, score: 5
+            )
+        }
+        #expect(hits.map(\.relativePath) == ["Reports Archive", "nested/path"])
+        #expect(hits.map(\.url) == [
+            root.appending(path: "Reports Archive").standardizedFileURL,
+            root.appending(path: "nested/path").standardizedFileURL
+        ])
     }
 
     @Test(
