@@ -1419,18 +1419,23 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertFalse(app.textFields["visual-search-query"].exists, "Opening the tool must not analyze images")
         app.buttons["visual-search-analyze"].click()
         let query = app.textFields["visual-search-query"]
-        XCTAssertTrue(query.waitForExistence(timeout: 45))
+        waitForVisualAnalysis()
         XCTAssertFalse(app.staticTexts["visual-search-error"].exists)
-        typeCatalogQuery("invoice", in: query)
-        XCTAssertEqual(query.value as? String, "invoice")
+        withToolOptions("visual-search-options") {
+            XCTAssertTrue(query.waitForExistence(timeout: 5))
+            typeCatalogQuery("invoice", in: query)
+            XCTAssertEqual(query.value as? String, "invoice")
+        }
         let reveal = app.buttons["visual-search-reveal-ZXQ-Visual-Fixture.png"]
         XCTAssertTrue(reveal.waitForExistence(timeout: 5))
         recordWindowHierarchy("Real local OCR result with its evidence")
         app.buttons["visual-search-close"].click()
         openVisualSearch()
-        XCTAssertEqual(app.textFields["visual-search-query"].value as? String, "invoice")
+        withToolOptions("visual-search-options") {
+            XCTAssertEqual(query.value as? String, "invoice")
+        }
         XCTAssertTrue(reveal.waitForExistence(timeout: 5), "Reopening reuses memory without another scan")
-        app.buttons["visual-search-clear"].click()
+        withToolOptions("visual-search-options") { app.buttons["visual-search-clear"].click() }
         XCTAssertFalse(app.textFields["visual-search-query"].exists)
         XCTAssertEqual(try Data(contentsOf: file), data)
         app.buttons["visual-search-close"].click()
@@ -1448,7 +1453,7 @@ final class FinallyExplorerUITests: XCTestCase {
         app.launch()
         openVisualSearch()
         app.buttons["visual-search-analyze"].click()
-        XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
+        waitForVisualAnalysis()
         let reveal = app.buttons["visual-search-reveal-Changed-Visual-Fixture.png"]
         XCTAssertTrue(reveal.waitForExistence(timeout: 5))
         try Data("Replaced fixture".utf8).write(to: file)
@@ -1473,7 +1478,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertFalse(app.buttons["visual-description-submit"].isEnabled)
         XCTAssertFalse(app.textFields["visual-search-query"].exists, "A natural request must not silently start a folder scan")
         app.buttons["visual-search-analyze"].click()
-        XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
+        waitForVisualAnalysis()
         app.buttons["visual-description-submit"].click()
         assertVisualSearchEvidenceInOptions("beach")
         recordWindowHierarchy("Photo sentence resolved with evidence available in options")
@@ -1518,7 +1523,7 @@ final class FinallyExplorerUITests: XCTestCase {
         app.buttons["ask-ai-submit"].click()
         XCTAssertTrue(app.buttons["visual-search-analyze"].waitForExistence(timeout: 5))
         app.buttons["visual-search-analyze"].click()
-        XCTAssertTrue(app.textFields["visual-search-query"].waitForExistence(timeout: 45))
+        waitForVisualAnalysis()
         app.buttons["visual-description-submit"].click()
         let filters = app.staticTexts["visual-description-filters"]
         XCTAssertTrue(filters.waitForExistence(timeout: 10))
@@ -1554,7 +1559,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertFalse(app.buttons["visual-search-reveal-Coast.png"].exists)
         XCTAssertFalse(app.staticTexts["visual-search-error"].exists)
         recordWindowHierarchy("Photo date and format refinement")
-        app.buttons["visual-description-new-search"].click()
+        withToolOptions("visual-search-options") { app.buttons["visual-description-new-search"].click() }
         XCTAssertTrue(filters.waitForNonExistence(timeout: 5))
         XCTAssertEqual(description.value as? String, "")
         app.buttons["visual-search-close"].click()
@@ -1563,14 +1568,31 @@ final class FinallyExplorerUITests: XCTestCase {
     }
 
     private func assertVisualSearchEvidenceInOptions(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(app.buttons["visual-description-new-search"].waitForExistence(timeout: 10), file: file, line: line)
+        let options = app.buttons["visual-search-options"]
+        XCTAssertTrue(waitForEnabled(options, timeout: 30), file: file, line: line)
         let evidence = app.staticTexts["visual-description-evidence"]
         XCTAssertFalse(evidence.exists, "Search evidence should not add another explanation to the main screen", file: file, line: line)
         app.buttons["visual-search-options"].click()
+        app.disclosureTriangles["visual-search-details"].click()
         XCTAssertTrue(evidence.waitForExistence(timeout: 5), file: file, line: line)
         XCTAssertTrue((evidence.value as? String ?? "").contains(expected), file: file, line: line)
         app.popovers.firstMatch.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
         XCTAssertTrue(evidence.waitForNonExistence(timeout: 5), file: file, line: line)
+    }
+
+    private func waitForVisualAnalysis(file: StaticString = #filePath, line: UInt = #line) {
+        let completed = NSPredicate(format: "label == %@ AND enabled == true", "Analyze Again")
+        let ready = XCTNSPredicateExpectation(predicate: completed, object: app.buttons["visual-search-analyze"])
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 45), .completed, file: file, line: line)
+    }
+
+    private func withToolOptions(_ identifier: String, action: () -> Void) {
+        app.buttons[identifier].click()
+        XCTAssertTrue(app.popovers.firstMatch.waitForExistence(timeout: 5))
+        action()
+        if app.popovers.firstMatch.exists {
+            app.popovers.firstMatch.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+        }
     }
 
     func testToolsLauncherKeyboardAndFullRowActions() throws {
@@ -1673,7 +1695,7 @@ final class FinallyExplorerUITests: XCTestCase {
         XCTAssertEqual(source.value as? String, "Scanned Invoice.pdf · page 2 · OCR")
         recordWindowHierarchy("Scanned PDF OCR citation with original page number and recognition warning")
         app.buttons["document-source-done"].click()
-        app.buttons["document-clear"].click()
+        withToolOptions("document-options") { app.buttons["document-clear"].click() }
         XCTAssertFalse(app.staticTexts["document-ready"].exists)
         XCTAssertFalse(element(withIdentifier: "document-ocr-summary").exists)
         XCTAssertFalse(citation.exists)
@@ -1742,7 +1764,7 @@ final class FinallyExplorerUITests: XCTestCase {
         citation.click()
         XCTAssertTrue(app.buttons["document-source-done"].waitForExistence(timeout: 5))
         app.buttons["document-source-done"].click()
-        app.buttons["document-clear"].click()
+        withToolOptions("document-options") { app.buttons["document-clear"].click() }
         XCTAssertFalse(app.staticTexts["document-ready"].exists)
         XCTAssertFalse(citation.exists)
         XCTAssertEqual(try Data(contentsOf: sourceFileURL), original)
@@ -1772,7 +1794,7 @@ final class FinallyExplorerUITests: XCTestCase {
             .compactMap { $0.value as? String }.joined(separator: " ")
         XCTAssertTrue(firstAnswer.contains("2026"), firstAnswer)
         XCTAssertFalse(firstAnswer.contains("480"), "The date question must not be answered with the invoice total: \(firstAnswer)")
-        XCTAssertTrue(app.buttons["document-new-conversation"].exists)
+        withToolOptions("document-options") { XCTAssertTrue(app.buttons["document-new-conversation"].exists) }
         input.click()
         input.typeKey("a", modifierFlags: .command)
         input.typeKey(XCUIKeyboardKey.delete, modifierFlags: [])
@@ -1792,7 +1814,7 @@ final class FinallyExplorerUITests: XCTestCase {
         app.buttons["document-citation-1"].firstMatch.click()
         XCTAssertTrue(app.buttons["document-source-done"].waitForExistence(timeout: 5))
         app.buttons["document-source-done"].click()
-        app.buttons["document-new-conversation"].click()
+        withToolOptions("document-options") { app.buttons["document-new-conversation"].click() }
         XCTAssertTrue(app.staticTexts["document-ready"].exists, "Starting fresh must not reread the selection")
         XCTAssertFalse(app.staticTexts["document-answer-claim"].firstMatch.exists)
         XCTAssertFalse(app.buttons["document-new-conversation"].exists)

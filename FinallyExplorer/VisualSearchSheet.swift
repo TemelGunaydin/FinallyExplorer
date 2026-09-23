@@ -11,7 +11,13 @@ struct VisualSearchSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             VisualSearchSourceControls(model: model)
-            VisualDescriptionControls(model: model)
+            if model.isNaturalEnabled {
+                VisualDescriptionControls(model: model)
+            } else {
+                TextField("Search labels or text in images", text: $model.query)
+                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("visual-search-query")
+                    .disabled(model.isWorking)
+            }
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.callout).textSelection(.enabled).padding(10)
@@ -55,20 +61,18 @@ struct VisualSearchSheet: View {
             Spacer()
             VisualSearchOptionsButton(model: model)
             Button("Close Visual Search", systemImage: "xmark") { model.cancel(); dismiss() }
-                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                 .keyboardShortcut(.cancelAction).accessibilityIdentifier("visual-search-close")
         }
     }
 
     private func results(_ snapshot: VisualSearchSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                TextField("Search labels or text in images", text: $model.query)
-                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("visual-search-query")
-                Picker("Match", selection: $model.mode) {
-                    ForEach(VisualSearchMode.allCases) { Text($0.rawValue).tag($0) }
-                }.frame(width: 215).accessibilityIdentifier("visual-search-mode")
-            }.disabled(model.isWorking)
+            if model.naturalPlan == nil, model.query.isEmpty == false, model.isNaturalEnabled {
+                Text(model.query).font(.callout.weight(.medium)).lineLimit(1)
+                    .help("Text filter — edit in Search Options")
+                    .accessibilityIdentifier("visual-search-active-query")
+            }
             if model.matches.isEmpty == false {
                 Text("\(model.matches.count) \(model.matches.count == 1 ? "photo" : "photos")")
                     .font(.callout).foregroundStyle(theme.textSecondary)
@@ -114,11 +118,6 @@ struct VisualSearchSheet: View {
                     .disabled(model.isCancelling).accessibilityIdentifier("visual-search-stop")
             }
             Spacer()
-            if model.snapshot != nil || model.isWorking {
-                Button("Clear Analysis", systemImage: "eraser", action: model.clearIndex)
-                    .help("Forget this window’s image analysis. Your photos stay unchanged.")
-                    .accessibilityIdentifier("visual-search-clear")
-            }
         }
     }
 }

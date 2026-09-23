@@ -28,6 +28,9 @@ nonisolated struct LocalDocumentPassageSearch: Sendable {
 
     @concurrent func retrieve(question: String, index: DocumentRetrievalIndex) async throws -> DocumentRetrievalResult {
         try Task.checkCancellation()
+        if DocumentOverviewRequest.matches(question) {
+            return DocumentRetrievalResult(passages: try DocumentOverviewRequest.excerpts(from: index), usedSemanticSearch: false)
+        }
         let queryWords = Self.tokens(question)
         guard queryWords.isEmpty == false else { throw DocumentQuestionError.noEvidence }
         let queryVector: [Double]?

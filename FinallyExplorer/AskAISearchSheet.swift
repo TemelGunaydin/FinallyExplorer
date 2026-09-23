@@ -160,7 +160,7 @@ struct AskAISearchSheet: View {
             Spacer()
             if visualSearch != nil {
                 Button("Search Photos", systemImage: "photo.badge.magnifyingglass") { presentPhotos("") }
-                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(tint: .cyan))
                     .help("Describe photos in a chosen folder")
                     .accessibilityIdentifier("ask-ai-photos")
             }
@@ -172,24 +172,27 @@ struct AskAISearchSheet: View {
                     }
                     isDocumentsPresented = true
                 }
-                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(tint: .purple))
                 .help("Ask questions using explicitly selected documents")
                 .accessibilityIdentifier("ask-ai-documents")
             }
-            Button("New Search") {
-                model.startNewSearch()
-                visualSearch?.startNewPhotoSearch()
-                isPhotoConversation = false
-                isInputFocused = true
+            if model.turns.isEmpty == false || model.draft.isEmpty == false || isPhotoConversation {
+                Button("New Search") {
+                    model.startNewSearch()
+                    visualSearch?.startNewPhotoSearch()
+                    isPhotoConversation = false
+                    isInputFocused = true
+                }
+                .accessibilityIdentifier("ask-ai-new-search")
+                .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
             }
-            .accessibilityIdentifier("ask-ai-new-search")
             SettingsLink { Label("AI Settings", systemImage: "gearshape") }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle(tint: .orange))
                 .help("Manage on-device AI")
             Button("Close Ask AI", systemImage: "xmark") { dismiss() }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("ask-ai-close")
         }
@@ -199,18 +202,19 @@ struct AskAISearchSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Find files, then refine your search.")
                 .font(.title3.weight(.semibold))
-            Text("Describe what you need in English. Ask follow-up questions to narrow it down.")
+            Text("Try asking in English")
                 .foregroundStyle(theme.textSecondary)
             ForEach(["PDFs in Downloads from last week", "Photos taken three days ago", "Find the accounting report from two days ago"], id: \.self) { example in
-                Button(example, systemImage: "arrow.up.left") {
+                Button(example) {
                     model.draft = example
                     isInputFocused = true
                 }
-                .buttonStyle(ExplorerDialogButtonStyle())
-                .foregroundStyle(theme.textPrimary)
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.textSecondary)
+                .padding(.vertical, 4)
+                .help("Use this example")
                 .disabled(model.isEnabled == false)
             }
-            ExplorerReadingDetails(title: "How search works", text: "File search uses Spotlight; nothing is changed or uploaded. Scene descriptions open Visual Search, which analyzes only a folder you approve. Apple Intelligence interprets your request on this Mac.")
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)

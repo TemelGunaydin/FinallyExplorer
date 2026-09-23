@@ -9,7 +9,7 @@ struct VisualSearchOptionsButton: View {
             showsOptions.toggle()
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(ExplorerPaneUtilityButtonStyle())
+        .buttonStyle(ExplorerPaneUtilityButtonStyle(tint: .cyan))
         .help("Search options and analysis details")
         .accessibilityValue(model.includesHidden ? "Hidden items included" : "Hidden items excluded")
         .accessibilityIdentifier("visual-search-options")

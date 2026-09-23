@@ -16,9 +16,7 @@ struct DocumentQuestionSourcesView: View {
                     .buttonStyle(ExplorerDialogButtonStyle(isProminent: true))
                     .disabled((1...5).contains(model.selection.count) == false).accessibilityIdentifier("document-read")
             }
-            if model.selection.isEmpty {
-                Text("Choose up to 5 documents. Nothing is read until you select Read Documents.")
-            } else {
+            if model.selection.isEmpty == false {
                 ForEach(model.selection.prefix(5), id: \.self) { url in
                     Label(url.lastPathComponent, systemImage: "doc.text").lineLimit(1).truncationMode(.middle)
                 }
@@ -26,7 +24,6 @@ struct DocumentQuestionSourcesView: View {
                     Text("\(model.selection.count - 5) more selected. Choose at most 5 documents to continue.")
                 }
             }
-            ExplorerReadingDetails(title: "Formats & reading limits", text: "Local PDF, TXT, MD, JSON or CSV · 20 MB and 100 PDF pages per file · Up to 20 scan pages read with English OCR. Text and answers stay in this Explorer window’s memory. No uploads.")
             if model.documents.isEmpty == false {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle").accessibilityHidden(true)
@@ -41,11 +38,6 @@ struct DocumentQuestionSourcesView: View {
                         .font(.callout).foregroundStyle(theme.textSecondary)
                         .accessibilityIdentifier("document-ocr-summary")
                 }
-                Text(model.retrievalIndex?.supportsSemanticSearch == true
-                     ? "Search: meaning + keywords · English"
-                     : "Search: keywords only · Meaning model unavailable")
-                    .font(.caption).foregroundStyle(theme.textSecondary)
-                    .accessibilityIdentifier("document-search-mode")
             }
         }
         .font(.callout).padding(12).background(theme.control, in: .rect(cornerRadius: 12))

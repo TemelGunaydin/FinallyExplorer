@@ -4,6 +4,28 @@ import Testing
 
 @MainActor
 struct VisualSearchModelTests {
+    @Test("Reset from options clears manual filters without forgetting the analysis")
+    func resetFilters() async throws {
+        let fixture = try FolderComparisonTestFixture()
+        defer { fixture.remove() }
+        try fixture.write("Photo.jpg", "bytes")
+        let model = VisualSearchModel(service: VisualSearchService(analyzer: FixedVisualAnalyzer()))
+        model.setSource(fixture.source)
+        await model.analyze()?.value
+        let snapshotID = try #require(model.snapshot?.id)
+        model.naturalDraft = "A previous description"
+        model.query = "unmatched text"
+        model.mode = .text
+        await model.waitForSearch()
+        #expect(model.naturalDraft.isEmpty)
+        #expect(model.matches.isEmpty)
+        model.startNewPhotoSearch()
+        await model.waitForSearch()
+        #expect(model.snapshot?.id == snapshotID)
+        #expect(model.query.isEmpty && model.mode == .both)
+        #expect(model.matches.count == 1)
+    }
+
     @Test("Selecting a source never scans; matching uses evidence, not filenames")
     func explicitAnalysisAndSearch() async throws {
         let fixture = try FolderComparisonTestFixture()

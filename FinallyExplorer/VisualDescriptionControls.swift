@@ -18,11 +18,6 @@ struct VisualDescriptionControls: View {
                     .disabled(model.snapshot == nil || model.naturalDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .help(model.snapshot == nil ? "Analyze a folder first" : "Search the analyzed photos")
                     .accessibilityIdentifier("visual-description-submit")
-                if model.naturalPlan != nil {
-                    Button("New Search", systemImage: "arrow.counterclockwise", action: model.startNewPhotoSearch)
-                        .help("Start a new photo search without the current scene, date or type filters")
-                        .accessibilityIdentifier("visual-description-new-search")
-                }
             }
             .disabled(model.isWorking || model.isNaturalEnabled == false)
             if model.isDescribing {

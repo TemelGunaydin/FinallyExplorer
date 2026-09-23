@@ -111,7 +111,8 @@ final class DocumentQuestionModel {
             defer { withExtendedLifetime(selectionAccess) {} }
             do {
                 try await reader.validate(current)
-                let resolved = context.isEmpty ? query : try await resolver.resolve(question: query, context: context)
+                let resolved = context.isEmpty || DocumentOverviewRequest.matches(query)
+                    ? query : try await resolver.resolve(question: query, context: context)
                 try Task.checkCancellation()
                 guard resolved.isEmpty == false, resolved.count <= 500, resolved.utf8.count <= 1_000 else { throw DocumentQuestionError.ambiguousFollowUp }
                 self?.activity = "Finding supporting passages…"

@@ -16,7 +16,7 @@ struct DuplicateFilesSheet: View {
                     .font(.caption.weight(.semibold)).foregroundStyle(theme.textSecondary)
                 Button("Close Duplicates", systemImage: "xmark") { dismiss() }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                    .buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                     .disabled(model.isTrashing)
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("duplicates-close")

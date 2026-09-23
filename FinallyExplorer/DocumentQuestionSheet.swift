@@ -13,13 +13,11 @@ struct DocumentQuestionSheet: View {
                 Label("Ask Documents", systemImage: "text.bubble").font(.system(.title2, design: .rounded).weight(.semibold))
                     .accessibilityIdentifier("document-question-sheet")
                 Spacer()
-                Text("ON DEVICE · MEMORY ONLY").font(.caption.weight(.semibold))
+                DocumentQuestionOptionsButton(model: model)
                 Button("Close Document Questions", systemImage: "xmark") { model.cancel(); dismiss() }
-                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle()).keyboardShortcut(.cancelAction)
+                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true)).keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("document-close")
             }
-            Text("Ask about selected documents, with quotes you can check. English · Apple Intelligence.")
-                .font(.callout).foregroundStyle(theme.textSecondary)
             DocumentQuestionSourcesView(model: model)
             if model.isEnabled == false {
                 Text("Document Questions is off. Enable it in AI Settings.").font(.callout)
@@ -40,20 +38,9 @@ struct DocumentQuestionSheet: View {
                 }
                 .padding(10).background(theme.control, in: .rect(cornerRadius: 10))
             }
-            if model.history.isEmpty == false {
-                HStack {
-                    Text("Follow-ups use your last two questions and sources.")
-                        .font(.caption).foregroundStyle(theme.textSecondary)
-                        .accessibilityIdentifier("document-conversation-context")
-                    Spacer()
-                    Button("New Conversation", systemImage: "bubble.left.and.text.bubble.right", action: model.newConversation)
-                        .disabled(model.isWorking).accessibilityIdentifier("document-new-conversation")
-                        .help("Forget the conversation while keeping the selected documents ready")
-                }
-            }
             DocumentAnswerView(model: model).frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
-                TextField("What is the payment deadline?", text: $model.question, axis: .vertical)
+                TextField("Ask a question or explain this document…", text: $model.question, axis: .vertical)
                     .lineLimit(1...3).textFieldStyle(.plain).padding(12)
                     .background(theme.control, in: .rect(cornerRadius: 10))
                     .disabled(model.isWorking || model.isEnabled == false).onSubmit { model.ask() }
@@ -61,12 +48,6 @@ struct DocumentQuestionSheet: View {
                 Button("Ask", systemImage: "arrow.up") { model.ask() }
                     .buttonStyle(ExplorerDialogButtonStyle(isProminent: true)).disabled(model.canAsk == false)
                     .accessibilityIdentifier("document-ask")
-            }
-            HStack {
-                Text("Up to 3 answers kept here. Clear to forget documents and answers.")
-                    .font(.caption).foregroundStyle(theme.textSecondary)
-                Spacer()
-                Button("Clear", systemImage: "eraser", action: model.clear).accessibilityIdentifier("document-clear")
             }
         }
         .padding(22).frame(width: 820, height: 720)

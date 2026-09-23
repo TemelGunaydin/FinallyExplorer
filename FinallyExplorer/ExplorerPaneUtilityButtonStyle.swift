@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct ExplorerPaneUtilityButtonStyle: ButtonStyle {
+    var tint: Color? = nil
+    var isClose = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.explorerTheme) private var theme
@@ -14,7 +16,7 @@ struct ExplorerPaneUtilityButtonStyle: ButtonStyle {
         configuration.label
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(
-                isEnabled ? theme.textPrimary : theme.textTertiary
+                isClose ? Color.white : isEnabled ? theme.textPrimary : theme.textTertiary
             )
             .frame(width: 34, height: 34)
             .background {
@@ -23,12 +25,12 @@ struct ExplorerPaneUtilityButtonStyle: ButtonStyle {
                     .offset(y: 3)
 
                 RoundedRectangle(cornerRadius: 11)
-                    .fill(theme.control)
+                    .fill(isClose ? Color(red: 0.76, green: 0.12, blue: 0.17) : theme.control)
                     .overlay {
                         RoundedRectangle(cornerRadius: 11)
                             .fill(
-                                theme.supportAccent.opacity(
-                                    configuration.isPressed ? 0.38 : 0.2
+                                (isClose ? Color.white : tint ?? theme.supportAccent).opacity(
+                                    isClose ? (configuration.isPressed ? 0.16 : 0) : configuration.isPressed ? 0.5 : tint == nil ? 0.2 : 0.38
                                 )
                             )
                     }

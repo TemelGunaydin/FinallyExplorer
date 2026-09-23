@@ -14,7 +14,7 @@ struct FolderOrganizationSheet: View {
                 Text("REVIEW BEFORE MOVING").font(.caption.weight(.semibold)).foregroundStyle(theme.textPrimary)
                     .padding(6).background(theme.accentSoft, in: .rect(cornerRadius: 6))
                 Button("Close Organization", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                     .keyboardShortcut(.cancelAction)
                     .disabled(model.isApplying)
                     .accessibilityIdentifier("organization-close")

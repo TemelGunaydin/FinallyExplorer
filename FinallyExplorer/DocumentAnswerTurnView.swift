@@ -8,6 +8,10 @@ struct DocumentAnswerTurnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(turn.question).font(.headline).textSelection(.enabled)
+            if DocumentOverviewRequest.matches(turn.resolvedQuestion) {
+                Text("Overview of selected excerpts").font(.callout).foregroundStyle(theme.textSecondary)
+                    .help("Long documents are sampled. This is not a complete document summary.")
+            }
             if turn.claims.contains(where: { $0.source.isOCR }) {
                 Label("OCR source · Check names, dates and amounts in the original PDF.", systemImage: "text.viewfinder")
                     .font(.callout).foregroundStyle(theme.textSecondary)

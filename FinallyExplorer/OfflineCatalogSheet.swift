@@ -58,7 +58,7 @@ struct OfflineCatalogSheet: View {
             Text("LOCAL METADATA ONLY").font(.caption.weight(.semibold))
                 .padding(6).background(theme.accentSoft, in: .rect(cornerRadius: 6))
             Button("Close Catalogs", systemImage: "xmark") { dismiss() }
-                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                 .keyboardShortcut(.cancelAction).disabled(model.isWorking)
                 .accessibilityIdentifier("offline-catalog-close")
         }

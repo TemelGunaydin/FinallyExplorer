@@ -5,8 +5,8 @@ import Observation
 final class VisualSearchModel {
     private(set) var sourceURL: URL?
     var includesHidden = false { didSet { if includesHidden != oldValue { clearIndex() } } }
-    var query = "" { didSet { if query != oldValue { resetDescription(); search() } } }
-    var mode: VisualSearchMode = .both { didSet { if mode != oldValue { resetDescription(); search() } } }
+    var query = "" { didSet { if query != oldValue { naturalDraft = ""; resetDescription(); search() } } }
+    var mode: VisualSearchMode = .both { didSet { if mode != oldValue { naturalDraft = ""; resetDescription(); search() } } }
     var naturalDraft = ""
     private(set) var naturalRequest: String?
     private(set) var naturalPlan: VisualDescriptionPlan?
@@ -166,6 +166,8 @@ final class VisualSearchModel {
     func startNewPhotoSearch() {
         resetDescription()
         naturalDraft = ""
+        query = ""
+        mode = .both
         errorMessage = nil
         search()
     }

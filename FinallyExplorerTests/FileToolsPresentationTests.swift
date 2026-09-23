@@ -113,7 +113,8 @@ struct FileToolsPresentationTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AskAISearchModel()
         try render(AskAISearchSheet(model: model, settings: ExplorerAISettings(defaults: defaults),
-            rootURL: URL(filePath: "/tmp"), onReveal: { _ in }), name: "AskAIIntroduction", width: 700, height: 600, dark: dark)
+            rootURL: URL(filePath: "/tmp"), onReveal: { _ in }, visualSearch: VisualSearchModel(),
+            documentQuestions: DocumentQuestionModel()), name: "AskAIIntroduction", width: 700, height: 600, dark: dark)
         #expect(model.turns.isEmpty && model.pendingRequest == nil)
     }
 
@@ -142,6 +143,8 @@ struct FileToolsPresentationTests {
 
     @Test("Document questions, source excerpts, and AI settings fit in both themes", arguments: [false, true])
     func documentLayout(_ dark: Bool) async throws {
+        try render(DocumentQuestionSheet(model: DocumentQuestionModel(), onReveal: { _ in }),
+                   name: "DocumentEmpty", width: 820, height: 720, dark: dark)
         let fixture = try FolderComparisonTestFixture()
         defer { fixture.remove() }
         var urls: [URL] = []
@@ -158,6 +161,7 @@ struct FileToolsPresentationTests {
         #expect(model.history.count == 2)
         let claim = try #require(model.claims.first)
         try render(DocumentQuestionSheet(model: model, onReveal: { _ in }), name: "DocumentAnswer", width: 820, height: 720, dark: dark)
+        try render(DocumentQuestionOptionsContent(model: model), name: "DocumentOptions", width: 350, height: 360, dark: dark)
         try render(DocumentCitationSheet(claim: claim, onReveal: {}), name: "DocumentCitation", width: 600, height: 380, dark: dark)
         let suite = "FinallyExplorer.AISettings.Layout.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))

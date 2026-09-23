@@ -28,7 +28,7 @@ struct NearbyDevicePickerView: View {
                     coordinator.presentation = nil
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerToolbarButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
             }
 
             if coordinator.pendingSourceURLs.isEmpty {

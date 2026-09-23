@@ -8,31 +8,10 @@ struct DocumentAnswerView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 if let turn = model.history.last {
-                    Text("Check the quotes. A valid citation does not guarantee a correct interpretation.")
-                        .font(.callout).foregroundStyle(theme.textSecondary)
                     DocumentAnswerTurnView(turn: turn) { model.inspectedClaim = $0 }
-                } else if model.passages.isEmpty {
-                    ContentUnavailableView("Ask About Your Documents", systemImage: "text.bubble",
-                        description: Text("Select Read Documents, then ask a question in English.\nEach answer links to its source."))
+                } else if model.errorMessage == nil && model.isWorking == false {
+                    ContentUnavailableView(model.documents.isEmpty ? "Choose Documents to Get Started" : "What Would You Like to Know?", systemImage: "text.bubble")
                         .frame(maxWidth: .infinity)
-                }
-                if model.passages.isEmpty == false {
-                    DisclosureGroup("Retrieved passages (\(model.passages.count))") {
-                        if let question = model.retrievedQuestion {
-                            Text("Passages for: \(question)").font(.callout.weight(.semibold)).textSelection(.enabled)
-                        }
-                        if let resolved = model.resolvedQuestion, resolved != model.retrievedQuestion {
-                            Text("Interpreted as: \(resolved)").font(.callout).textSelection(.enabled)
-                        }
-                        Text(model.usedSemanticSearch ? "Matched by meaning and keywords" : "Matched by keywords only")
-                            .font(.caption).foregroundStyle(theme.textSecondary)
-                        ForEach(model.passages) { passage in
-                            VStack(alignment: .leading) {
-                                Text(passage.sourceLabel).font(.headline)
-                                Text(passage.text).font(.callout).textSelection(.enabled)
-                            }.padding(.vertical, 8)
-                        }
-                    }
                 }
                 if model.history.count > 1 {
                     DisclosureGroup("Previous answers (\(model.history.count - 1))") {

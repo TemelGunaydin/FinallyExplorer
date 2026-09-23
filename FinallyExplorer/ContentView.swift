@@ -1200,7 +1200,7 @@ private struct DestinationView: View {
                             _ = workspace.close(pane.id)
                         }
                         .labelStyle(.iconOnly)
-                        .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                        .buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                         .explorerTooltip(
                             "Close this pane",
                             alignment: .topTrailing

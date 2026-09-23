@@ -24,7 +24,7 @@ nonisolated enum DocumentQuestionError: LocalizedError, Equatable, Sendable {
         case .unreadable: "This file could not be read. Try selecting it again or use another copy."
         case .noText: "No readable text was found. For scans, try a clearer PDF with printed English text."
         case .changed: "A selected document changed or disappeared. Read the documents again before asking another question."
-        case .noEvidence: "I could not find supporting passages in the selected documents. Try a more specific question."
+        case .noEvidence: "No supported answer was found. Try asking about a specific detail in the document."
         case .invalidAnswer: "The answer could not be verified against the source excerpts. No unverified answer was shown."
         case .invalidQuestion: "Ask a specific question in English using up to 500 characters."
         case .ambiguousFollowUp: "Which document or subject do you mean? Name it in your question, or select New Conversation to start fresh."

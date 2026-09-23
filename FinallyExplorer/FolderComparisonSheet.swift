@@ -58,7 +58,7 @@ struct FolderComparisonSheet: View {
             Spacer()
             Button("Close Comparison", systemImage: "xmark") { dismiss() }
                 .labelStyle(.iconOnly)
-                .buttonStyle(ExplorerPaneUtilityButtonStyle())
+                .buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                 .keyboardShortcut(.cancelAction)
                 .disabled(model.isCopying)
                 .accessibilityIdentifier("folder-comparison-close")

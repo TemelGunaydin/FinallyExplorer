@@ -18,7 +18,7 @@ struct ExplorerToolsPopover: View {
                 }
                 Spacer()
                 Button("Close Tools", systemImage: "xmark", action: onClose)
-                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle())
+                    .labelStyle(.iconOnly).buttonStyle(ExplorerPaneUtilityButtonStyle(isClose: true))
                     .keyboardShortcut(.cancelAction).accessibilityIdentifier("file-tools-close")
             }
             Text("FIND & UNDERSTAND").font(.caption.bold()).foregroundStyle(theme.textSecondary)
